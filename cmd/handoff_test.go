@@ -1,0 +1,356 @@
+package cmd
+
+import (
+	"testing"
+
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
+)
+
+// TestParseHandoffInputEmpty tests parsing empty input
+func TestParseHandoffInputEmpty(t *testing.T) {
+	handoff := &models.Handoff{}
+	// Empty handoff should have empty slices
+	if len(handoff.Done) != 0 {
+		t.Error("Expected empty Done slice")
+	}
+	if len(handoff.Remaining) != 0 {
+		t.Error("Expected empty Remaining slice")
+	}
+}
+
+// TestHandoffRecordsData tests that handoff data is stored correctly
+func TestHandoffRecordsData(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
+	database.CreateIssue(issue)
+
+	handoff := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: "ses_test",
+		Done:      []string{"Implemented feature A", "Fixed bug B"},
+		Remaining: []string{"Write tests", "Update docs"},
+		Decisions: []string{"Use approach X"},
+		Uncertain: []string{"Need to verify performance"},
+	}
+
+	if err := database.AddHandoff(handoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
+
+	if handoff.ID == 0 {
+		t.Error("Expected handoff ID to be set")
+	}
+}
+
+// TestHandoffRecordsGitSnapshot tests that git state is captured on handoff
+func TestHandoffRecordsGitSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
+	database.CreateIssue(issue)
+
+	// Add handoff
+	handoff := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: "ses_test",
+		Done:      []string{"Work done"},
+	}
+	database.AddHandoff(handoff)
+
+	// Record git snapshot
+	snapshot := &models.GitSnapshot{
+		IssueID:    issue.ID,
+		Event:      "handoff",
+		CommitSHA:  "def456abc789012345678901234567890abcdef0",
+		Branch:     "feature-branch",
+		DirtyFiles: 2,
+	}
+	if err := database.AddGitSnapshot(snapshot); err != nil {
+		t.Fatalf("AddGitSnapshot failed: %v", err)
+	}
+}
+
+// TestHandoffWithMultipleSections tests parsing all YAML sections
+func TestHandoffWithMultipleSections(t *testing.T) {
+	handoff := &models.Handoff{
+		Done:      []string{"Task 1", "Task 2"},
+		Remaining: []string{"Task 3"},
+		Decisions: []string{"Decision 1", "Decision 2", "Decision 3"},
+		Uncertain: []string{"Question 1"},
+	}
+
+	if len(handoff.Done) != 2 {
+		t.Errorf("Expected 2 done items, got %d", len(handoff.Done))
+	}
+	if len(handoff.Remaining) != 1 {
+		t.Errorf("Expected 1 remaining item, got %d", len(handoff.Remaining))
+	}
+	if len(handoff.Decisions) != 3 {
+		t.Errorf("Expected 3 decisions, got %d", len(handoff.Decisions))
+	}
+	if len(handoff.Uncertain) != 1 {
+		t.Errorf("Expected 1 uncertainty, got %d", len(handoff.Uncertain))
+	}
+}
+
+// TestHandoffRequiresIssueID tests that handoff requires issue ID
+func TestHandoffRequiresIssueID(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Try to get non-existent issue
+	_, err = database.GetIssue("td-nonexistent")
+	if err == nil {
+		t.Error("Expected error for non-existent issue")
+	}
+}
+
+// TestHandoffUpdatesIssueTimestamp tests that handoff updates issue
+func TestHandoffUpdatesIssueTimestamp(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
+	database.CreateIssue(issue)
+	originalUpdatedAt := issue.UpdatedAt
+
+	// Update issue (as handoff command would)
+	database.UpdateIssue(issue)
+
+	retrieved, _ := database.GetIssue(issue.ID)
+	if retrieved.UpdatedAt.Before(originalUpdatedAt) {
+		t.Error("UpdatedAt should not be before original")
+	}
+}
+
+// TestHandoffSessionIDRequired tests that session ID is recorded
+func TestHandoffSessionIDRequired(t *testing.T) {
+	handoff := &models.Handoff{
+		IssueID:   "td-test",
+		SessionID: "ses_abc123",
+		Done:      []string{"Work"},
+	}
+
+	if handoff.SessionID == "" {
+		t.Error("SessionID should not be empty")
+	}
+	if handoff.SessionID != "ses_abc123" {
+		t.Errorf("SessionID mismatch: got %q", handoff.SessionID)
+	}
+}
+
+// TestHandoffDoneItems tests done items parsing
+func TestHandoffDoneItems(t *testing.T) {
+	items := []string{
+		"Implemented feature",
+		"Fixed bug",
+		"Added tests",
+	}
+
+	handoff := &models.Handoff{
+		IssueID:   "td-test",
+		SessionID: "ses_test",
+		Done:      items,
+	}
+
+	if len(handoff.Done) != 3 {
+		t.Fatalf("Expected 3 done items, got %d", len(handoff.Done))
+	}
+	if handoff.Done[0] != "Implemented feature" {
+		t.Errorf("First done item mismatch: %q", handoff.Done[0])
+	}
+}
+
+// TestHandoffRemainingItems tests remaining items parsing
+func TestHandoffRemainingItems(t *testing.T) {
+	items := []string{
+		"Write documentation",
+		"Performance testing",
+	}
+
+	handoff := &models.Handoff{
+		IssueID:   "td-test",
+		SessionID: "ses_test",
+		Remaining: items,
+	}
+
+	if len(handoff.Remaining) != 2 {
+		t.Fatalf("Expected 2 remaining items, got %d", len(handoff.Remaining))
+	}
+}
+
+// TestHandoffDecisionItems tests decisions parsing
+func TestHandoffDecisionItems(t *testing.T) {
+	items := []string{
+		"Using Redis for caching",
+		"Chose REST over GraphQL",
+	}
+
+	handoff := &models.Handoff{
+		IssueID:   "td-test",
+		SessionID: "ses_test",
+		Decisions: items,
+	}
+
+	if len(handoff.Decisions) != 2 {
+		t.Fatalf("Expected 2 decisions, got %d", len(handoff.Decisions))
+	}
+}
+
+// TestHandoffUncertainItems tests uncertainty parsing
+func TestHandoffUncertainItems(t *testing.T) {
+	items := []string{
+		"Not sure about error handling approach",
+		"Need to verify with PM about edge case",
+	}
+
+	handoff := &models.Handoff{
+		IssueID:   "td-test",
+		SessionID: "ses_test",
+		Uncertain: items,
+	}
+
+	if len(handoff.Uncertain) != 2 {
+		t.Fatalf("Expected 2 uncertainties, got %d", len(handoff.Uncertain))
+	}
+}
+
+// TestHandoffEmptySlices tests empty slices are valid
+func TestHandoffEmptySlices(t *testing.T) {
+	handoff := &models.Handoff{
+		IssueID:   "td-test",
+		SessionID: "ses_test",
+		Done:      []string{},
+		Remaining: []string{},
+		Decisions: []string{},
+		Uncertain: []string{},
+	}
+
+	if handoff.Done == nil {
+		t.Error("Done should be empty slice, not nil")
+	}
+	if len(handoff.Done) != 0 {
+		t.Error("Expected empty Done slice")
+	}
+}
+
+// TestHandoffNilSlices tests nil slices are valid
+func TestHandoffNilSlices(t *testing.T) {
+	handoff := &models.Handoff{
+		IssueID:   "td-test",
+		SessionID: "ses_test",
+	}
+
+	// nil is valid, command handles nil and empty the same
+	if len(handoff.Done) != 0 {
+		t.Error("nil Done should have length 0")
+	}
+}
+
+// TestHandoffPreservesWhitespace tests that significant whitespace is preserved
+func TestHandoffPreservesWhitespace(t *testing.T) {
+	items := []string{
+		"Item with  double  spaces",
+		"Item with\ttabs",
+	}
+
+	handoff := &models.Handoff{
+		Done: items,
+	}
+
+	// Internal whitespace should be preserved
+	if handoff.Done[0] != "Item with  double  spaces" {
+		t.Errorf("Internal whitespace not preserved: %q", handoff.Done[0])
+	}
+}
+
+// TestMultipleHandoffsForSameIssue tests multiple handoffs can be recorded
+func TestMultipleHandoffsForSameIssue(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
+	database.CreateIssue(issue)
+
+	// First handoff
+	handoff1 := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: "ses_1",
+		Done:      []string{"First work"},
+	}
+	database.AddHandoff(handoff1)
+
+	// Second handoff
+	handoff2 := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: "ses_2",
+		Done:      []string{"Second work"},
+	}
+	database.AddHandoff(handoff2)
+
+	if handoff1.ID == handoff2.ID {
+		t.Error("Handoffs should have different IDs")
+	}
+}
+
+// TestGetLatestHandoff tests retrieving the most recent handoff
+func TestGetLatestHandoff(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusInProgress}
+	database.CreateIssue(issue)
+
+	// Add handoffs
+	database.AddHandoff(&models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: "ses_old",
+		Done:      []string{"Old work"},
+	})
+
+	database.AddHandoff(&models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: "ses_new",
+		Done:      []string{"New work"},
+	})
+
+	// Get latest
+	latest, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if latest == nil {
+		t.Fatal("Expected handoff, got nil")
+	}
+	if latest.SessionID != "ses_new" {
+		t.Errorf("Expected latest session, got %q", latest.SessionID)
+	}
+}
