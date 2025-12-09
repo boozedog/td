@@ -3,12 +3,21 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
+
+// clearFocusIfNeeded clears focus if the focused issue matches
+func clearFocusIfNeeded(baseDir, issueID string) {
+	focusedID, _ := config.GetFocus(baseDir)
+	if focusedID == issueID {
+		config.ClearFocus(baseDir)
+	}
+}
 
 var reviewCmd = &cobra.Command{
 	Use:   "review [issue-id]",
@@ -88,16 +97,23 @@ var reviewCmd = &cobra.Command{
 			Type:      models.LogTypeProgress,
 		})
 
+		// Clear focus if this was the focused issue
+		clearFocusIfNeeded(baseDir, issueID)
+
 		fmt.Printf("REVIEW REQUESTED %s (session: %s)\n", issueID, sess.ID)
 		return nil
 	},
 }
 
 var approveCmd = &cobra.Command{
-	Use:   "approve [issue-id]",
-	Short: "Approve and close an issue",
-	Long:  `Approves and closes the issue. Must be a different session than the implementer.`,
-	Args:  cobra.ExactArgs(1),
+	Use:   "approve [issue-id...]",
+	Short: "Approve and close one or more issues",
+	Long: `Approves and closes the issue(s). Must be a different session than the implementer.
+
+Supports bulk operations:
+  td approve td-abc1 td-abc2 td-abc3    # Approve multiple issues
+  td approve --all                      # Approve all reviewable issues`,
+	Args: cobra.MinimumNArgs(0),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -114,67 +130,108 @@ var approveCmd = &cobra.Command{
 			return err
 		}
 
-		issueID := args[0]
 		jsonOutput, _ := cmd.Flags().GetBool("json")
+		all, _ := cmd.Flags().GetBool("all")
 
-		issue, err := database.GetIssue(issueID)
-		if err != nil {
-			if jsonOutput {
-				output.JSONError(output.ErrCodeNotFound, err.Error())
-			} else {
-				output.Error("%v", err)
+		// Build list of issue IDs to approve
+		var issueIDs []string
+		if all {
+			// Get all reviewable issues (in_review and not implemented by current session)
+			issues, err := database.ListIssues(db.ListIssuesOptions{
+				ReviewableBy: sess.ID,
+			})
+			if err != nil {
+				output.Error("failed to list reviewable issues: %v", err)
+				return err
 			}
-			return err
-		}
-
-		// Check that reviewer is different from implementer
-		if issue.ImplementerSession == sess.ID {
-			errMsg := fmt.Sprintf("cannot approve own implementation: %s (implemented by current session)", issueID)
-			if jsonOutput {
-				output.JSONError(output.ErrCodeCannotSelfApprove, errMsg)
-				cmd.SilenceErrors = true
-				cmd.SilenceUsage = true
-			} else {
-				output.Error("%s", errMsg)
+			for _, issue := range issues {
+				issueIDs = append(issueIDs, issue.ID)
 			}
-			return fmt.Errorf("cannot self-approve")
+		} else {
+			issueIDs = args
 		}
 
-		// Update issue
-		issue.Status = models.StatusClosed
-		issue.ReviewerSession = sess.ID
-		now := issue.UpdatedAt
-		issue.ClosedAt = &now
-
-		if err := database.UpdateIssue(issue); err != nil {
-			output.Error("failed to update issue: %v", err)
-			return err
+		if len(issueIDs) == 0 {
+			output.Error("no issues to approve. Provide issue IDs or use --all")
+			return fmt.Errorf("no issues specified")
 		}
 
-		// Log
-		reason, _ := cmd.Flags().GetString("reason")
-		logMsg := "Approved"
-		if reason != "" {
-			logMsg = reason
+		approved := 0
+		skipped := 0
+		for _, issueID := range issueIDs {
+			issue, err := database.GetIssue(issueID)
+			if err != nil {
+				if jsonOutput {
+					output.JSONError(output.ErrCodeNotFound, err.Error())
+				} else {
+					output.Warning("issue not found: %s", issueID)
+				}
+				skipped++
+				continue
+			}
+
+			// Check that reviewer is different from implementer
+			if issue.ImplementerSession == sess.ID {
+				if !all { // Only show error for explicit requests
+					errMsg := fmt.Sprintf("cannot approve own implementation: %s", issueID)
+					if jsonOutput {
+						output.JSONError(output.ErrCodeCannotSelfApprove, errMsg)
+					} else {
+						output.Error("%s", errMsg)
+					}
+				}
+				skipped++
+				continue
+			}
+
+			// Update issue
+			issue.Status = models.StatusClosed
+			issue.ReviewerSession = sess.ID
+			now := issue.UpdatedAt
+			issue.ClosedAt = &now
+
+			if err := database.UpdateIssue(issue); err != nil {
+				output.Warning("failed to update %s: %v", issueID, err)
+				skipped++
+				continue
+			}
+
+			// Log
+			reason, _ := cmd.Flags().GetString("reason")
+			logMsg := "Approved"
+			if reason != "" {
+				logMsg = reason
+			}
+
+			database.AddLog(&models.Log{
+				IssueID:   issueID,
+				SessionID: sess.ID,
+				Message:   logMsg,
+				Type:      models.LogTypeProgress,
+			})
+
+			// Clear focus if this was the focused issue
+			clearFocusIfNeeded(baseDir, issueID)
+
+			fmt.Printf("APPROVED %s (reviewer: %s)\n", issueID, sess.ID)
+			approved++
 		}
 
-		database.AddLog(&models.Log{
-			IssueID:   issueID,
-			SessionID: sess.ID,
-			Message:   logMsg,
-			Type:      models.LogTypeProgress,
-		})
-
-		fmt.Printf("APPROVED %s (reviewer: %s)\n", issueID, sess.ID)
+		if len(issueIDs) > 1 {
+			fmt.Printf("\nApproved %d, skipped %d\n", approved, skipped)
+		}
 		return nil
 	},
 }
 
 var rejectCmd = &cobra.Command{
-	Use:   "reject [issue-id]",
+	Use:   "reject [issue-id...]",
 	Short: "Reject and return to in_progress",
-	Long:  `Rejects the issue and returns it to in_progress status.`,
-	Args:  cobra.ExactArgs(1),
+	Long: `Rejects the issue(s) and returns them to in_progress status.
+
+Supports bulk operations:
+  td reject td-abc1 td-abc2    # Reject multiple issues`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 		jsonOutput, _ := cmd.Flags().GetBool("json")
@@ -200,57 +257,141 @@ var rejectCmd = &cobra.Command{
 			return err
 		}
 
-		issueID := args[0]
-		issue, err := database.GetIssue(issueID)
-		if err != nil {
-			if jsonOutput {
-				output.JSONError(output.ErrCodeNotFound, err.Error())
-			} else {
-				output.Error("%v", err)
+		rejected := 0
+		skipped := 0
+		for _, issueID := range args {
+			issue, err := database.GetIssue(issueID)
+			if err != nil {
+				if jsonOutput {
+					output.JSONError(output.ErrCodeNotFound, err.Error())
+				} else {
+					output.Warning("issue not found: %s", issueID)
+				}
+				skipped++
+				continue
 			}
-			return err
-		}
 
-		// Update issue
-		issue.Status = models.StatusInProgress
+			// Update issue
+			issue.Status = models.StatusInProgress
 
-		if err := database.UpdateIssue(issue); err != nil {
-			if jsonOutput {
-				output.JSONError(output.ErrCodeDatabaseError, err.Error())
-			} else {
-				output.Error("failed to update issue: %v", err)
+			if err := database.UpdateIssue(issue); err != nil {
+				if jsonOutput {
+					output.JSONError(output.ErrCodeDatabaseError, err.Error())
+				} else {
+					output.Warning("failed to update %s: %v", issueID, err)
+				}
+				skipped++
+				continue
 			}
-			return err
-		}
 
-		// Log
-		reason, _ := cmd.Flags().GetString("reason")
-		logMsg := "Rejected"
-		if reason != "" {
-			logMsg = "Rejected: " + reason
-		}
-
-		database.AddLog(&models.Log{
-			IssueID:   issueID,
-			SessionID: sess.ID,
-			Message:   logMsg,
-			Type:      models.LogTypeProgress,
-		})
-
-		if jsonOutput {
-			result := map[string]interface{}{
-				"id":      issueID,
-				"status":  "in_progress",
-				"action":  "rejected",
-				"session": sess.ID,
-			}
+			// Log
+			reason, _ := cmd.Flags().GetString("reason")
+			logMsg := "Rejected"
 			if reason != "" {
-				result["reason"] = reason
+				logMsg = "Rejected: " + reason
 			}
-			return output.JSON(result)
+
+			database.AddLog(&models.Log{
+				IssueID:   issueID,
+				SessionID: sess.ID,
+				Message:   logMsg,
+				Type:      models.LogTypeProgress,
+			})
+
+			if jsonOutput {
+				result := map[string]interface{}{
+					"id":      issueID,
+					"status":  "in_progress",
+					"action":  "rejected",
+					"session": sess.ID,
+				}
+				if reason != "" {
+					result["reason"] = reason
+				}
+				output.JSON(result)
+			} else {
+				fmt.Printf("REJECTED %s → in_progress\n", issueID)
+			}
+			rejected++
 		}
 
-		fmt.Printf("REJECTED %s → in_progress\n", issueID)
+		if len(args) > 1 && !jsonOutput {
+			fmt.Printf("\nRejected %d, skipped %d\n", rejected, skipped)
+		}
+		return nil
+	},
+}
+
+var closeCmd = &cobra.Command{
+	Use:   "close [issue-id...]",
+	Short: "Close one or more issues without review",
+	Long: `Closes the issue(s) directly. Useful for trivial fixes, duplicates, or won't-fix scenarios.
+
+Examples:
+  td close td-abc1                    # Close single issue
+  td close td-abc1 td-abc2 td-abc3    # Close multiple issues`,
+	Args: cobra.MinimumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		sess, err := session.Get(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		closed := 0
+		skipped := 0
+		for _, issueID := range args {
+			issue, err := database.GetIssue(issueID)
+			if err != nil {
+				output.Warning("issue not found: %s", issueID)
+				skipped++
+				continue
+			}
+
+			// Update issue
+			issue.Status = models.StatusClosed
+			now := issue.UpdatedAt
+			issue.ClosedAt = &now
+
+			if err := database.UpdateIssue(issue); err != nil {
+				output.Warning("failed to update %s: %v", issueID, err)
+				skipped++
+				continue
+			}
+
+			// Log
+			reason, _ := cmd.Flags().GetString("reason")
+			logMsg := "Closed"
+			if reason != "" {
+				logMsg = "Closed: " + reason
+			}
+
+			database.AddLog(&models.Log{
+				IssueID:   issueID,
+				SessionID: sess.ID,
+				Message:   logMsg,
+				Type:      models.LogTypeProgress,
+			})
+
+			// Clear focus if this was the focused issue
+			clearFocusIfNeeded(baseDir, issueID)
+
+			fmt.Printf("CLOSED %s\n", issueID)
+			closed++
+		}
+
+		if len(args) > 1 {
+			fmt.Printf("\nClosed %d, skipped %d\n", closed, skipped)
+		}
 		return nil
 	},
 }
@@ -259,11 +400,14 @@ func init() {
 	rootCmd.AddCommand(reviewCmd)
 	rootCmd.AddCommand(approveCmd)
 	rootCmd.AddCommand(rejectCmd)
+	rootCmd.AddCommand(closeCmd)
 
 	reviewCmd.Flags().String("reason", "", "Reason for submitting")
 	reviewCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().String("reason", "", "Reason for approval")
 	approveCmd.Flags().Bool("json", false, "JSON output")
+	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
 	rejectCmd.Flags().String("reason", "", "Reason for rejection")
 	rejectCmd.Flags().Bool("json", false, "JSON output")
+	closeCmd.Flags().String("reason", "", "Reason for closing")
 }

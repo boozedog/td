@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -420,10 +421,12 @@ var wsHandoffCmd = &cobra.Command{
 		handoff.Decisions = decisions
 		handoff.Uncertain = uncertain
 
-		// Check if stdin has data
+		// Check if stdin has data - only read if it's a pipe AND has available data
 		stat, _ := os.Stdin.Stat()
 		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			parseWSHandoffInput(handoff)
+			if stat.Size() > 0 {
+				parseWSHandoffInput(handoff)
+			}
 		}
 
 		// Create handoff for each tagged issue
@@ -686,21 +689,51 @@ var wsShowCmd = &cobra.Command{
 		// Show full session log if --full flag
 		if full, _ := cmd.Flags().GetBool("full"); full {
 			fmt.Println("FULL SESSION LOG:")
+			// Collect all logs and deduplicate by timestamp+message
+			type logEntry struct {
+				timestamp time.Time
+				issueID   string
+				typeLabel string
+				message   string
+			}
+			seen := make(map[string]bool)
+			var allLogs []logEntry
+
 			for _, id := range issueIDs {
 				logs, _ := database.GetLogs(id, 0)
 				for _, log := range logs {
 					if log.WorkSessionID == wsID {
+						// Create dedup key from timestamp and message
+						key := fmt.Sprintf("%d:%s", log.Timestamp.Unix(), log.Message)
+						if seen[key] {
+							continue
+						}
+						seen[key] = true
+
 						typeLabel := ""
 						if log.Type != models.LogTypeProgress {
 							typeLabel = fmt.Sprintf(" [%s]", log.Type)
 						}
-						fmt.Printf("  [%s] %s%s %s\n",
-							log.Timestamp.Format("2006-01-02 15:04"),
-							id,
-							typeLabel,
-							log.Message)
+						allLogs = append(allLogs, logEntry{
+							timestamp: log.Timestamp,
+							issueID:   id,
+							typeLabel: typeLabel,
+							message:   log.Message,
+						})
 					}
 				}
+			}
+
+			// Sort by timestamp
+			sort.Slice(allLogs, func(i, j int) bool {
+				return allLogs[i].timestamp.Before(allLogs[j].timestamp)
+			})
+
+			for _, log := range allLogs {
+				fmt.Printf("  [%s]%s %s\n",
+					log.timestamp.Format("2006-01-02 15:04"),
+					log.typeLabel,
+					log.message)
 			}
 		}
 

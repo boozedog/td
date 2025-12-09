@@ -71,11 +71,13 @@ Or use flags:
 		handoff.Decisions = decisions
 		handoff.Uncertain = uncertain
 
-		// Check if stdin has data
+		// Check if stdin has data - only read if it's a pipe AND has available data
 		stat, _ := os.Stdin.Stat()
 		if (stat.Mode() & os.ModeCharDevice) == 0 {
-			// Data is being piped
-			parseHandoffInput(handoff)
+			// Stdin is not a terminal - check if there's actually data available
+			if stat.Size() > 0 {
+				parseHandoffInput(handoff)
+			}
 		}
 
 		if err := database.AddHandoff(handoff); err != nil {

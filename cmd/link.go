@@ -81,9 +81,15 @@ func getGitModifiedFiles() ([]string, []string, error) {
 }
 
 var linkCmd = &cobra.Command{
-	Use:   "link [issue-id] [file-pattern]",
+	Use:   "link [issue-id] [file-pattern...]",
 	Short: "Link files to an issue",
-	Args:  cobra.ExactArgs(2),
+	Long: `Link one or more files to an issue.
+
+Examples:
+  td link td-abc1 src/main.go           # Link single file
+  td link td-abc1 src/*.go              # Link via glob pattern
+  td link td-abc1 file1.go file2.go     # Link multiple files`,
+	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -95,7 +101,7 @@ var linkCmd = &cobra.Command{
 		defer database.Close()
 
 		issueID := args[0]
-		pattern := args[1]
+		patterns := args[1:]
 
 		// Verify issue exists
 		_, err = database.GetIssue(issueID)
@@ -111,21 +117,30 @@ var linkCmd = &cobra.Command{
 			role = models.FileRole(roleStr)
 		}
 
-		// Find matching files
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			output.Error("invalid pattern: %v", err)
-			return err
+		// Find matching files from all patterns
+		var matches []string
+		for _, pattern := range patterns {
+			globMatches, err := filepath.Glob(pattern)
+			if err != nil {
+				output.Warning("invalid pattern: %s", pattern)
+				continue
+			}
+
+			if len(globMatches) > 0 {
+				matches = append(matches, globMatches...)
+			} else {
+				// Try as a literal path
+				if _, err := os.Stat(pattern); err == nil {
+					matches = append(matches, pattern)
+				} else {
+					output.Warning("no files matching: %s", pattern)
+				}
+			}
 		}
 
 		if len(matches) == 0 {
-			// Try as a literal path
-			if _, err := os.Stat(pattern); err == nil {
-				matches = []string{pattern}
-			} else {
-				output.Error("no files matching pattern: %s", pattern)
-				return fmt.Errorf("no matches")
-			}
+			output.Error("no files found matching any pattern")
+			return fmt.Errorf("no matches")
 		}
 
 		// Handle directories

@@ -87,17 +87,19 @@ Supports stdin input for multi-line messages or piped input:
 		if len(args) > 0 {
 			message = args[0]
 		} else {
-			// Check if stdin has data
+			// Check if stdin has data - only read if it's a pipe AND has available data
 			stat, _ := os.Stdin.Stat()
 			if (stat.Mode() & os.ModeCharDevice) == 0 {
-				// Read from stdin
-				reader := bufio.NewReader(os.Stdin)
-				data, err := io.ReadAll(reader)
-				if err != nil {
-					output.Error("failed to read stdin: %v", err)
-					return err
+				if stat.Size() > 0 {
+					// Read from stdin
+					reader := bufio.NewReader(os.Stdin)
+					data, err := io.ReadAll(reader)
+					if err != nil {
+						output.Error("failed to read stdin: %v", err)
+						return err
+					}
+					message = strings.TrimSpace(string(data))
 				}
-				message = strings.TrimSpace(string(data))
 			}
 		}
 
