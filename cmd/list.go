@@ -84,6 +84,11 @@ var listCmd = &cobra.Command{
 		opts.Implementer, _ = cmd.Flags().GetString("implementer")
 		opts.Reviewer, _ = cmd.Flags().GetString("reviewer")
 
+		// Parent filter
+		if parentID, _ := cmd.Flags().GetString("parent"); parentID != "" {
+			opts.ParentID = parentID
+		}
+
 		// Reviewable filter
 		if reviewable, _ := cmd.Flags().GetBool("reviewable"); reviewable {
 			sess, err := session.Get(baseDir)
@@ -487,6 +492,7 @@ func init() {
 	listCmd.Flags().String("implementer", "", "Filter by implementer session")
 	listCmd.Flags().String("reviewer", "", "Filter by reviewer session")
 	listCmd.Flags().Bool("reviewable", false, "Show issues you can review")
+	listCmd.Flags().String("parent", "", "Filter by parent issue ID")
 	listCmd.Flags().BoolP("mine", "m", false, "Show issues where you are the implementer")
 	listCmd.Flags().BoolP("open", "o", false, "Show only open issues (shorthand for --status open)")
 	listCmd.Flags().String("created", "", "Created date filter")

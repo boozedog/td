@@ -115,7 +115,7 @@ var usageCmd = &cobra.Command{
 			fmt.Println()
 		}
 
-		fmt.Printf("CURRENT SESSION: %s\n", sess.ID)
+		fmt.Printf("CURRENT SESSION: %s\n", sess.Display())
 
 		if activeWS != nil {
 			fmt.Printf("WORK SESSION: %s \"%s\" (%d issues tagged)\n", activeWS.ID, activeWS.Name, len(wsIssues))

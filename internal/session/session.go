@@ -26,6 +26,26 @@ type Session struct {
 	IsNew             bool      `json:"-"` // True if session was just created (not persisted)
 }
 
+// Display returns the session ID with name if set: "ses_abc123 (my-name)" or just "ses_abc123"
+func (s *Session) Display() string {
+	if s.Name != "" {
+		return fmt.Sprintf("%s (%s)", s.ID, s.Name)
+	}
+	return s.ID
+}
+
+// FormatSessionID formats a session ID with optional name lookup.
+// Use this when you only have a session ID string and need to display it.
+// If the session has a name, returns "ses_xxx (name)", otherwise just "ses_xxx".
+func FormatSessionID(baseDir, sessionID string) string {
+	// Try to look up the session to get its name
+	sess, err := Get(baseDir)
+	if err == nil && sess.ID == sessionID && sess.Name != "" {
+		return fmt.Sprintf("%s (%s)", sessionID, sess.Name)
+	}
+	return sessionID
+}
+
 // generateID creates a new random session ID
 func generateID() (string, error) {
 	bytes := make([]byte, 3) // 6 hex characters

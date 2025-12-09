@@ -84,7 +84,7 @@ var infoCmd = &cobra.Command{
 
 		fmt.Printf("Project: %s\n", projectName)
 		fmt.Printf("Database: .todos/issues.db\n")
-		fmt.Printf("Current Session: %s\n", sess.ID)
+		fmt.Printf("Current Session: %s\n", sess.Display())
 		fmt.Println()
 
 		fmt.Printf("Issues: %d total\n", stats["total"])
@@ -141,12 +141,7 @@ var whoamiCmd = &cobra.Command{
 		// Get issues touched by this session
 		touchedIssues, _ := database.GetIssueSessionLog(sess.ID)
 
-		sessionLabel := sess.ID
-		if sess.Name != "" {
-			sessionLabel = fmt.Sprintf("%s (%s)", sess.ID, sess.Name)
-		}
-
-		fmt.Printf("SESSION: %s\n", sessionLabel)
+		fmt.Printf("SESSION: %s\n", sess.Display())
 		fmt.Printf("STARTED: %s\n", sess.StartedAt.Format("2006-01-02T15:04:05Z"))
 
 		if sess.PreviousSessionID != "" {
@@ -204,11 +199,7 @@ var sessionNameCmd = &cobra.Command{
 				output.Error("%v", err)
 				return err
 			}
-			sessionLabel := sess.ID
-			if sess.Name != "" {
-				sessionLabel = fmt.Sprintf("%s (%s)", sess.ID, sess.Name)
-			}
-			fmt.Printf("SESSION: %s\n", sessionLabel)
+			fmt.Printf("SESSION: %s\n", sess.Display())
 			return nil
 		}
 

@@ -225,13 +225,21 @@ var criticalPathCmd = &cobra.Command{
 		}
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 
-		// Get all open/in_progress issues
-		issues, err := database.ListIssues(db.ListIssuesOptions{
+		// Get all open/in_progress issues (excluding epics - they're containers, not blocking work)
+		allIssues, err := database.ListIssues(db.ListIssuesOptions{
 			Status: []models.Status{models.StatusOpen, models.StatusInProgress, models.StatusBlocked},
 		})
 		if err != nil {
 			output.Error("failed to list issues: %v", err)
 			return err
+		}
+
+		// Filter out epics
+		var issues []models.Issue
+		for _, issue := range allIssues {
+			if issue.Type != models.TypeEpic {
+				issues = append(issues, issue)
+			}
 		}
 
 		// Build issue map for quick lookup
