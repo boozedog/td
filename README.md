@@ -4,17 +4,11 @@ A minimalist local task and session management CLI designed for AI-assisted deve
 
 ## Why td?
 
-AI coding assistants are stateless. Each conversation starts fresh. This creates real problems:
-
-- **Lost context**: The AI doesn't know what was tried, what worked, what's uncertain
-- **No handoff**: When you start a new session, there's no structured way to resume
-- **Self-approval**: Nothing stops an AI from "completing" its own work without review
-
-`td` solves these by treating AI sessions as first-class participants in a development workflow.
+td helps stateless agents maintain context across sessions and makes sure that each task is indepedently reviewed.
 
 ## Key Ideas
 
-**Session-aware**: Each terminal or AI context gets a session ID. The session that implements work cannot approve it—a different session must review. This enforces actual handoffs.
+**Session-aware**: Each terminal or AI context gets a session ID. The session that implements work cannot approve it, a different session must review. This enforces actual handoffs.
 
 **Handoff-native**: Structured state capture (`done`, `remaining`, `decisions`, `uncertain`) instead of freeform notes. Future sessions get exactly what they need to continue.
 
@@ -35,8 +29,10 @@ This installs `td` to your `$GOPATH/bin` (typically `~/go/bin`). Make sure this 
 
 ## Quick Start
 
+
 ```bash
 # Initialize in your project
+# This is the only step a human needs to do. The rest is done by agents.
 td init
 
 # Create an issue
@@ -133,7 +129,7 @@ Files are tracked by SHA at link time. `td files` compares against current state
 
 ## Credits
 
-This project is heavily inspired by [beads](https://github.com/steveyegge/beads) by Steve Yegge. The core insight—that AI coding assistants need lightweight, local issue tracking with session awareness—comes directly from beads.
+This project is inspired by [beads](https://github.com/steveyegge/beads) by Steve Yegge. The core insight—that AI coding assistants need lightweight, local issue tracking with session awareness—comes directly from beads.
 
 `td` is an evolution that adds session-based review workflows, structured handoffs, and work sessions while removing some features to stay minimal. But the foundational idea and much of the design philosophy belongs to Steve's original work. Go star beads.
 

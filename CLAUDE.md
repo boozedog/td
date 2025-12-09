@@ -2,7 +2,9 @@
 
 ## Use `td` for Task Management
 
-Run `td session --new "name"` then `td usage` for workflow. Use `td usage -q` after first read.
+IMPORTANT: Run `td session --new "name"` then `td usage` for workflow. This tells you what to work on next.
+
+Use `td usage -q` after first read.
 
 ## Build
 
