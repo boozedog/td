@@ -1,5 +1,8 @@
 package db
 
+// SchemaVersion is the current database schema version
+const SchemaVersion = 1
+
 const schema = `
 -- Issues table
 CREATE TABLE IF NOT EXISTS issues (
@@ -122,6 +125,12 @@ CREATE TABLE IF NOT EXISTS sessions (
     ended_at DATETIME
 );
 
+-- Schema info table for version tracking
+CREATE TABLE IF NOT EXISTS schema_info (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
 CREATE INDEX IF NOT EXISTS idx_issues_priority ON issues(priority);
@@ -134,3 +143,15 @@ CREATE INDEX IF NOT EXISTS idx_git_snapshots_issue ON git_snapshots(issue_id);
 CREATE INDEX IF NOT EXISTS idx_issue_files_issue ON issue_files(issue_id);
 CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(issue_id);
 `
+
+// Migration defines a database migration
+type Migration struct {
+	Version     int
+	Description string
+	SQL         string
+}
+
+// Migrations is the list of all database migrations in order
+var Migrations = []Migration{
+	// Version 1 is the initial schema - no migration needed
+}

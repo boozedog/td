@@ -37,10 +37,36 @@ var searchCmd = &cobra.Command{
 			}
 		}
 
+		// Parse type filter
+		if typeStr, _ := cmd.Flags().GetStringArray("type"); len(typeStr) > 0 {
+			for _, t := range typeStr {
+				opts.Type = append(opts.Type, models.Type(t))
+			}
+		}
+
+		// Parse labels filter
+		if labels, _ := cmd.Flags().GetStringArray("labels"); len(labels) > 0 {
+			opts.Labels = labels
+		}
+
+		// Priority filter
+		opts.Priority, _ = cmd.Flags().GetString("priority")
+
+		// Limit
+		opts.Limit, _ = cmd.Flags().GetInt("limit")
+		if opts.Limit == 0 {
+			opts.Limit = 50
+		}
+
 		issues, err := database.SearchIssues(query, opts)
 		if err != nil {
 			output.Error("search failed: %v", err)
 			return err
+		}
+
+		// Output
+		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+			return output.JSON(issues)
 		}
 
 		for _, issue := range issues {
@@ -59,4 +85,9 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 
 	searchCmd.Flags().StringArrayP("status", "s", nil, "Filter by status")
+	searchCmd.Flags().StringArrayP("type", "t", nil, "Filter by type")
+	searchCmd.Flags().StringArrayP("labels", "l", nil, "Filter by labels")
+	searchCmd.Flags().StringP("priority", "p", "", "Filter by priority")
+	searchCmd.Flags().IntP("limit", "n", 50, "Limit results")
+	searchCmd.Flags().Bool("json", false, "JSON output")
 }

@@ -177,24 +177,37 @@ var rejectCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+		jsonOutput, _ := cmd.Flags().GetBool("json")
 
 		database, err := db.Open(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			if jsonOutput {
+				output.JSONError(output.ErrCodeDatabaseError, err.Error())
+			} else {
+				output.Error("%v", err)
+			}
 			return err
 		}
 		defer database.Close()
 
 		sess, err := session.Get(baseDir)
 		if err != nil {
-			output.Error("%v", err)
+			if jsonOutput {
+				output.JSONError(output.ErrCodeNoActiveSession, err.Error())
+			} else {
+				output.Error("%v", err)
+			}
 			return err
 		}
 
 		issueID := args[0]
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
-			output.Error("%v", err)
+			if jsonOutput {
+				output.JSONError(output.ErrCodeNotFound, err.Error())
+			} else {
+				output.Error("%v", err)
+			}
 			return err
 		}
 
@@ -202,7 +215,11 @@ var rejectCmd = &cobra.Command{
 		issue.Status = models.StatusInProgress
 
 		if err := database.UpdateIssue(issue); err != nil {
-			output.Error("failed to update issue: %v", err)
+			if jsonOutput {
+				output.JSONError(output.ErrCodeDatabaseError, err.Error())
+			} else {
+				output.Error("failed to update issue: %v", err)
+			}
 			return err
 		}
 
@@ -219,6 +236,19 @@ var rejectCmd = &cobra.Command{
 			Message:   logMsg,
 			Type:      models.LogTypeProgress,
 		})
+
+		if jsonOutput {
+			result := map[string]interface{}{
+				"id":      issueID,
+				"status":  "in_progress",
+				"action":  "rejected",
+				"session": sess.ID,
+			}
+			if reason != "" {
+				result["reason"] = reason
+			}
+			return output.JSON(result)
+		}
 
 		fmt.Printf("REJECTED %s → in_progress\n", issueID)
 		return nil

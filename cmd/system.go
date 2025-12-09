@@ -45,6 +45,43 @@ var infoCmd = &cobra.Command{
 		// Get project name from directory
 		projectName := filepath.Base(baseDir)
 
+		// Review queue
+		reviewable, _ := database.ListIssues(db.ListIssuesOptions{
+			ReviewableBy: sess.ID,
+		})
+		inReview, _ := database.ListIssues(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusInReview},
+		})
+
+		// JSON output
+		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+			result := map[string]interface{}{
+				"project":         projectName,
+				"database":        ".todos/issues.db",
+				"current_session": sess.ID,
+				"issues": map[string]interface{}{
+					"total":       stats["total"],
+					"open":        stats["open"],
+					"in_progress": stats["in_progress"],
+					"blocked":     stats["blocked"],
+					"in_review":   stats["in_review"],
+					"closed":      stats["closed"],
+				},
+				"review_queue": map[string]interface{}{
+					"awaiting_review": len(inReview),
+					"you_can_review":  len(reviewable),
+				},
+				"by_type": map[string]interface{}{
+					"bug":     stats["type_bug"],
+					"feature": stats["type_feature"],
+					"task":    stats["type_task"],
+					"epic":    stats["type_epic"],
+					"chore":   stats["type_chore"],
+				},
+			}
+			return output.JSON(result)
+		}
+
 		fmt.Printf("Project: %s\n", projectName)
 		fmt.Printf("Database: .todos/issues.db\n")
 		fmt.Printf("Current Session: %s\n", sess.ID)
@@ -57,14 +94,6 @@ var infoCmd = &cobra.Command{
 		fmt.Printf("  In Review:   %d\n", stats["in_review"])
 		fmt.Printf("  Closed:      %d\n", stats["closed"])
 		fmt.Println()
-
-		// Review queue
-		reviewable, _ := database.ListIssues(db.ListIssuesOptions{
-			ReviewableBy: sess.ID,
-		})
-		inReview, _ := database.ListIssues(db.ListIssuesOptions{
-			Status: []models.Status{models.StatusInReview},
-		})
 
 		fmt.Println("Review Queue:")
 		fmt.Printf("  Awaiting review: %d\n", len(inReview))
@@ -302,6 +331,7 @@ var importCmd = &cobra.Command{
 
 		filePath := args[0]
 		dryRun, _ := cmd.Flags().GetBool("dry-run")
+		force, _ := cmd.Flags().GetBool("force")
 		format, _ := cmd.Flags().GetString("format")
 
 		// Auto-detect format from extension if not specified
@@ -320,9 +350,9 @@ var importCmd = &cobra.Command{
 		var imported int
 
 		if format == "md" {
-			imported, err = importMarkdown(database, string(data), dryRun)
+			imported, err = importMarkdown(database, string(data), dryRun, force)
 		} else {
-			imported, err = importJSON(database, data, dryRun)
+			imported, err = importJSON(database, data, dryRun, force)
 		}
 
 		if err != nil {
@@ -337,7 +367,7 @@ var importCmd = &cobra.Command{
 }
 
 // importJSON imports issues from JSON format
-func importJSON(database *db.DB, data []byte, dryRun bool) (int, error) {
+func importJSON(database *db.DB, data []byte, dryRun, force bool) (int, error) {
 	var importData []map[string]interface{}
 	if err := json.Unmarshal(data, &importData); err != nil {
 		return 0, fmt.Errorf("failed to parse JSON: %v", err)
@@ -355,8 +385,24 @@ func importJSON(database *db.DB, data []byte, dryRun bool) (int, error) {
 			continue
 		}
 
+		// Check if issue with same ID exists
+		existingID, _ := issueData["id"].(string)
+		var existing *models.Issue
+		if existingID != "" {
+			existing, _ = database.GetIssue(existingID)
+		}
+
+		if existing != nil && !force {
+			output.Warning("skipping '%s' - already exists (use --force to overwrite)", existingID)
+			continue
+		}
+
 		if dryRun {
-			fmt.Printf("[dry-run] Would import: %s\n", title)
+			if existing != nil {
+				fmt.Printf("[dry-run] Would overwrite: %s\n", existingID)
+			} else {
+				fmt.Printf("[dry-run] Would import: %s\n", title)
+			}
 			imported++
 			continue
 		}
@@ -385,13 +431,24 @@ func importJSON(database *db.DB, data []byte, dryRun bool) (int, error) {
 			}
 		}
 
-		if err := database.CreateIssue(issue); err != nil {
-			output.Warning("failed to import '%s': %v", title, err)
-			continue
+		if existing != nil && force {
+			// Update existing issue
+			issue.ID = existingID
+			issue.CreatedAt = existing.CreatedAt
+			if err := database.UpdateIssue(issue); err != nil {
+				output.Warning("failed to overwrite '%s': %v", existingID, err)
+				continue
+			}
+			fmt.Printf("OVERWRITTEN %s: %s\n", existingID, title)
+			imported++
+		} else {
+			if err := database.CreateIssue(issue); err != nil {
+				output.Warning("failed to import '%s': %v", title, err)
+				continue
+			}
+			fmt.Printf("IMPORTED %s: %s\n", issue.ID, title)
+			imported++
 		}
-
-		fmt.Printf("IMPORTED %s: %s\n", issue.ID, title)
-		imported++
 	}
 
 	return imported, nil
@@ -406,7 +463,7 @@ func importJSON(database *db.DB, data []byte, dryRun bool) (int, error) {
 //   - Points: 3
 //   - Labels: label1, label2
 //   Description text
-func importMarkdown(database *db.DB, data string, dryRun bool) (int, error) {
+func importMarkdown(database *db.DB, data string, dryRun, force bool) (int, error) {
 	scanner := bufio.NewScanner(strings.NewReader(data))
 	imported := 0
 
@@ -415,6 +472,8 @@ func importMarkdown(database *db.DB, data string, dryRun bool) (int, error) {
 	inDescription := false
 
 	// Regex patterns
+	// Match "## td-xxxx: Title" or "## Title"
+	headerWithIDRegex := regexp.MustCompile(`^##\s+(td-[a-f0-9]+):\s*(.+)$`)
 	headerRegex := regexp.MustCompile(`^##\s+(.+)$`)
 	statusRegex := regexp.MustCompile(`^-\s*Status:\s*(.+)$`)
 	typeRegex := regexp.MustCompile(`^-\s*Type:\s*(.+)$`)
@@ -422,16 +481,42 @@ func importMarkdown(database *db.DB, data string, dryRun bool) (int, error) {
 	pointsRegex := regexp.MustCompile(`^-\s*Points:\s*(\d+)$`)
 	labelsRegex := regexp.MustCompile(`^-\s*Labels:\s*(.+)$`)
 
+	var currentIssueID string
+
 	saveIssue := func() {
 		if currentIssue != nil {
 			if len(descLines) > 0 {
 				currentIssue.Description = strings.TrimSpace(strings.Join(descLines, "\n"))
 			}
 
+			// Check for existing issue by ID
+			var existing *models.Issue
+			if currentIssueID != "" {
+				existing, _ = database.GetIssue(currentIssueID)
+			}
+
+			if existing != nil && !force {
+				output.Warning("skipping '%s' - already exists (use --force to overwrite)", currentIssueID)
+				return
+			}
+
 			if dryRun {
-				fmt.Printf("[dry-run] Would import: %s (%s, %s)\n",
-					currentIssue.Title, currentIssue.Type, currentIssue.Priority)
+				if existing != nil {
+					fmt.Printf("[dry-run] Would overwrite: %s\n", currentIssueID)
+				} else {
+					fmt.Printf("[dry-run] Would import: %s (%s, %s)\n",
+						currentIssue.Title, currentIssue.Type, currentIssue.Priority)
+				}
 				imported++
+			} else if existing != nil && force {
+				currentIssue.ID = currentIssueID
+				currentIssue.CreatedAt = existing.CreatedAt
+				if err := database.UpdateIssue(currentIssue); err != nil {
+					output.Warning("failed to overwrite '%s': %v", currentIssueID, err)
+				} else {
+					fmt.Printf("OVERWRITTEN %s: %s\n", currentIssueID, currentIssue.Title)
+					imported++
+				}
 			} else {
 				if err := database.CreateIssue(currentIssue); err != nil {
 					output.Warning("failed to import '%s': %v", currentIssue.Title, err)
@@ -446,9 +531,24 @@ func importMarkdown(database *db.DB, data string, dryRun bool) (int, error) {
 	for scanner.Scan() {
 		line := scanner.Text()
 
-		// Check for new issue header
+		// Check for new issue header with ID (## td-xxxx: Title)
+		if matches := headerWithIDRegex.FindStringSubmatch(line); matches != nil {
+			saveIssue()
+			currentIssueID = matches[1]
+			currentIssue = &models.Issue{
+				Title:    matches[2],
+				Type:     models.TypeTask,
+				Priority: models.PriorityP2,
+			}
+			descLines = nil
+			inDescription = false
+			continue
+		}
+
+		// Check for new issue header without ID (## Title)
 		if matches := headerRegex.FindStringSubmatch(line); matches != nil {
 			saveIssue()
+			currentIssueID = ""
 			currentIssue = &models.Issue{
 				Title:    matches[1],
 				Type:     models.TypeTask,
@@ -518,9 +618,43 @@ func importMarkdown(database *db.DB, data string, dryRun bool) (int, error) {
 
 var upgradeCmd = &cobra.Command{
 	Use:   "upgrade",
-	Short: "Update td and run migrations",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("td is already at the latest version")
+	Short: "Run database migrations",
+	Long:  `Runs any pending database migrations to update the schema.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		currentVersion, _ := database.GetSchemaVersion()
+		fmt.Printf("Current schema version: %d\n", currentVersion)
+		fmt.Printf("Latest schema version: %d\n", db.SchemaVersion)
+
+		if currentVersion >= db.SchemaVersion {
+			fmt.Println("Database is up to date. No migrations needed.")
+			return nil
+		}
+
+		migrationsRun, err := database.RunMigrations()
+		if err != nil {
+			output.Error("migration failed: %v", err)
+			return err
+		}
+
+		if migrationsRun > 0 {
+			fmt.Printf("Successfully ran %d migration(s)\n", migrationsRun)
+		} else {
+			fmt.Println("Database is up to date. No migrations needed.")
+		}
+
+		newVersion, _ := database.GetSchemaVersion()
+		fmt.Printf("Schema version: %d\n", newVersion)
+
+		return nil
 	},
 }
 
@@ -551,6 +685,8 @@ func init() {
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(upgradeCmd)
 	rootCmd.AddCommand(helpCmd)
+
+	infoCmd.Flags().Bool("json", false, "JSON output")
 
 	exportCmd.Flags().String("format", "json", "Export format: json or md")
 	exportCmd.Flags().StringP("output", "o", "", "Output file (default: stdout)")

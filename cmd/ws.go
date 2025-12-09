@@ -680,6 +680,28 @@ var wsShowCmd = &cobra.Command{
 					fmt.Printf("    - %s\n", item)
 				}
 			}
+			fmt.Println()
+		}
+
+		// Show full session log if --full flag
+		if full, _ := cmd.Flags().GetBool("full"); full {
+			fmt.Println("FULL SESSION LOG:")
+			for _, id := range issueIDs {
+				logs, _ := database.GetLogs(id, 0)
+				for _, log := range logs {
+					if log.WorkSessionID == wsID {
+						typeLabel := ""
+						if log.Type != models.LogTypeProgress {
+							typeLabel = fmt.Sprintf(" [%s]", log.Type)
+						}
+						fmt.Printf("  [%s] %s%s %s\n",
+							log.Timestamp.Format("2006-01-02 15:04"),
+							id,
+							typeLabel,
+							log.Message)
+					}
+				}
+			}
 		}
 
 		return nil
@@ -762,4 +784,6 @@ func init() {
 	wsHandoffCmd.Flags().StringArray("uncertain", nil, "Uncertainty (repeatable)")
 	wsHandoffCmd.Flags().Bool("continue", false, "Keep session open after handoff")
 	wsHandoffCmd.Flags().Bool("review", false, "Submit all tagged issues for review")
+
+	wsShowCmd.Flags().Bool("full", false, "Show complete session log")
 }

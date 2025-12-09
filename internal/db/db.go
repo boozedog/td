@@ -71,6 +71,66 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
+// GetSchemaVersion returns the current schema version from the database
+func (db *DB) GetSchemaVersion() (int, error) {
+	var version string
+	err := db.conn.QueryRow("SELECT value FROM schema_info WHERE key = 'version'").Scan(&version)
+	if err == sql.ErrNoRows {
+		// No version set, assume version 0 (pre-migration)
+		return 0, nil
+	}
+	if err != nil {
+		// Table might not exist yet
+		return 0, nil
+	}
+	var v int
+	fmt.Sscanf(version, "%d", &v)
+	return v, nil
+}
+
+// SetSchemaVersion sets the schema version in the database
+func (db *DB) SetSchemaVersion(version int) error {
+	_, err := db.conn.Exec(`INSERT OR REPLACE INTO schema_info (key, value) VALUES ('version', ?)`,
+		fmt.Sprintf("%d", version))
+	return err
+}
+
+// RunMigrations runs any pending database migrations
+func (db *DB) RunMigrations() (int, error) {
+	// Ensure schema_info table exists
+	_, err := db.conn.Exec(`CREATE TABLE IF NOT EXISTS schema_info (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)
+	if err != nil {
+		return 0, fmt.Errorf("create schema_info: %w", err)
+	}
+
+	currentVersion, err := db.GetSchemaVersion()
+	if err != nil {
+		return 0, fmt.Errorf("get schema version: %w", err)
+	}
+
+	migrationsRun := 0
+	for _, migration := range Migrations {
+		if migration.Version > currentVersion {
+			if _, err := db.conn.Exec(migration.SQL); err != nil {
+				return migrationsRun, fmt.Errorf("migration %d (%s): %w", migration.Version, migration.Description, err)
+			}
+			if err := db.SetSchemaVersion(migration.Version); err != nil {
+				return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+			}
+			migrationsRun++
+		}
+	}
+
+	// If no migrations and version is 0, set to current schema version
+	if currentVersion == 0 {
+		if err := db.SetSchemaVersion(SchemaVersion); err != nil {
+			return migrationsRun, err
+		}
+	}
+
+	return migrationsRun, nil
+}
+
 // generateID generates a unique issue ID
 func generateID() (string, error) {
 	bytes := make([]byte, 2) // 4 hex characters
