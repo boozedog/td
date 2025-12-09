@@ -658,24 +658,6 @@ var upgradeCmd = &cobra.Command{
 	},
 }
 
-var helpCmd = &cobra.Command{
-	Use:   "help [command]",
-	Short: "Help about any command",
-	Run: func(cmd *cobra.Command, args []string) {
-		if len(args) == 0 {
-			rootCmd.Help()
-			return
-		}
-		// Find the command
-		c, _, err := rootCmd.Find(args)
-		if err != nil {
-			fmt.Printf("Unknown command: %s\n", args[0])
-			return
-		}
-		c.Help()
-	},
-}
-
 func init() {
 	rootCmd.AddCommand(infoCmd)
 	rootCmd.AddCommand(versionCmd)
@@ -684,7 +666,6 @@ func init() {
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(importCmd)
 	rootCmd.AddCommand(upgradeCmd)
-	rootCmd.AddCommand(helpCmd)
 
 	infoCmd.Flags().Bool("json", false, "JSON output")
 
