@@ -163,6 +163,39 @@ type Config struct {
 	ActiveWorkSession string `json:"active_work_session,omitempty"`
 }
 
+// ActionType represents the type of action that was performed
+type ActionType string
+
+const (
+	ActionCreate       ActionType = "create"
+	ActionUpdate       ActionType = "update"
+	ActionDelete       ActionType = "delete"
+	ActionRestore      ActionType = "restore"
+	ActionStart        ActionType = "start"
+	ActionReview       ActionType = "review"
+	ActionApprove      ActionType = "approve"
+	ActionReject       ActionType = "reject"
+	ActionBlock        ActionType = "block"
+	ActionUnblock      ActionType = "unblock"
+	ActionAddDep       ActionType = "add_dependency"
+	ActionRemoveDep    ActionType = "remove_dependency"
+	ActionLinkFile     ActionType = "link_file"
+	ActionUnlinkFile   ActionType = "unlink_file"
+)
+
+// ActionLog represents a logged action that can be undone
+type ActionLog struct {
+	ID           int64      `json:"id"`
+	SessionID    string     `json:"session_id"`
+	ActionType   ActionType `json:"action_type"`
+	EntityType   string     `json:"entity_type"` // issue, dependency, file_link
+	EntityID     string     `json:"entity_id"`
+	PreviousData string     `json:"previous_data"` // JSON snapshot before action
+	NewData      string     `json:"new_data"`      // JSON snapshot after action
+	Timestamp    time.Time  `json:"timestamp"`
+	Undone       bool       `json:"undone"`
+}
+
 // ValidPoints returns valid Fibonacci story points
 func ValidPoints() []int {
 	return []int{1, 2, 3, 5, 8, 13, 21}

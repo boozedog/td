@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
+	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -88,6 +90,19 @@ var createCmd = &cobra.Command{
 		if err := database.CreateIssue(issue); err != nil {
 			output.Error("failed to create issue: %v", err)
 			return err
+		}
+
+		// Log action for undo
+		sess, _ := session.Get(baseDir)
+		if sess != nil {
+			newData, _ := json.Marshal(issue)
+			database.LogAction(&models.ActionLog{
+				SessionID:  sess.ID,
+				ActionType: models.ActionCreate,
+				EntityType: "issue",
+				EntityID:   issue.ID,
+				NewData:    string(newData),
+			})
 		}
 
 		// Handle dependencies

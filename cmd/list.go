@@ -77,6 +77,16 @@ var listCmd = &cobra.Command{
 			opts.ReviewableBy = sess.ID
 		}
 
+		// Mine filter (issues where current session is implementer)
+		if mine, _ := cmd.Flags().GetBool("mine"); mine {
+			sess, err := session.Get(baseDir)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			opts.Implementer = sess.ID
+		}
+
 		// Date filters
 		if created, _ := cmd.Flags().GetString("created"); created != "" {
 			opts.CreatedAfter, opts.CreatedBefore = parseDateFilter(created)
@@ -408,6 +418,7 @@ func init() {
 	listCmd.Flags().String("implementer", "", "Filter by implementer session")
 	listCmd.Flags().String("reviewer", "", "Filter by reviewer session")
 	listCmd.Flags().Bool("reviewable", false, "Show issues you can review")
+	listCmd.Flags().BoolP("mine", "m", false, "Show issues where you are the implementer")
 	listCmd.Flags().String("created", "", "Created date filter")
 	listCmd.Flags().String("updated", "", "Updated date filter")
 	listCmd.Flags().String("closed", "", "Closed date filter")

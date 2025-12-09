@@ -951,3 +951,95 @@ func (db *DB) GetIssueSessionLog(sessionID string) ([]string, error) {
 	}
 	return ids, nil
 }
+
+// LogAction records an action for undo support
+func (db *DB) LogAction(action *models.ActionLog) error {
+	action.Timestamp = time.Now()
+
+	result, err := db.conn.Exec(`
+		INSERT INTO action_log (session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+	`, action.SessionID, action.ActionType, action.EntityType, action.EntityID, action.PreviousData, action.NewData, action.Timestamp)
+
+	if err != nil {
+		return err
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	action.ID = id
+
+	return nil
+}
+
+// GetLastAction returns the most recent undoable action for a session
+func (db *DB) GetLastAction(sessionID string) (*models.ActionLog, error) {
+	var action models.ActionLog
+	var undone int
+
+	err := db.conn.QueryRow(`
+		SELECT id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
+		FROM action_log
+		WHERE session_id = ? AND undone = 0
+		ORDER BY timestamp DESC LIMIT 1
+	`, sessionID).Scan(
+		&action.ID, &action.SessionID, &action.ActionType, &action.EntityType,
+		&action.EntityID, &action.PreviousData, &action.NewData, &action.Timestamp, &undone,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	action.Undone = undone == 1
+	return &action, nil
+}
+
+// MarkActionUndone marks an action as undone
+func (db *DB) MarkActionUndone(actionID int64) error {
+	_, err := db.conn.Exec(`UPDATE action_log SET undone = 1 WHERE id = ?`, actionID)
+	return err
+}
+
+// GetRecentActions returns recent actions for a session
+func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog, error) {
+	query := `
+		SELECT id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
+		FROM action_log
+		WHERE session_id = ?
+		ORDER BY timestamp DESC`
+	args := []interface{}{sessionID}
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var actions []models.ActionLog
+	for rows.Next() {
+		var action models.ActionLog
+		var undone int
+		err := rows.Scan(
+			&action.ID, &action.SessionID, &action.ActionType, &action.EntityType,
+			&action.EntityID, &action.PreviousData, &action.NewData, &action.Timestamp, &undone,
+		)
+		if err != nil {
+			return nil, err
+		}
+		action.Undone = undone == 1
+		actions = append(actions, action)
+	}
+
+	return actions, nil
+}

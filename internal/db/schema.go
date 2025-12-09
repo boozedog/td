@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 const schema = `
 -- Issues table
@@ -154,4 +154,23 @@ type Migration struct {
 // Migrations is the list of all database migrations in order
 var Migrations = []Migration{
 	// Version 1 is the initial schema - no migration needed
+	{
+		Version:     2,
+		Description: "Add action_log table for undo support",
+		SQL: `
+CREATE TABLE IF NOT EXISTS action_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    previous_data TEXT DEFAULT '',
+    new_data TEXT DEFAULT '',
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    undone INTEGER DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_action_log_session ON action_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_action_log_timestamp ON action_log(timestamp);
+`,
+	},
 }

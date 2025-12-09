@@ -64,3 +64,16 @@ SQLite at `.todos/issues.db`. Schema in `internal/db/schema.go`. Tables:
 - `work_sessions` + `work_session_issues`: Multi-issue sessions
 - `issue_dependencies`: Block/depends-on relationships
 - `issue_files`: File-to-issue links with change tracking
+- `action_log`: Undo support - tracks reversible actions
+
+## Undo Support
+
+Commands that modify data should log actions for undo via `database.LogAction()`. When adding new commands or modifying existing ones that change issue state, dependencies, or file links:
+
+1. Capture previous state with `json.Marshal(issue)` before changes
+2. After successful update, log the action with `database.LogAction(&models.ActionLog{...})`
+3. Use appropriate `ActionType` from `models` package
+
+**Currently supported:** create, delete, update, start, review, approve, reject
+
+**See `cmd/undo.go`** for undo logic and `internal/models/models.go` for ActionType definitions.

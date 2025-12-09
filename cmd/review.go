@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/marcus/td/internal/config"
@@ -72,6 +73,9 @@ var reviewCmd = &cobra.Command{
 			return fmt.Errorf("handoff required")
 		}
 
+		// Capture previous state for undo
+		prevData, _ := json.Marshal(issue)
+
 		// Update issue
 		issue.Status = models.StatusInReview
 		if issue.ImplementerSession == "" {
@@ -82,6 +86,17 @@ var reviewCmd = &cobra.Command{
 			output.Error("failed to update issue: %v", err)
 			return err
 		}
+
+		// Log action for undo
+		newData, _ := json.Marshal(issue)
+		database.LogAction(&models.ActionLog{
+			SessionID:    sess.ID,
+			ActionType:   models.ActionReview,
+			EntityType:   "issue",
+			EntityID:     issueID,
+			PreviousData: string(prevData),
+			NewData:      string(newData),
+		})
 
 		// Log
 		reason, _ := cmd.Flags().GetString("reason")
@@ -184,6 +199,9 @@ Supports bulk operations:
 				continue
 			}
 
+			// Capture previous state for undo
+			prevData, _ := json.Marshal(issue)
+
 			// Update issue
 			issue.Status = models.StatusClosed
 			issue.ReviewerSession = sess.ID
@@ -208,6 +226,17 @@ Supports bulk operations:
 				SessionID: sess.ID,
 				Message:   logMsg,
 				Type:      models.LogTypeProgress,
+			})
+
+			// Log action for undo
+			newData, _ := json.Marshal(issue)
+			database.LogAction(&models.ActionLog{
+				SessionID:    sess.ID,
+				ActionType:   models.ActionApprove,
+				EntityType:   "issue",
+				EntityID:     issueID,
+				PreviousData: string(prevData),
+				NewData:      string(newData),
 			})
 
 			// Clear focus if this was the focused issue
@@ -271,6 +300,9 @@ Supports bulk operations:
 				continue
 			}
 
+			// Capture previous state for undo
+			prevData, _ := json.Marshal(issue)
+
 			// Update issue
 			issue.Status = models.StatusInProgress
 
@@ -296,6 +328,17 @@ Supports bulk operations:
 				SessionID: sess.ID,
 				Message:   logMsg,
 				Type:      models.LogTypeProgress,
+			})
+
+			// Log action for undo
+			newData, _ := json.Marshal(issue)
+			database.LogAction(&models.ActionLog{
+				SessionID:    sess.ID,
+				ActionType:   models.ActionReject,
+				EntityType:   "issue",
+				EntityID:     issueID,
+				PreviousData: string(prevData),
+				NewData:      string(newData),
 			})
 
 			if jsonOutput {

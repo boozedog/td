@@ -136,6 +136,25 @@ var currentCmd = &cobra.Command{
 					fmt.Printf("  %s  %s  %s  %dpts  (impl: %s)\n",
 						issue.ID, issue.Title, issue.Priority, issue.Points, issue.ImplementerSession)
 				}
+				fmt.Println()
+			}
+		}
+
+		// Get issues this session submitted for review
+		submittedForReview, _ := database.ListIssues(db.ListIssuesOptions{
+			Status:      []models.Status{models.StatusInReview},
+			Implementer: sess.ID,
+		})
+
+		if len(submittedForReview) > 0 {
+			if jsonOutput {
+				result["submitted_for_review"] = submittedForReview
+			} else {
+				fmt.Println("SUBMITTED FOR REVIEW (by you):")
+				for _, issue := range submittedForReview {
+					fmt.Printf("  %s  %s  %s  %dpts\n",
+						issue.ID, issue.Title, issue.Priority, issue.Points)
+				}
 			}
 		}
 

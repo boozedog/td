@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/marcus/td/internal/config"
@@ -49,6 +50,9 @@ var startCmd = &cobra.Command{
 			}
 		}
 
+		// Capture previous state for undo
+		prevData, _ := json.Marshal(issue)
+
 		// Update issue
 		issue.Status = models.StatusInProgress
 		issue.ImplementerSession = sess.ID
@@ -57,6 +61,17 @@ var startCmd = &cobra.Command{
 			output.Error("failed to update issue: %v", err)
 			return err
 		}
+
+		// Log action for undo
+		newData, _ := json.Marshal(issue)
+		database.LogAction(&models.ActionLog{
+			SessionID:    sess.ID,
+			ActionType:   models.ActionStart,
+			EntityType:   "issue",
+			EntityID:     issueID,
+			PreviousData: string(prevData),
+			NewData:      string(newData),
+		})
 
 		// Set focus
 		config.SetFocus(baseDir, issueID)
