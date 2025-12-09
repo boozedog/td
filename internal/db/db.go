@@ -208,6 +208,8 @@ type ListIssuesOptions struct {
 	CreatedBefore    time.Time
 	UpdatedAfter     time.Time
 	UpdatedBefore    time.Time
+	ClosedAfter      time.Time
+	ClosedBefore     time.Time
 	SortBy           string
 	SortDesc         bool
 	Limit            int
@@ -339,6 +341,14 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	if !opts.UpdatedBefore.IsZero() {
 		query += " AND updated_at <= ?"
 		args = append(args, opts.UpdatedBefore)
+	}
+	if !opts.ClosedAfter.IsZero() {
+		query += " AND closed_at >= ?"
+		args = append(args, opts.ClosedAfter)
+	}
+	if !opts.ClosedBefore.IsZero() {
+		query += " AND closed_at <= ?"
+		args = append(args, opts.ClosedBefore)
 	}
 
 	// Sorting

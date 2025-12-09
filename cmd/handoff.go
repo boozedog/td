@@ -109,9 +109,12 @@ Or use flags:
 				fmt.Printf("Git: %s (%s) +%d commits since start\n",
 					gitState.CommitSHA[:7], gitState.Branch, commits)
 
-				// Show changed files
-				changes := git.FileChange{}
-				_ = changes // Would calculate file changes here
+				// Show diff stats
+				diffStats, err := git.GetDiffStatsSince(startSnapshot.CommitSHA)
+				if err == nil && diffStats.FilesChanged > 0 {
+					fmt.Printf("Changed: %d files (+%d -%d)\n",
+						diffStats.FilesChanged, diffStats.Additions, diffStats.Deletions)
+				}
 			}
 		}
 

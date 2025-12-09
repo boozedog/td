@@ -84,6 +84,9 @@ var listCmd = &cobra.Command{
 		if updated, _ := cmd.Flags().GetString("updated"); updated != "" {
 			opts.UpdatedAfter, opts.UpdatedBefore = parseDateFilter(updated)
 		}
+		if closed, _ := cmd.Flags().GetString("closed"); closed != "" {
+			opts.ClosedAfter, opts.ClosedBefore = parseDateFilter(closed)
+		}
 
 		// Sorting
 		opts.SortBy, _ = cmd.Flags().GetString("sort")
@@ -407,6 +410,7 @@ func init() {
 	listCmd.Flags().Bool("reviewable", false, "Show issues you can review")
 	listCmd.Flags().String("created", "", "Created date filter")
 	listCmd.Flags().String("updated", "", "Updated date filter")
+	listCmd.Flags().String("closed", "", "Closed date filter")
 	listCmd.Flags().String("sort", "", "Sort by field")
 	listCmd.Flags().BoolP("reverse", "r", false, "Reverse sort order")
 	listCmd.Flags().IntP("limit", "n", 50, "Limit results")

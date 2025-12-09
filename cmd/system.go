@@ -117,6 +117,10 @@ var whoamiCmd = &cobra.Command{
 		fmt.Printf("SESSION: %s\n", sessionLabel)
 		fmt.Printf("STARTED: %s\n", sess.StartedAt.Format("2006-01-02T15:04:05Z"))
 
+		if sess.PreviousSessionID != "" {
+			fmt.Printf("PREVIOUS SESSION: %s\n", sess.PreviousSessionID)
+		}
+
 		if len(touchedIssues) > 0 {
 			fmt.Printf("ISSUES TOUCHED: %s\n", joinItems(touchedIssues))
 		}
@@ -127,10 +131,54 @@ var whoamiCmd = &cobra.Command{
 
 var sessionNameCmd = &cobra.Command{
 	Use:   "session [name]",
-	Short: "Name/tag the current session",
-	Args:  cobra.ExactArgs(1),
+	Short: "Name/tag the current session, or create new session with --new",
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+
+		newSession, _ := cmd.Flags().GetBool("new")
+
+		if newSession {
+			// Force create a new session
+			sess, err := session.ForceNewSession(baseDir)
+			if err != nil {
+				output.Error("failed to create session: %v", err)
+				return err
+			}
+
+			if sess.PreviousSessionID != "" {
+				fmt.Printf("NEW SESSION: %s (previous: %s)\n", sess.ID, sess.PreviousSessionID)
+			} else {
+				fmt.Printf("NEW SESSION: %s\n", sess.ID)
+			}
+
+			// Set name if provided
+			if len(args) > 0 {
+				sess.Name = args[0]
+				if err := session.Save(baseDir, sess); err != nil {
+					output.Error("failed to save session name: %v", err)
+					return err
+				}
+				fmt.Printf("SESSION NAMED \"%s\"\n", args[0])
+			}
+			return nil
+		}
+
+		// Name existing session
+		if len(args) == 0 {
+			// Just show current session
+			sess, err := session.Get(baseDir)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			sessionLabel := sess.ID
+			if sess.Name != "" {
+				sessionLabel = fmt.Sprintf("%s (%s)", sess.ID, sess.Name)
+			}
+			fmt.Printf("SESSION: %s\n", sessionLabel)
+			return nil
+		}
 
 		name := args[0]
 
@@ -365,4 +413,6 @@ func init() {
 	importCmd.Flags().String("format", "json", "Import format: json or md")
 	importCmd.Flags().Bool("dry-run", false, "Preview changes")
 	importCmd.Flags().Bool("force", false, "Overwrite existing")
+
+	sessionNameCmd.Flags().Bool("new", false, "Force create a new session")
 }

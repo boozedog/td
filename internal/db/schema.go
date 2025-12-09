@@ -112,6 +112,16 @@ CREATE TABLE IF NOT EXISTS comments (
     FOREIGN KEY (issue_id) REFERENCES issues(id)
 );
 
+-- Sessions table for tracking session history
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    name TEXT DEFAULT '',
+    context_id TEXT NOT NULL,
+    previous_session_id TEXT DEFAULT '',
+    started_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_issues_status ON issues(status);
 CREATE INDEX IF NOT EXISTS idx_issues_priority ON issues(priority);

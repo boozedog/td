@@ -193,7 +193,8 @@ var usageCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, err := session.Get(baseDir)
+		// Use GetOrCreate to detect context changes and auto-rotate sessions
+		sess, err := session.GetOrCreate(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -245,6 +246,17 @@ var usageCmd = &cobra.Command{
 		// Text output
 		fmt.Println("You have access to `td`, a local task management CLI.")
 		fmt.Println()
+
+		// Show NEW SESSION notice if session just rotated
+		if sess.IsNew && sess.PreviousSessionID != "" {
+			fmt.Printf("NEW SESSION: %s (previous: %s)\n", sess.ID, sess.PreviousSessionID)
+			fmt.Println("  You are a new context. You can now review issues implemented by the previous session.")
+			fmt.Println()
+		} else if sess.IsNew {
+			fmt.Printf("NEW SESSION: %s\n", sess.ID)
+			fmt.Println()
+		}
+
 		fmt.Printf("CURRENT SESSION: %s\n", sess.ID)
 
 		if activeWS != nil {

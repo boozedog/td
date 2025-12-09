@@ -127,6 +127,54 @@ func parseStatOutput(output string) []FileChange {
 	return changes
 }
 
+// DiffStats summarizes git diff statistics
+type DiffStats struct {
+	FilesChanged int
+	Additions    int
+	Deletions    int
+}
+
+// GetDiffStatsSince returns diff statistics since a given SHA
+func GetDiffStatsSince(sha string) (*DiffStats, error) {
+	output, err := runGit("diff", "--shortstat", sha+"..HEAD")
+	if err != nil {
+		return nil, err
+	}
+
+	stats := &DiffStats{}
+
+	// Parse format: "3 files changed, 45 insertions(+), 12 deletions(-)"
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return stats, nil
+	}
+
+	parts := strings.Split(output, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		fields := strings.Fields(part)
+		if len(fields) < 2 {
+			continue
+		}
+
+		count, err := strconv.Atoi(fields[0])
+		if err != nil {
+			continue
+		}
+
+		switch {
+		case strings.Contains(part, "file"):
+			stats.FilesChanged = count
+		case strings.Contains(part, "insertion"):
+			stats.Additions = count
+		case strings.Contains(part, "deletion"):
+			stats.Deletions = count
+		}
+	}
+
+	return stats, nil
+}
+
 // IsRepo checks if we're in a git repository
 func IsRepo() bool {
 	_, err := runGit("rev-parse", "--git-dir")

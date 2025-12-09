@@ -1,7 +1,10 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -10,6 +13,38 @@ import (
 	"github.com/marcus/td/internal/output"
 	"github.com/spf13/cobra"
 )
+
+// computeFileSHA computes SHA256 hash of a file
+func computeFileSHA(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// countFileLines counts the number of lines in a file
+func countFileLines(path string) int {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+
+	lines := 1
+	for _, b := range data {
+		if b == '\n' {
+			lines++
+		}
+	}
+	return lines
+}
 
 var linkCmd = &cobra.Command{
 	Use:   "link [issue-id] [file-pattern]",
@@ -100,8 +135,14 @@ var linkCmd = &cobra.Command{
 			// Get absolute path
 			absPath, _ := filepath.Abs(file)
 
-			// For now, we don't compute SHA of the file
-			if err := database.LinkFile(issueID, absPath, role, ""); err != nil {
+			// Compute file SHA for change detection
+			sha, err := computeFileSHA(absPath)
+			if err != nil {
+				output.Warning("failed to compute SHA for %s: %v", file, err)
+				sha = "" // Store empty SHA, will be treated as "new"
+			}
+
+			if err := database.LinkFile(issueID, absPath, role, sha); err != nil {
 				output.Warning("failed to link %s: %v", file, err)
 				continue
 			}
@@ -228,14 +269,31 @@ var filesCmd = &cobra.Command{
 
 			fmt.Printf("%s:\n", string(role))
 			for _, f := range roleFiles {
-				// Check file status
+				// Check file status by comparing SHA
 				status := "[unchanged]"
-				_, err := os.Stat(f.FilePath)
+				lineStats := ""
+
+				info, err := os.Stat(f.FilePath)
 				if os.IsNotExist(err) {
 					status = "[deleted]"
 				} else if err == nil {
-					// Could check if modified here
-					status = "[exists]"
+					if f.LinkedSHA == "" {
+						// No SHA stored - treat as new file
+						status = "[new]"
+						lineStats = fmt.Sprintf("+%d", countFileLines(f.FilePath))
+					} else {
+						// Compare SHA
+						currentSHA, err := computeFileSHA(f.FilePath)
+						if err != nil {
+							status = "[error]"
+						} else if currentSHA != f.LinkedSHA {
+							status = "[modified]"
+							// Compute line diff (simplified: just show current line count)
+							lines := countFileLines(f.FilePath)
+							lineStats = fmt.Sprintf("~%d lines", lines)
+						}
+					}
+					_ = info // Silence unused warning
 				}
 
 				if changedOnly && status == "[unchanged]" {
@@ -248,7 +306,11 @@ var filesCmd = &cobra.Command{
 					displayPath = rel
 				}
 
-				fmt.Printf("  %-40s %s\n", displayPath, status)
+				if lineStats != "" {
+					fmt.Printf("  %-40s %-12s %s\n", displayPath, status, lineStats)
+				} else {
+					fmt.Printf("  %-40s %s\n", displayPath, status)
+				}
 			}
 			fmt.Println()
 		}
