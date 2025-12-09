@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 2
+const SchemaVersion = 3
 
 const schema = `
 -- Issues table
@@ -28,13 +28,12 @@ CREATE TABLE IF NOT EXISTS issues (
 -- Logs table
 CREATE TABLE IF NOT EXISTS logs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    issue_id TEXT NOT NULL,
+    issue_id TEXT DEFAULT '',
     session_id TEXT NOT NULL,
     work_session_id TEXT DEFAULT '',
     message TEXT NOT NULL,
     type TEXT NOT NULL DEFAULT 'progress',
-    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (issue_id) REFERENCES issues(id)
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Handoffs table
@@ -171,6 +170,27 @@ CREATE TABLE IF NOT EXISTS action_log (
 );
 CREATE INDEX IF NOT EXISTS idx_action_log_session ON action_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_action_log_timestamp ON action_log(timestamp);
+`,
+	},
+	{
+		Version:     3,
+		Description: "Allow work session logs without issue_id",
+		SQL: `
+-- SQLite doesn't support ALTER COLUMN, so we need to recreate the table
+CREATE TABLE logs_new (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    issue_id TEXT DEFAULT '',
+    session_id TEXT NOT NULL,
+    work_session_id TEXT DEFAULT '',
+    message TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'progress',
+    timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+INSERT INTO logs_new SELECT * FROM logs;
+DROP TABLE logs;
+ALTER TABLE logs_new RENAME TO logs;
+CREATE INDEX IF NOT EXISTS idx_logs_issue ON logs(issue_id);
+CREATE INDEX IF NOT EXISTS idx_logs_work_session ON logs(work_session_id);
 `,
 	},
 }

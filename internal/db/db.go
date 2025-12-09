@@ -487,11 +487,19 @@ func (db *DB) AddLog(log *models.Log) error {
 	return nil
 }
 
-// GetLogs retrieves logs for an issue
+// GetLogs retrieves logs for an issue, including work session logs
 func (db *DB) GetLogs(issueID string, limit int) ([]models.Log, error) {
-	query := `SELECT id, issue_id, session_id, work_session_id, message, type, timestamp
-	          FROM logs WHERE issue_id = ? ORDER BY timestamp DESC`
-	args := []interface{}{issueID}
+	// Get logs that are either:
+	// 1. Directly assigned to this issue (issue_id = ?)
+	// 2. Work session logs (issue_id = '') from sessions where this issue is tagged
+	query := `SELECT l.id, l.issue_id, l.session_id, l.work_session_id, l.message, l.type, l.timestamp
+	          FROM logs l
+	          WHERE l.issue_id = ?
+	          OR (l.issue_id = '' AND l.work_session_id IN (
+	              SELECT work_session_id FROM work_session_issues WHERE issue_id = ?
+	          ))
+	          ORDER BY l.timestamp DESC`
+	args := []interface{}{issueID, issueID}
 
 	if limit > 0 {
 		query += " LIMIT ?"

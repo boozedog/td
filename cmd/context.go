@@ -5,209 +5,11 @@ import (
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
-	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
-
-var contextCmd = &cobra.Command{
-	Use:   "context [issue-id]",
-	Short: "Generate contextual summary for resuming work",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		baseDir := getBaseDir()
-
-		database, err := db.Open(baseDir)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-		defer database.Close()
-
-		// Get issue ID from args, --focused flag, or current focus
-		issueID := ""
-		if len(args) > 0 {
-			issueID = args[0]
-		} else if focused, _ := cmd.Flags().GetBool("focused"); focused {
-			issueID, _ = config.GetFocus(baseDir)
-			if issueID == "" {
-				output.Error("no focused issue (use td focus <id> to set one)")
-				return fmt.Errorf("no focused issue")
-			}
-		} else {
-			issueID, _ = config.GetFocus(baseDir)
-		}
-
-		if issueID == "" {
-			output.Error("no issue specified and no focused issue (use --focused or provide an ID)")
-			return fmt.Errorf("no issue specified")
-		}
-
-		issue, err := database.GetIssue(issueID)
-		if err != nil {
-			output.Error("%v", err)
-			return err
-		}
-
-		jsonOutput, _ := cmd.Flags().GetBool("json")
-		full, _ := cmd.Flags().GetBool("full")
-
-		// Get handoff
-		handoff, _ := database.GetLatestHandoff(issueID)
-
-		// Get logs
-		logLimit := 5
-		if full {
-			logLimit = 0
-		}
-		logs, _ := database.GetLogs(issueID, logLimit)
-
-		// Get linked files
-		files, _ := database.GetLinkedFiles(issueID)
-
-		// Get dependencies
-		deps, _ := database.GetDependencies(issueID)
-		blocked, _ := database.GetBlockedBy(issueID)
-
-		// Get start snapshot and current git state
-		startSnapshot, _ := database.GetStartSnapshot(issueID)
-		var gitState *git.State
-		var commitsSinceStart int
-		var diffStats *git.DiffStats
-		if startSnapshot != nil {
-			gitState, _ = git.GetState()
-			commitsSinceStart, _ = git.GetCommitsSince(startSnapshot.CommitSHA)
-			diffStats, _ = git.GetDiffStatsSince(startSnapshot.CommitSHA)
-		}
-
-		if jsonOutput {
-			result := map[string]interface{}{
-				"issue":      issue,
-				"handoff":    handoff,
-				"logs":       logs,
-				"files":      files,
-				"depends_on": deps,
-				"blocks":     blocked,
-			}
-			if startSnapshot != nil {
-				gitInfo := map[string]interface{}{
-					"start_commit": startSnapshot.CommitSHA,
-					"start_branch": startSnapshot.Branch,
-					"started_at":   startSnapshot.Timestamp,
-				}
-				if gitState != nil {
-					gitInfo["current_commit"] = gitState.CommitSHA
-					gitInfo["current_branch"] = gitState.Branch
-					gitInfo["commits_since_start"] = commitsSinceStart
-					gitInfo["dirty_files"] = gitState.DirtyFiles
-				}
-				if diffStats != nil {
-					gitInfo["files_changed"] = diffStats.FilesChanged
-					gitInfo["additions"] = diffStats.Additions
-					gitInfo["deletions"] = diffStats.Deletions
-				}
-				result["git"] = gitInfo
-			}
-			return output.JSON(result)
-		}
-
-		// Text output
-		fmt.Printf("CONTEXT: %s \"%s\"\n", issue.ID, issue.Title)
-		fmt.Println()
-
-		if handoff != nil {
-			fmt.Printf("LATEST HANDOFF (%s, %s):\n", handoff.SessionID, output.FormatTimeAgo(handoff.Timestamp))
-			if len(handoff.Done) > 0 {
-				fmt.Printf("  Done: %s\n", joinItems(handoff.Done))
-			}
-			if len(handoff.Remaining) > 0 {
-				fmt.Printf("  Remaining: %s\n", joinItems(handoff.Remaining))
-			}
-			if len(handoff.Decisions) > 0 {
-				fmt.Printf("  Decisions: %s\n", joinItems(handoff.Decisions))
-			}
-			if len(handoff.Uncertain) > 0 {
-				fmt.Printf("  Uncertain: %s\n", joinItems(handoff.Uncertain))
-			}
-			fmt.Println()
-		}
-
-		if len(files) > 0 {
-			fmt.Println("FILES TOUCHED:")
-			for _, f := range files {
-				fmt.Printf("  %s\n", f.FilePath)
-			}
-			fmt.Println()
-		}
-
-		if len(logs) > 0 {
-			fmt.Printf("SESSION LOG (last %d):\n", len(logs))
-			for _, log := range logs {
-				typeLabel := ""
-				if log.Type != models.LogTypeProgress {
-					typeLabel = fmt.Sprintf(" %s:", log.Type)
-				}
-				fmt.Printf("  [%s]%s %s\n", log.Timestamp.Format("15:04"), typeLabel, log.Message)
-			}
-			fmt.Println()
-		}
-
-		// Git state
-		if startSnapshot != nil {
-			fmt.Println("GIT STATE:")
-			fmt.Printf("  Started: %s (%s) %s\n",
-				startSnapshot.CommitSHA[:7], startSnapshot.Branch, output.FormatTimeAgo(startSnapshot.Timestamp))
-			if gitState != nil {
-				fmt.Printf("  Current: %s (%s) +%d commits\n",
-					gitState.CommitSHA[:7], gitState.Branch, commitsSinceStart)
-				if diffStats != nil && diffStats.FilesChanged > 0 {
-					fmt.Printf("  Changed: %d files (+%d -%d)\n",
-						diffStats.FilesChanged, diffStats.Additions, diffStats.Deletions)
-				}
-			}
-			fmt.Println()
-		}
-
-		// Dependencies
-		if len(deps) > 0 {
-			fmt.Print("BLOCKED BY: ")
-			for i, depID := range deps {
-				if i > 0 {
-					fmt.Print(", ")
-				}
-				dep, _ := database.GetIssue(depID)
-				if dep != nil {
-					fmt.Printf("%s \"%s\"", dep.ID, dep.Title)
-				} else {
-					fmt.Print(depID)
-				}
-			}
-			fmt.Println()
-		} else {
-			fmt.Println("BLOCKED BY: nothing")
-		}
-
-		if len(blocked) > 0 {
-			fmt.Print("BLOCKS: ")
-			for i, id := range blocked {
-				if i > 0 {
-					fmt.Print(", ")
-				}
-				b, _ := database.GetIssue(id)
-				if b != nil {
-					fmt.Printf("%s \"%s\"", b.ID, b.Title)
-				} else {
-					fmt.Print(id)
-				}
-			}
-			fmt.Println()
-		}
-
-		return nil
-	},
-}
 
 var resumeCmd = &cobra.Command{
 	Use:   "resume [issue-id]",
@@ -216,8 +18,8 @@ var resumeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
-		// Show context
-		contextCmd.Run(cmd, args)
+		// Show issue details (using show command)
+		showCmd.Run(cmd, args)
 
 		// Set focus
 		config.SetFocus(baseDir, args[0])
@@ -407,6 +209,9 @@ var usageCmd = &cobra.Command{
 			fmt.Println()
 			fmt.Println("IMPORTANT: You cannot approve issues you implemented.")
 			fmt.Println("Use `td handoff` or `td ws handoff` before stopping work.")
+			fmt.Println()
+			fmt.Println("FOR LLMs: Run `td session --new` at the start of each conversation")
+			fmt.Println("to ensure fresh session tracking and enable cross-session reviews.")
 		}
 
 		return nil
@@ -428,13 +233,8 @@ func joinItems(items []string) string {
 }
 
 func init() {
-	rootCmd.AddCommand(contextCmd)
 	rootCmd.AddCommand(resumeCmd)
 	rootCmd.AddCommand(usageCmd)
-
-	contextCmd.Flags().Bool("full", false, "Include complete session history")
-	contextCmd.Flags().Bool("json", false, "JSON output")
-	contextCmd.Flags().BoolP("focused", "f", false, "Show context for focused issue")
 
 	usageCmd.Flags().Bool("compact", false, "Shorter output")
 	usageCmd.Flags().BoolP("quiet", "q", false, "Hide workflow instructions (show only actionable items)")

@@ -82,7 +82,7 @@ Use 'td undo --list' to see recent undoable actions.`,
 		}
 
 		if action == nil {
-			fmt.Println("No actions to undo")
+			fmt.Printf("No actions to undo in current session (%s)\n", sess.ID)
 			return nil
 		}
 
@@ -247,7 +247,7 @@ var lastCmd = &cobra.Command{
 		}
 
 		if len(actions) == 0 {
-			fmt.Println("No recent actions")
+			fmt.Printf("No actions in current session (%s)\n", sess.ID)
 			return nil
 		}
 

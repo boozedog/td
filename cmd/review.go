@@ -21,10 +21,13 @@ func clearFocusIfNeeded(baseDir, issueID string) {
 }
 
 var reviewCmd = &cobra.Command{
-	Use:   "review [issue-id]",
-	Short: "Submit issue for review",
-	Long:  `Submits the issue for review. Requires a handoff to be recorded first.`,
-	Args:  cobra.ExactArgs(1),
+	Use:   "review [issue-id...]",
+	Short: "Submit one or more issues for review",
+	Long: `Submits the issue(s) for review. Requires a handoff to be recorded first.
+
+Supports bulk operations:
+  td review td-abc1 td-abc2 td-abc3    # Submit multiple issues for review`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 		jsonOutput, _ := cmd.Flags().GetBool("json")
@@ -50,72 +53,83 @@ var reviewCmd = &cobra.Command{
 			return err
 		}
 
-		issueID := args[0]
-		issue, err := database.GetIssue(issueID)
-		if err != nil {
-			if jsonOutput {
-				output.JSONError(output.ErrCodeNotFound, err.Error())
-			} else {
-				output.Error("%v", err)
+		reviewed := 0
+		skipped := 0
+		for _, issueID := range args {
+			issue, err := database.GetIssue(issueID)
+			if err != nil {
+				if jsonOutput {
+					output.JSONError(output.ErrCodeNotFound, err.Error())
+				} else {
+					output.Warning("issue not found: %s", issueID)
+				}
+				skipped++
+				continue
 			}
-			return err
-		}
 
-		// Check for handoff
-		handoff, err := database.GetLatestHandoff(issueID)
-		if err != nil || handoff == nil {
-			errMsg := fmt.Sprintf("handoff required before review: %s", issueID)
-			if jsonOutput {
-				output.JSONError(output.ErrCodeHandoffRequired, errMsg)
-			} else {
-				output.Error("%s", errMsg)
+			// Check for handoff
+			handoff, err := database.GetLatestHandoff(issueID)
+			if err != nil || handoff == nil {
+				errMsg := fmt.Sprintf("handoff required before review: %s", issueID)
+				if jsonOutput {
+					output.JSONError(output.ErrCodeHandoffRequired, errMsg)
+				} else {
+					output.Warning("%s", errMsg)
+				}
+				skipped++
+				continue
 			}
-			return fmt.Errorf("handoff required")
+
+			// Capture previous state for undo
+			prevData, _ := json.Marshal(issue)
+
+			// Update issue
+			issue.Status = models.StatusInReview
+			if issue.ImplementerSession == "" {
+				issue.ImplementerSession = sess.ID
+			}
+
+			if err := database.UpdateIssue(issue); err != nil {
+				output.Warning("failed to update %s: %v", issueID, err)
+				skipped++
+				continue
+			}
+
+			// Log action for undo
+			newData, _ := json.Marshal(issue)
+			database.LogAction(&models.ActionLog{
+				SessionID:    sess.ID,
+				ActionType:   models.ActionReview,
+				EntityType:   "issue",
+				EntityID:     issueID,
+				PreviousData: string(prevData),
+				NewData:      string(newData),
+			})
+
+			// Log
+			reason, _ := cmd.Flags().GetString("reason")
+			logMsg := "Submitted for review"
+			if reason != "" {
+				logMsg = reason
+			}
+
+			database.AddLog(&models.Log{
+				IssueID:   issueID,
+				SessionID: sess.ID,
+				Message:   logMsg,
+				Type:      models.LogTypeProgress,
+			})
+
+			// Clear focus if this was the focused issue
+			clearFocusIfNeeded(baseDir, issueID)
+
+			fmt.Printf("REVIEW REQUESTED %s (session: %s)\n", issueID, sess.ID)
+			reviewed++
 		}
 
-		// Capture previous state for undo
-		prevData, _ := json.Marshal(issue)
-
-		// Update issue
-		issue.Status = models.StatusInReview
-		if issue.ImplementerSession == "" {
-			issue.ImplementerSession = sess.ID
+		if len(args) > 1 {
+			fmt.Printf("\nReviewed %d, skipped %d\n", reviewed, skipped)
 		}
-
-		if err := database.UpdateIssue(issue); err != nil {
-			output.Error("failed to update issue: %v", err)
-			return err
-		}
-
-		// Log action for undo
-		newData, _ := json.Marshal(issue)
-		database.LogAction(&models.ActionLog{
-			SessionID:    sess.ID,
-			ActionType:   models.ActionReview,
-			EntityType:   "issue",
-			EntityID:     issueID,
-			PreviousData: string(prevData),
-			NewData:      string(newData),
-		})
-
-		// Log
-		reason, _ := cmd.Flags().GetString("reason")
-		logMsg := "Submitted for review"
-		if reason != "" {
-			logMsg = reason
-		}
-
-		database.AddLog(&models.Log{
-			IssueID:   issueID,
-			SessionID: sess.ID,
-			Message:   logMsg,
-			Type:      models.LogTypeProgress,
-		})
-
-		// Clear focus if this was the focused issue
-		clearFocusIfNeeded(baseDir, issueID)
-
-		fmt.Printf("REVIEW REQUESTED %s (session: %s)\n", issueID, sess.ID)
 		return nil
 	},
 }

@@ -10,9 +10,10 @@ import (
 )
 
 var showCmd = &cobra.Command{
-	Use:   "show [issue-id]",
-	Short: "Display full details of an issue",
-	Args:  cobra.ExactArgs(1),
+	Use:     "show [issue-id]",
+	Aliases: []string{"context"},
+	Short:   "Display full details of an issue",
+	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 

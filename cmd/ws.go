@@ -242,30 +242,35 @@ var wsLogCmd = &cobra.Command{
 			typeLabel = " [result]"
 		}
 
-		// Get tagged issues
-		issueIDs, _ := database.GetWorkSessionIssues(wsID)
-
-		// Filter by --only if specified
+		// Filter by --only if specified - log to specific issue only
 		only, _ := cmd.Flags().GetString("only")
 		if only != "" {
-			issueIDs = []string{only}
-		}
-
-		// Add log to each tagged issue
-		for _, issueID := range issueIDs {
+			// Log to specific issue only
 			database.AddLog(&models.Log{
-				IssueID:       issueID,
+				IssueID:       only,
 				SessionID:     sess.ID,
 				WorkSessionID: wsID,
 				Message:       args[0],
 				Type:          logType,
 			})
-		}
-
-		if len(issueIDs) > 0 {
-			fmt.Printf("LOGGED %s%s → %s\n", wsID, typeLabel, strings.Join(issueIDs, ", "))
+			fmt.Printf("LOGGED %s%s → %s\n", wsID, typeLabel, only)
 		} else {
-			fmt.Printf("LOGGED %s%s (no issues tagged)\n", wsID, typeLabel)
+			// Store single log entry with work_session_id, no issue_id
+			database.AddLog(&models.Log{
+				IssueID:       "",
+				SessionID:     sess.ID,
+				WorkSessionID: wsID,
+				Message:       args[0],
+				Type:          logType,
+			})
+
+			// Get tagged issues for display
+			issueIDs, _ := database.GetWorkSessionIssues(wsID)
+			if len(issueIDs) > 0 {
+				fmt.Printf("LOGGED %s%s → %s\n", wsID, typeLabel, strings.Join(issueIDs, ", "))
+			} else {
+				fmt.Printf("LOGGED %s%s (no issues tagged)\n", wsID, typeLabel)
+			}
 		}
 
 		return nil
@@ -505,6 +510,8 @@ var wsHandoffCmd = &cobra.Command{
 				if issue != nil && issue.Status == models.StatusInProgress {
 					issue.Status = models.StatusInReview
 					database.UpdateIssue(issue)
+					// Clear focus if this was the focused issue
+					clearFocusIfNeeded(baseDir, issueID)
 					fmt.Printf("REVIEW REQUESTED %s\n", issueID)
 				}
 			}
