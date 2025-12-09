@@ -1,0 +1,372 @@
+package cmd
+
+import (
+	"testing"
+
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
+)
+
+// TestIsValidType tests type validation
+func TestIsValidType(t *testing.T) {
+	validTypes := []models.Type{
+		models.TypeBug,
+		models.TypeFeature,
+		models.TypeTask,
+		models.TypeEpic,
+		models.TypeChore,
+	}
+
+	for _, typ := range validTypes {
+		if !models.IsValidType(typ) {
+			t.Errorf("Expected %q to be valid type", typ)
+		}
+	}
+
+	invalidTypes := []models.Type{"invalid", "unknown", "story", ""}
+	for _, typ := range invalidTypes {
+		if models.IsValidType(typ) {
+			t.Errorf("Expected %q to be invalid type", typ)
+		}
+	}
+}
+
+// TestIsValidPriority tests priority validation
+func TestIsValidPriority(t *testing.T) {
+	validPriorities := []models.Priority{
+		models.PriorityP0,
+		models.PriorityP1,
+		models.PriorityP2,
+		models.PriorityP3,
+		models.PriorityP4,
+	}
+
+	for _, p := range validPriorities {
+		if !models.IsValidPriority(p) {
+			t.Errorf("Expected %q to be valid priority", p)
+		}
+	}
+
+	invalidPriorities := []models.Priority{"P5", "high", "low", "critical", ""}
+	for _, p := range invalidPriorities {
+		if models.IsValidPriority(p) {
+			t.Errorf("Expected %q to be invalid priority", p)
+		}
+	}
+}
+
+// TestIsValidPoints tests Fibonacci story point validation
+func TestIsValidPoints(t *testing.T) {
+	validPoints := []int{1, 2, 3, 5, 8, 13, 21}
+
+	for _, pts := range validPoints {
+		if !models.IsValidPoints(pts) {
+			t.Errorf("Expected %d to be valid Fibonacci point", pts)
+		}
+	}
+
+	invalidPoints := []int{0, 4, 6, 7, 9, 10, 11, 12, 14, 20, 22, -1}
+	for _, pts := range invalidPoints {
+		if models.IsValidPoints(pts) {
+			t.Errorf("Expected %d to be invalid Fibonacci point", pts)
+		}
+	}
+}
+
+// TestCreateIssueWithValidData tests creating an issue with valid data
+func TestCreateIssueWithValidData(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:       "Test Issue",
+		Type:        models.TypeTask,
+		Priority:    models.PriorityP1,
+		Points:      5,
+		Labels:      []string{"backend", "urgent"},
+		Description: "A test issue",
+	}
+
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	if issue.ID == "" {
+		t.Error("Expected issue ID to be generated")
+	}
+
+	retrieved, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+
+	if retrieved.Title != "Test Issue" {
+		t.Errorf("Title mismatch: got %q", retrieved.Title)
+	}
+	if retrieved.Type != models.TypeTask {
+		t.Errorf("Type mismatch: got %q", retrieved.Type)
+	}
+	if retrieved.Priority != models.PriorityP1 {
+		t.Errorf("Priority mismatch: got %q", retrieved.Priority)
+	}
+	if retrieved.Points != 5 {
+		t.Errorf("Points mismatch: got %d", retrieved.Points)
+	}
+}
+
+// TestCreateIssueWithDependency tests creating issue with dependency
+func TestCreateIssueWithDependency(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create prerequisite issue
+	prereq := &models.Issue{
+		Title:  "Prerequisite",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(prereq); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Create dependent issue
+	dependent := &models.Issue{
+		Title:  "Dependent Issue",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(dependent); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Add dependency
+	if err := database.AddDependency(dependent.ID, prereq.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
+
+	// Verify dependency
+	deps, err := database.GetDependencies(dependent.ID)
+	if err != nil {
+		t.Fatalf("GetDependencies failed: %v", err)
+	}
+
+	if len(deps) != 1 || deps[0] != prereq.ID {
+		t.Errorf("Expected dependency on %s, got %v", prereq.ID, deps)
+	}
+}
+
+// TestCreateIssueWithBlocks tests creating issue that blocks another
+func TestCreateIssueWithBlocks(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create blocked issue first
+	blocked := &models.Issue{
+		Title:  "Blocked Issue",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(blocked); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Create blocker issue
+	blocker := &models.Issue{
+		Title:  "Blocker Issue",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(blocker); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Add blocks relationship (blocked depends on blocker)
+	if err := database.AddDependency(blocked.ID, blocker.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
+
+	// Verify blocked-by relationship
+	blockedBy, err := database.GetBlockedBy(blocker.ID)
+	if err != nil {
+		t.Fatalf("GetBlockedBy failed: %v", err)
+	}
+
+	if len(blockedBy) != 1 || blockedBy[0] != blocked.ID {
+		t.Errorf("Expected %s to be blocked, got %v", blocked.ID, blockedBy)
+	}
+}
+
+// TestCreateIssueWithLabels tests label parsing
+func TestCreateIssueWithLabels(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Labeled Issue",
+		Labels: []string{"frontend", "ui", "accessibility"},
+	}
+
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	retrieved, _ := database.GetIssue(issue.ID)
+	if len(retrieved.Labels) != 3 {
+		t.Errorf("Expected 3 labels, got %d", len(retrieved.Labels))
+	}
+}
+
+// TestCreateIssueWithParent tests parent relationship
+func TestCreateIssueWithParent(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create parent (epic)
+	parent := &models.Issue{
+		Title: "Parent Epic",
+		Type:  models.TypeEpic,
+	}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Create child
+	child := &models.Issue{
+		Title:    "Child Task",
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	retrieved, _ := database.GetIssue(child.ID)
+	if retrieved.ParentID != parent.ID {
+		t.Errorf("Expected parent %s, got %s", parent.ID, retrieved.ParentID)
+	}
+}
+
+// TestIssueDefaultStatus tests that new issues start as open
+func TestIssueDefaultStatus(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title: "New Issue",
+	}
+	database.CreateIssue(issue)
+
+	retrieved, _ := database.GetIssue(issue.ID)
+	if retrieved.Status != models.StatusOpen {
+		t.Errorf("Expected status 'open', got %q", retrieved.Status)
+	}
+}
+
+// TestCreateMultipleDependencies tests adding multiple dependencies at once
+func TestCreateMultipleDependencies(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create three prerequisite issues
+	prereq1 := &models.Issue{Title: "Prereq 1"}
+	prereq2 := &models.Issue{Title: "Prereq 2"}
+	prereq3 := &models.Issue{Title: "Prereq 3"}
+	database.CreateIssue(prereq1)
+	database.CreateIssue(prereq2)
+	database.CreateIssue(prereq3)
+
+	// Create dependent issue
+	dependent := &models.Issue{Title: "Dependent"}
+	database.CreateIssue(dependent)
+
+	// Add multiple dependencies
+	database.AddDependency(dependent.ID, prereq1.ID, "depends_on")
+	database.AddDependency(dependent.ID, prereq2.ID, "depends_on")
+	database.AddDependency(dependent.ID, prereq3.ID, "depends_on")
+
+	// Verify all dependencies
+	deps, _ := database.GetDependencies(dependent.ID)
+	if len(deps) != 3 {
+		t.Errorf("Expected 3 dependencies, got %d", len(deps))
+	}
+}
+
+// TestValidPointsReturnsCorrectValues tests the ValidPoints function
+func TestValidPointsReturnsCorrectValues(t *testing.T) {
+	expected := []int{1, 2, 3, 5, 8, 13, 21}
+	actual := models.ValidPoints()
+
+	if len(actual) != len(expected) {
+		t.Fatalf("Expected %d valid points, got %d", len(expected), len(actual))
+	}
+
+	for i, v := range expected {
+		if actual[i] != v {
+			t.Errorf("Expected ValidPoints()[%d] = %d, got %d", i, v, actual[i])
+		}
+	}
+}
+
+// TestCreateIssueIDFormat tests that issue IDs follow expected format
+func TestCreateIssueIDFormat(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test Issue"}
+	database.CreateIssue(issue)
+
+	// ID should start with "td-"
+	if len(issue.ID) < 7 || issue.ID[:3] != "td-" {
+		t.Errorf("Expected ID format 'td-xxxx', got %q", issue.ID)
+	}
+}
+
+// TestCreateIssueTimestamps tests that timestamps are set correctly
+func TestCreateIssueTimestamps(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{Title: "Test Issue"}
+	database.CreateIssue(issue)
+
+	if issue.CreatedAt.IsZero() {
+		t.Error("Expected CreatedAt to be set")
+	}
+	if issue.UpdatedAt.IsZero() {
+		t.Error("Expected UpdatedAt to be set")
+	}
+	if issue.ClosedAt != nil {
+		t.Error("Expected ClosedAt to be nil for new issue")
+	}
+}
