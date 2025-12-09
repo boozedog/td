@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"io"
+	"os"
+	"strings"
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
@@ -12,10 +16,18 @@ import (
 )
 
 var logCmd = &cobra.Command{
-	Use:   "log \"message\"",
+	Use:   "log [message]",
 	Short: "Append a log entry to the current issue",
-	Long:  `Low-friction progress tracking during a session.`,
-	Args:  cobra.ExactArgs(1),
+	Long: `Low-friction progress tracking during a session.
+
+Supports stdin input for multi-line messages or piped input:
+  echo "message" | td log
+  td log < notes.txt
+  td log <<EOF
+  Multi-line
+  log message
+  EOF`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -70,6 +82,30 @@ var logCmd = &cobra.Command{
 			typeLabel = " [result]"
 		}
 
+		// Get message from args or stdin
+		var message string
+		if len(args) > 0 {
+			message = args[0]
+		} else {
+			// Check if stdin has data
+			stat, _ := os.Stdin.Stat()
+			if (stat.Mode() & os.ModeCharDevice) == 0 {
+				// Read from stdin
+				reader := bufio.NewReader(os.Stdin)
+				data, err := io.ReadAll(reader)
+				if err != nil {
+					output.Error("failed to read stdin: %v", err)
+					return err
+				}
+				message = strings.TrimSpace(string(data))
+			}
+		}
+
+		if message == "" {
+			output.Error("no message provided. Use: td log \"message\" or pipe input")
+			return fmt.Errorf("no message provided")
+		}
+
 		// Get active work session if any
 		wsID, _ := config.GetActiveWorkSession(baseDir)
 
@@ -77,7 +113,7 @@ var logCmd = &cobra.Command{
 			IssueID:       issueID,
 			SessionID:     sess.ID,
 			WorkSessionID: wsID,
-			Message:       args[0],
+			Message:       message,
 			Type:          logType,
 		}
 
