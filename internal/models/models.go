@@ -178,6 +178,7 @@ const (
 	ActionBlock        ActionType = "block"
 	ActionUnblock      ActionType = "unblock"
 	ActionClose        ActionType = "close"
+	ActionReopen       ActionType = "reopen"
 	ActionAddDep       ActionType = "add_dependency"
 	ActionRemoveDep    ActionType = "remove_dependency"
 	ActionLinkFile     ActionType = "link_file"

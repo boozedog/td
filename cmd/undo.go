@@ -127,7 +127,7 @@ func undoIssueAction(database *db.DB, action *models.ActionLog) error {
 		return database.RestoreIssue(action.EntityID)
 
 	case models.ActionUpdate, models.ActionStart, models.ActionReview,
-		models.ActionApprove, models.ActionReject, models.ActionBlock, models.ActionUnblock, models.ActionClose:
+		models.ActionApprove, models.ActionReject, models.ActionBlock, models.ActionUnblock, models.ActionClose, models.ActionReopen:
 		// Restore previous state
 		if action.PreviousData == "" {
 			return fmt.Errorf("no previous data to restore")

@@ -84,8 +84,12 @@ var blockCmd = &cobra.Command{
 var reopenCmd = &cobra.Command{
 	Use:   "reopen [issue-id...]",
 	Short: "Reopen closed issues",
-	Long:  `Reopens closed issues. Requires new review cycle.`,
-	Args:  cobra.MinimumNArgs(1),
+	Long: `Reopens closed issue(s) back to open status.
+
+Examples:
+  td reopen td-abc1                    # Reopen single issue
+  td reopen td-abc1 td-abc2 td-abc3    # Reopen multiple issues`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
@@ -103,11 +107,20 @@ var reopenCmd = &cobra.Command{
 		}
 
 		reason, _ := cmd.Flags().GetString("reason")
+		reopened := 0
+		skipped := 0
 
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
-				output.Error("%v", err)
+				output.Warning("issue not found: %s", issueID)
+				skipped++
+				continue
+			}
+
+			if issue.Status != models.StatusClosed {
+				output.Warning("%s is not closed (status: %s)", issueID, issue.Status)
+				skipped++
 				continue
 			}
 
@@ -119,7 +132,8 @@ var reopenCmd = &cobra.Command{
 			issue.ClosedAt = nil
 
 			if err := database.UpdateIssue(issue); err != nil {
-				output.Error("failed to reopen %s: %v", issueID, err)
+				output.Warning("failed to reopen %s: %v", issueID, err)
+				skipped++
 				continue
 			}
 
@@ -127,7 +141,7 @@ var reopenCmd = &cobra.Command{
 			newData, _ := json.Marshal(issue)
 			database.LogAction(&models.ActionLog{
 				SessionID:    sess.ID,
-				ActionType:   models.ActionUnblock,
+				ActionType:   models.ActionReopen,
 				EntityType:   "issue",
 				EntityID:     issueID,
 				PreviousData: string(prevData),
@@ -147,9 +161,13 @@ var reopenCmd = &cobra.Command{
 				Type:      models.LogTypeProgress,
 			})
 
-			fmt.Printf("REOPENED %s → open\n", issueID)
+			fmt.Printf("REOPENED %s\n", issueID)
+			reopened++
 		}
 
+		if len(args) > 1 {
+			fmt.Printf("\nReopened %d, skipped %d\n", reopened, skipped)
+		}
 		return nil
 	},
 }

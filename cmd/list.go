@@ -31,10 +31,16 @@ var listCmd = &cobra.Command{
 		// Check if --all flag is set
 		showAll, _ := cmd.Flags().GetBool("all")
 
-		// Parse status filter
+		// Parse status filter (supports both --status open --status closed and --status open,closed)
 		if statusStr, _ := cmd.Flags().GetStringArray("status"); len(statusStr) > 0 {
 			for _, s := range statusStr {
-				opts.Status = append(opts.Status, models.Status(s))
+				// Split on comma to support --status in_progress,in_review
+				for _, part := range strings.Split(s, ",") {
+					part = strings.TrimSpace(part)
+					if part != "" {
+						opts.Status = append(opts.Status, models.Status(part))
+					}
+				}
 			}
 		} else if !showAll {
 			// Default: exclude closed issues unless --all is specified

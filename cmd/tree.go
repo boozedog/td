@@ -136,6 +136,52 @@ func buildTree(database *db.DB, issueID string, depth int, maxDepth int) map[str
 	return node
 }
 
+var commentCmd = &cobra.Command{
+	Use:   "comment [issue-id] \"text\"",
+	Short: "Add a comment to an issue (alias for 'comments add')",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		sess, err := session.Get(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		issueID := args[0]
+		text := args[1]
+
+		// Verify issue exists
+		_, err = database.GetIssue(issueID)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		comment := &models.Comment{
+			IssueID:   issueID,
+			SessionID: sess.ID,
+			Text:      text,
+		}
+
+		if err := database.AddComment(comment); err != nil {
+			output.Error("failed to add comment: %v", err)
+			return err
+		}
+
+		fmt.Printf("COMMENT ADDED %s\n", issueID)
+		return nil
+	},
+}
+
 var commentsCmd = &cobra.Command{
 	Use:   "comments [issue-id]",
 	Short: "List comments for an issue",
@@ -225,6 +271,7 @@ var commentsAddCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(treeCmd)
+	rootCmd.AddCommand(commentCmd)
 	rootCmd.AddCommand(commentsCmd)
 
 	commentsCmd.AddCommand(commentsAddCmd)
