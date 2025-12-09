@@ -1,0 +1,368 @@
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/output"
+	"github.com/marcus/td/internal/session"
+	"github.com/spf13/cobra"
+)
+
+var infoCmd = &cobra.Command{
+	Use:     "info",
+	Aliases: []string{"stats"},
+	Short:   "Show database statistics and project overview",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		sess, err := session.Get(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		stats, err := database.GetStats()
+		if err != nil {
+			output.Error("failed to get stats: %v", err)
+			return err
+		}
+
+		// Get project name from directory
+		projectName := filepath.Base(baseDir)
+
+		fmt.Printf("Project: %s\n", projectName)
+		fmt.Printf("Database: .todos/issues.db\n")
+		fmt.Printf("Current Session: %s\n", sess.ID)
+		fmt.Println()
+
+		fmt.Printf("Issues: %d total\n", stats["total"])
+		fmt.Printf("  Open:        %d\n", stats["open"])
+		fmt.Printf("  In Progress: %d\n", stats["in_progress"])
+		fmt.Printf("  Blocked:     %d\n", stats["blocked"])
+		fmt.Printf("  In Review:   %d\n", stats["in_review"])
+		fmt.Printf("  Closed:      %d\n", stats["closed"])
+		fmt.Println()
+
+		// Review queue
+		reviewable, _ := database.ListIssues(db.ListIssuesOptions{
+			ReviewableBy: sess.ID,
+		})
+		inReview, _ := database.ListIssues(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusInReview},
+		})
+
+		fmt.Println("Review Queue:")
+		fmt.Printf("  Awaiting review: %d\n", len(inReview))
+		fmt.Printf("  You can review:  %d\n", len(reviewable))
+		fmt.Println()
+
+		fmt.Println("By Type:")
+		fmt.Printf("  bug:     %d\n", stats["type_bug"])
+		fmt.Printf("  feature: %d\n", stats["type_feature"])
+		fmt.Printf("  task:    %d\n", stats["type_task"])
+		fmt.Printf("  epic:    %d\n", stats["type_epic"])
+		fmt.Printf("  chore:   %d\n", stats["type_chore"])
+
+		return nil
+	},
+}
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Show version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Printf("td version %s\n", version)
+	},
+}
+
+var whoamiCmd = &cobra.Command{
+	Use:   "whoami",
+	Short: "Show current session identity",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		sess, err := session.Get(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		// Get issues touched by this session
+		touchedIssues, _ := database.GetIssueSessionLog(sess.ID)
+
+		sessionLabel := sess.ID
+		if sess.Name != "" {
+			sessionLabel = fmt.Sprintf("%s (%s)", sess.ID, sess.Name)
+		}
+
+		fmt.Printf("SESSION: %s\n", sessionLabel)
+		fmt.Printf("STARTED: %s\n", sess.StartedAt.Format("2006-01-02T15:04:05Z"))
+
+		if len(touchedIssues) > 0 {
+			fmt.Printf("ISSUES TOUCHED: %s\n", joinItems(touchedIssues))
+		}
+
+		return nil
+	},
+}
+
+var sessionNameCmd = &cobra.Command{
+	Use:   "session [name]",
+	Short: "Name/tag the current session",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		name := args[0]
+
+		sess, err := session.SetName(baseDir, name)
+		if err != nil {
+			output.Error("failed to set session name: %v", err)
+			return err
+		}
+
+		fmt.Printf("SESSION NAMED %s \"%s\"\n", sess.ID, name)
+		return nil
+	},
+}
+
+var exportCmd = &cobra.Command{
+	Use:   "export",
+	Short: "Export database",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		format, _ := cmd.Flags().GetString("format")
+		outputPath, _ := cmd.Flags().GetString("output")
+		includeAll, _ := cmd.Flags().GetBool("all")
+
+		opts := db.ListIssuesOptions{}
+		if includeAll {
+			opts.IncludeDeleted = true
+		}
+
+		issues, err := database.ListIssues(opts)
+		if err != nil {
+			output.Error("failed to list issues: %v", err)
+			return err
+		}
+
+		var data []byte
+
+		if format == "json" {
+			// Build full export with logs and handoffs
+			exportData := make([]map[string]interface{}, 0)
+			for _, issue := range issues {
+				logs, _ := database.GetLogs(issue.ID, 0)
+				handoff, _ := database.GetLatestHandoff(issue.ID)
+				deps, _ := database.GetDependencies(issue.ID)
+				files, _ := database.GetLinkedFiles(issue.ID)
+
+				item := map[string]interface{}{
+					"issue":        issue,
+					"logs":         logs,
+					"handoff":      handoff,
+					"dependencies": deps,
+					"files":        files,
+				}
+				exportData = append(exportData, item)
+			}
+
+			data, err = json.MarshalIndent(exportData, "", "  ")
+			if err != nil {
+				output.Error("failed to marshal: %v", err)
+				return err
+			}
+		} else {
+			// Markdown format
+			md := "# Issues Export\n\n"
+			for _, issue := range issues {
+				md += fmt.Sprintf("## %s: %s\n\n", issue.ID, issue.Title)
+				md += fmt.Sprintf("- Status: %s\n", issue.Status)
+				md += fmt.Sprintf("- Type: %s\n", issue.Type)
+				md += fmt.Sprintf("- Priority: %s\n", issue.Priority)
+				if issue.Points > 0 {
+					md += fmt.Sprintf("- Points: %d\n", issue.Points)
+				}
+				if len(issue.Labels) > 0 {
+					md += fmt.Sprintf("- Labels: %s\n", joinItems(issue.Labels))
+				}
+				if issue.Description != "" {
+					md += fmt.Sprintf("\n%s\n", issue.Description)
+				}
+				md += "\n"
+			}
+			data = []byte(md)
+		}
+
+		if outputPath != "" {
+			if err := os.WriteFile(outputPath, data, 0644); err != nil {
+				output.Error("failed to write file: %v", err)
+				return err
+			}
+			fmt.Printf("Exported to %s\n", outputPath)
+		} else {
+			fmt.Println(string(data))
+		}
+
+		return nil
+	},
+}
+
+var importCmd = &cobra.Command{
+	Use:   "import [file]",
+	Short: "Import issues",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		filePath := args[0]
+		dryRun, _ := cmd.Flags().GetBool("dry-run")
+
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			output.Error("failed to read file: %v", err)
+			return err
+		}
+
+		// Parse JSON
+		var importData []map[string]interface{}
+		if err := json.Unmarshal(data, &importData); err != nil {
+			output.Error("failed to parse JSON: %v", err)
+			return err
+		}
+
+		imported := 0
+		for _, item := range importData {
+			issueData, ok := item["issue"].(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			title, _ := issueData["title"].(string)
+			if title == "" {
+				continue
+			}
+
+			if dryRun {
+				fmt.Printf("[dry-run] Would import: %s\n", title)
+				imported++
+				continue
+			}
+
+			issue := &models.Issue{
+				Title: title,
+			}
+
+			if desc, ok := issueData["description"].(string); ok {
+				issue.Description = desc
+			}
+			if t, ok := issueData["type"].(string); ok {
+				issue.Type = models.Type(t)
+			}
+			if p, ok := issueData["priority"].(string); ok {
+				issue.Priority = models.Priority(p)
+			}
+			if pts, ok := issueData["points"].(float64); ok {
+				issue.Points = int(pts)
+			}
+			if labels, ok := issueData["labels"].([]interface{}); ok {
+				for _, l := range labels {
+					if label, ok := l.(string); ok {
+						issue.Labels = append(issue.Labels, label)
+					}
+				}
+			}
+
+			if err := database.CreateIssue(issue); err != nil {
+				output.Warning("failed to import '%s': %v", title, err)
+				continue
+			}
+
+			fmt.Printf("IMPORTED %s: %s\n", issue.ID, title)
+			imported++
+		}
+
+		fmt.Printf("\nImported %d issues\n", imported)
+
+		return nil
+	},
+}
+
+var upgradeCmd = &cobra.Command{
+	Use:   "upgrade",
+	Short: "Update td and run migrations",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("td is already at the latest version")
+	},
+}
+
+var helpCmd = &cobra.Command{
+	Use:   "help [command]",
+	Short: "Help about any command",
+	Run: func(cmd *cobra.Command, args []string) {
+		if len(args) == 0 {
+			rootCmd.Help()
+			return
+		}
+		// Find the command
+		c, _, err := rootCmd.Find(args)
+		if err != nil {
+			fmt.Printf("Unknown command: %s\n", args[0])
+			return
+		}
+		c.Help()
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(infoCmd)
+	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(whoamiCmd)
+	rootCmd.AddCommand(sessionNameCmd)
+	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(importCmd)
+	rootCmd.AddCommand(upgradeCmd)
+	rootCmd.AddCommand(helpCmd)
+
+	exportCmd.Flags().String("format", "json", "Export format: json or md")
+	exportCmd.Flags().StringP("output", "o", "", "Output file (default: stdout)")
+	exportCmd.Flags().Bool("all", false, "Include closed/deleted")
+
+	importCmd.Flags().String("format", "json", "Import format: json or md")
+	importCmd.Flags().Bool("dry-run", false, "Preview changes")
+	importCmd.Flags().Bool("force", false, "Overwrite existing")
+}

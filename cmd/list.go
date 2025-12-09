@@ -1,0 +1,418 @@
+package cmd
+
+import (
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/output"
+	"github.com/marcus/td/internal/session"
+	"github.com/spf13/cobra"
+)
+
+var listCmd = &cobra.Command{
+	Use:     "list [filters]",
+	Aliases: []string{"ls"},
+	Short:   "List issues matching given filters",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		opts := db.ListIssuesOptions{}
+
+		// Parse status filter
+		if statusStr, _ := cmd.Flags().GetStringArray("status"); len(statusStr) > 0 {
+			for _, s := range statusStr {
+				opts.Status = append(opts.Status, models.Status(s))
+			}
+		}
+
+		// Parse type filter
+		if typeStr, _ := cmd.Flags().GetStringArray("type"); len(typeStr) > 0 {
+			for _, t := range typeStr {
+				opts.Type = append(opts.Type, models.Type(t))
+			}
+		}
+
+		// Parse ID filter
+		if ids, _ := cmd.Flags().GetStringArray("id"); len(ids) > 0 {
+			opts.IDs = ids
+		}
+
+		// Parse labels filter
+		if labels, _ := cmd.Flags().GetStringArray("labels"); len(labels) > 0 {
+			opts.Labels = labels
+		}
+
+		// Priority filter
+		opts.Priority, _ = cmd.Flags().GetString("priority")
+
+		// Points filter
+		if pointsStr, _ := cmd.Flags().GetString("points"); pointsStr != "" {
+			opts.PointsMin, opts.PointsMax = parsePointsFilter(pointsStr)
+		}
+
+		// Search filter
+		opts.Search, _ = cmd.Flags().GetString("search")
+
+		// Implementer/reviewer filters
+		opts.Implementer, _ = cmd.Flags().GetString("implementer")
+		opts.Reviewer, _ = cmd.Flags().GetString("reviewer")
+
+		// Reviewable filter
+		if reviewable, _ := cmd.Flags().GetBool("reviewable"); reviewable {
+			sess, err := session.Get(baseDir)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			opts.ReviewableBy = sess.ID
+		}
+
+		// Date filters
+		if created, _ := cmd.Flags().GetString("created"); created != "" {
+			opts.CreatedAfter, opts.CreatedBefore = parseDateFilter(created)
+		}
+		if updated, _ := cmd.Flags().GetString("updated"); updated != "" {
+			opts.UpdatedAfter, opts.UpdatedBefore = parseDateFilter(updated)
+		}
+
+		// Sorting
+		opts.SortBy, _ = cmd.Flags().GetString("sort")
+		opts.SortDesc, _ = cmd.Flags().GetBool("reverse")
+
+		// Limit
+		opts.Limit, _ = cmd.Flags().GetInt("limit")
+		if opts.Limit == 0 {
+			opts.Limit = 50
+		}
+
+		issues, err := database.ListIssues(opts)
+		if err != nil {
+			output.Error("failed to list issues: %v", err)
+			return err
+		}
+
+		// Output
+		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+			return output.JSON(issues)
+		}
+
+		if long, _ := cmd.Flags().GetBool("long"); long {
+			for _, issue := range issues {
+				logs, _ := database.GetLogs(issue.ID, 5)
+				handoff, _ := database.GetLatestHandoff(issue.ID)
+				fmt.Print(output.FormatIssueLong(&issue, logs, handoff))
+				fmt.Println("---")
+			}
+			return nil
+		}
+
+		// Short format (default)
+		for _, issue := range issues {
+			fmt.Println(output.FormatIssueShort(&issue))
+		}
+
+		if len(issues) == 0 {
+			fmt.Println("No issues found")
+		}
+
+		return nil
+	},
+}
+
+var reviewableCmd = &cobra.Command{
+	Use:   "reviewable",
+	Short: "Show issues awaiting review that you can review",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		sess, err := session.Get(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		issues, err := database.ListIssues(db.ListIssuesOptions{
+			ReviewableBy: sess.ID,
+		})
+		if err != nil {
+			output.Error("failed to list issues: %v", err)
+			return err
+		}
+
+		for _, issue := range issues {
+			fmt.Printf("%s  %s  %s  %dpts  %s  (impl: %s)\n",
+				issue.ID, issue.Title, issue.Priority, issue.Points, issue.Type, issue.ImplementerSession)
+		}
+
+		if len(issues) == 0 {
+			fmt.Println("No issues awaiting your review")
+		}
+
+		return nil
+	},
+}
+
+var blockedListCmd = &cobra.Command{
+	Use:   "blocked",
+	Short: "List blocked issues",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		issues, err := database.ListIssues(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusBlocked},
+		})
+		if err != nil {
+			output.Error("failed to list issues: %v", err)
+			return err
+		}
+
+		for _, issue := range issues {
+			fmt.Println(output.FormatIssueShort(&issue))
+		}
+
+		if len(issues) == 0 {
+			fmt.Println("No blocked issues")
+		}
+
+		return nil
+	},
+}
+
+var readyCmd = &cobra.Command{
+	Use:   "ready",
+	Short: "List open issues sorted by priority",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		issues, err := database.ListIssues(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusOpen},
+			SortBy: "priority",
+		})
+		if err != nil {
+			output.Error("failed to list issues: %v", err)
+			return err
+		}
+
+		for _, issue := range issues {
+			fmt.Println(output.FormatIssueShort(&issue))
+		}
+
+		if len(issues) == 0 {
+			fmt.Println("No open issues")
+		}
+
+		return nil
+	},
+}
+
+var nextCmd = &cobra.Command{
+	Use:   "next",
+	Short: "Show highest-priority open issue",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		issues, err := database.ListIssues(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusOpen},
+			SortBy: "priority",
+			Limit:  1,
+		})
+		if err != nil {
+			output.Error("failed to list issues: %v", err)
+			return err
+		}
+
+		if len(issues) == 0 {
+			fmt.Println("No open issues")
+			return nil
+		}
+
+		issue := issues[0]
+		fmt.Printf("%s  [%s]  %s  %dpts  %s\n",
+			issue.ID, issue.Priority, issue.Title, issue.Points, issue.Type)
+		fmt.Println()
+		fmt.Printf("Run `td start %s` to begin working on this issue.\n", issue.ID)
+
+		return nil
+	},
+}
+
+var deletedCmd = &cobra.Command{
+	Use:   "deleted",
+	Short: "Show soft-deleted issues",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		issues, err := database.ListIssues(db.ListIssuesOptions{
+			OnlyDeleted: true,
+		})
+		if err != nil {
+			output.Error("failed to list issues: %v", err)
+			return err
+		}
+
+		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+			return output.JSON(issues)
+		}
+
+		for _, issue := range issues {
+			fmt.Println(output.FormatIssueShort(&issue))
+		}
+
+		if len(issues) == 0 {
+			fmt.Println("No deleted issues")
+		}
+
+		return nil
+	},
+}
+
+func parsePointsFilter(s string) (min, max int) {
+	s = strings.TrimSpace(s)
+
+	if strings.HasPrefix(s, ">=") {
+		fmt.Sscanf(strings.TrimPrefix(s, ">="), "%d", &min)
+		return min, 0
+	}
+	if strings.HasPrefix(s, "<=") {
+		fmt.Sscanf(strings.TrimPrefix(s, "<="), "%d", &max)
+		return 0, max
+	}
+	if strings.Contains(s, "-") {
+		parts := strings.Split(s, "-")
+		if len(parts) == 2 {
+			fmt.Sscanf(parts[0], "%d", &min)
+			fmt.Sscanf(parts[1], "%d", &max)
+			return min, max
+		}
+	}
+
+	// Exact match
+	var exact int
+	fmt.Sscanf(s, "%d", &exact)
+	return exact, exact
+}
+
+func parseDateFilter(s string) (after, before time.Time) {
+	s = strings.TrimSpace(s)
+
+	// Handle "after:DATE" format
+	if strings.HasPrefix(s, "after:") {
+		dateStr := strings.TrimPrefix(s, "after:")
+		after, _ = time.Parse("2006-01-02", dateStr)
+		return after, time.Time{}
+	}
+
+	// Handle "before:DATE" format
+	if strings.HasPrefix(s, "before:") {
+		dateStr := strings.TrimPrefix(s, "before:")
+		before, _ = time.Parse("2006-01-02", dateStr)
+		return time.Time{}, before
+	}
+
+	// Handle "DATE.." format (after)
+	if strings.HasSuffix(s, "..") {
+		dateStr := strings.TrimSuffix(s, "..")
+		after, _ = time.Parse("2006-01-02", dateStr)
+		return after, time.Time{}
+	}
+
+	// Handle "..DATE" format (before)
+	if strings.HasPrefix(s, "..") {
+		dateStr := strings.TrimPrefix(s, "..")
+		before, _ = time.Parse("2006-01-02", dateStr)
+		return time.Time{}, before
+	}
+
+	// Handle "DATE..DATE" format (range)
+	if strings.Contains(s, "..") {
+		parts := strings.Split(s, "..")
+		if len(parts) == 2 {
+			after, _ = time.Parse("2006-01-02", parts[0])
+			before, _ = time.Parse("2006-01-02", parts[1])
+			return after, before
+		}
+	}
+
+	// Exact date - treat as entire day
+	date, err := time.Parse("2006-01-02", s)
+	if err == nil {
+		return date, date.Add(24 * time.Hour)
+	}
+
+	return time.Time{}, time.Time{}
+}
+
+func init() {
+	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(reviewableCmd)
+	rootCmd.AddCommand(blockedListCmd)
+	rootCmd.AddCommand(readyCmd)
+	rootCmd.AddCommand(nextCmd)
+	rootCmd.AddCommand(deletedCmd)
+
+	listCmd.Flags().StringArrayP("id", "i", nil, "Filter by issue IDs")
+	listCmd.Flags().StringArrayP("status", "s", nil, "Status filter")
+	listCmd.Flags().StringArrayP("type", "t", nil, "Type filter")
+	listCmd.Flags().StringArrayP("labels", "l", nil, "Labels filter")
+	listCmd.Flags().StringP("priority", "p", "", "Priority filter")
+	listCmd.Flags().String("points", "", "Points filter")
+	listCmd.Flags().StringP("search", "q", "", "Search title/description")
+	listCmd.Flags().String("implementer", "", "Filter by implementer session")
+	listCmd.Flags().String("reviewer", "", "Filter by reviewer session")
+	listCmd.Flags().Bool("reviewable", false, "Show issues you can review")
+	listCmd.Flags().String("created", "", "Created date filter")
+	listCmd.Flags().String("updated", "", "Updated date filter")
+	listCmd.Flags().String("sort", "", "Sort by field")
+	listCmd.Flags().BoolP("reverse", "r", false, "Reverse sort order")
+	listCmd.Flags().IntP("limit", "n", 50, "Limit results")
+	listCmd.Flags().Bool("long", false, "Detailed output")
+	listCmd.Flags().Bool("short", false, "Compact output (default)")
+	listCmd.Flags().Bool("json", false, "JSON output")
+
+	deletedCmd.Flags().Bool("json", false, "JSON output")
+}

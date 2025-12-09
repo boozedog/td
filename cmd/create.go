@@ -1,0 +1,130 @@
+package cmd
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/output"
+	"github.com/spf13/cobra"
+)
+
+var createCmd = &cobra.Command{
+	Use:   "create [title]",
+	Short: "Create a new issue",
+	Long:  `Create a new issue with optional flags for type, priority, labels, and more.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		// Get title from args or flag
+		title, _ := cmd.Flags().GetString("title")
+		if len(args) > 0 {
+			title = args[0]
+		}
+
+		if title == "" {
+			output.Error("title is required")
+			return fmt.Errorf("title is required")
+		}
+
+		// Build issue
+		issue := &models.Issue{
+			Title: title,
+		}
+
+		// Type
+		if t, _ := cmd.Flags().GetString("type"); t != "" {
+			issue.Type = models.Type(t)
+			if !models.IsValidType(issue.Type) {
+				output.Error("invalid type: %s", t)
+				return fmt.Errorf("invalid type: %s", t)
+			}
+		}
+
+		// Priority
+		if p, _ := cmd.Flags().GetString("priority"); p != "" {
+			issue.Priority = models.Priority(p)
+			if !models.IsValidPriority(issue.Priority) {
+				output.Error("invalid priority: %s", p)
+				return fmt.Errorf("invalid priority: %s", p)
+			}
+		}
+
+		// Points
+		if pts, _ := cmd.Flags().GetInt("points"); pts > 0 {
+			if !models.IsValidPoints(pts) {
+				output.Error("invalid points: %d (must be Fibonacci: 1,2,3,5,8,13,21)", pts)
+				return fmt.Errorf("invalid points")
+			}
+			issue.Points = pts
+		}
+
+		// Labels
+		if labels, _ := cmd.Flags().GetString("labels"); labels != "" {
+			issue.Labels = strings.Split(labels, ",")
+			for i := range issue.Labels {
+				issue.Labels[i] = strings.TrimSpace(issue.Labels[i])
+			}
+		}
+
+		// Description
+		issue.Description, _ = cmd.Flags().GetString("description")
+
+		// Acceptance
+		issue.Acceptance, _ = cmd.Flags().GetString("acceptance")
+
+		// Parent
+		issue.ParentID, _ = cmd.Flags().GetString("parent")
+
+		// Create the issue
+		if err := database.CreateIssue(issue); err != nil {
+			output.Error("failed to create issue: %v", err)
+			return err
+		}
+
+		// Handle dependencies
+		if dependsOn, _ := cmd.Flags().GetString("depends-on"); dependsOn != "" {
+			for _, dep := range strings.Split(dependsOn, ",") {
+				dep = strings.TrimSpace(dep)
+				if err := database.AddDependency(issue.ID, dep, "depends_on"); err != nil {
+					output.Warning("failed to add dependency %s: %v", dep, err)
+				}
+			}
+		}
+
+		if blocks, _ := cmd.Flags().GetString("blocks"); blocks != "" {
+			for _, blocked := range strings.Split(blocks, ",") {
+				blocked = strings.TrimSpace(blocked)
+				if err := database.AddDependency(blocked, issue.ID, "depends_on"); err != nil {
+					output.Warning("failed to add blocks %s: %v", blocked, err)
+				}
+			}
+		}
+
+		fmt.Printf("CREATED %s\n", issue.ID)
+		return nil
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(createCmd)
+
+	createCmd.Flags().String("title", "", "Issue title")
+	createCmd.Flags().StringP("type", "t", "", "Issue type (bug, feature, task, epic, chore)")
+	createCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
+	createCmd.Flags().Int("points", 0, "Story points (Fibonacci: 1,2,3,5,8,13,21)")
+	createCmd.Flags().StringP("labels", "l", "", "Comma-separated labels")
+	createCmd.Flags().StringP("description", "d", "", "Description text")
+	createCmd.Flags().String("acceptance", "", "Acceptance criteria")
+	createCmd.Flags().String("parent", "", "Parent issue ID")
+	createCmd.Flags().String("depends-on", "", "Issues this depends on")
+	createCmd.Flags().String("blocks", "", "Issues this blocks")
+}
