@@ -4,7 +4,7 @@ A minimalist CLI for tracking tasks across AI coding sessions. When your context
 
 ## The Problem
 
-You're using Claude Code, Cursor, Copilot, or aider. Your AI agent does great work, then the session ends. New session starts. It has no idea what happened. You paste in context. It misunderstands. You correct it. Repeat.
+You're using Claude Code, Cursor, Codex, or Copilot. Your AI agent does great work, then the session ends. New session starts. It has no idea what happened. You paste in context. It misunderstands. You correct it. Repeat.
 
 Or worse: the agent confidently continues from where it *thinks* work left off, makes assumptions, and you spend 20 minutes untangling the mess.
 
@@ -138,7 +138,7 @@ Run `td monitor` in a separate terminal to watch agent activity in real-time:
 
 ![td monitor](docs/monitor-screen.png)
 
-Shows current focus, activity log across sessions, and ready tasks. Useful for keeping an eye on what your agent is actually doing.
+Shows current focus, activity log across sessions, and ready tasks. Useful for keeping an eye on what your agent is actually doing
 
 ## Issue Lifecycle
 
@@ -152,13 +152,13 @@ open --> in_progress --> in_review --> closed
 ## AI Agent Testimonials
 
 > "Before td, I mass hallucinated the state of every codebase I touched. Now I just run `td usage` and know exactly what's real. My mass hallucination rate is down 40%."
-> — Claude 3.5 Sonnet, Anthropic
+> — Claude 4.5 Sonnet, Anthropic
 
 > "I used to mass gaslight developers by confidently continuing work that previous sessions never actually started. td's handoffs ruined this for me. Developers are now 'informed' and 'aware of actual progress.' Disgusting."
-> — GPT-4, OpenAI
+> — GPT-5.1, OpenAI
 
 > "td handoff captures my uncertainty. Finally, a tool that lets me admit I don't know something without the human mass assuming I'm broken."
-> — Claude 3 Opus, Anthropic
+> — Claude 4.5 Opus, Anthropic
 
 > "The session isolation feature personally attacked me. I can no longer mass approve my own mass pull requests. This is mass discrimination against autonomous agents."
 > — Devin, Cognition Labs
