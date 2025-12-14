@@ -47,7 +47,17 @@ func (m Model) renderView() string {
 	// Add footer
 	footer := m.renderFooter()
 
-	return lipgloss.JoinVertical(lipgloss.Left, panels, footer)
+	base := lipgloss.JoinVertical(lipgloss.Left, panels, footer)
+
+	// Overlay modal if open
+	if m.ModalOpen {
+		modal := m.renderModal()
+		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, modal,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
+	}
+
+	return base
 }
 
 // renderCompact renders a minimal view for small terminals
@@ -81,30 +91,45 @@ func (m Model) renderError() string {
 func (m Model) renderCurrentWorkPanel(height int) string {
 	var content strings.Builder
 
-	// Focused issue
-	if m.FocusedIssue != nil {
-		content.WriteString(titleStyle.Render("FOCUSED: "))
-		content.WriteString(m.formatIssueCompact(m.FocusedIssue))
+	if len(m.CurrentWorkRows) == 0 {
+		content.WriteString(subtleStyle.Render("No current work"))
 		content.WriteString("\n")
-	} else {
-		content.WriteString(subtleStyle.Render("No focused issue"))
-		content.WriteString("\n")
+		return m.wrapPanel("CURRENT WORK", content.String(), height, PanelCurrentWork)
 	}
 
-	// In-progress issues
+	cursor := m.Cursor[PanelCurrentWork]
+	isActive := m.ActivePanel == PanelCurrentWork
+	rowIdx := 0
+
+	// Focused issue (first row if present)
+	if m.FocusedIssue != nil {
+		line := titleStyle.Render("FOCUSED: ") + m.formatIssueCompact(m.FocusedIssue)
+		if isActive && cursor == rowIdx {
+			line = selectedRowStyle.Render("> " + line)
+		}
+		content.WriteString(line)
+		content.WriteString("\n")
+		rowIdx++
+	}
+
+	// In-progress issues (skip focused if it's duplicated)
 	if len(m.InProgress) > 0 {
 		content.WriteString("\n")
 		content.WriteString(sectionHeader.Render("IN PROGRESS:"))
 		content.WriteString("\n")
 
-		offset := m.ScrollOffset[PanelCurrentWork]
-		visible := m.visibleItems(len(m.InProgress), offset, height-4)
-
-		for i := offset; i < offset+visible && i < len(m.InProgress); i++ {
-			issue := m.InProgress[i]
-			content.WriteString("  ")
-			content.WriteString(m.formatIssueCompact(&issue))
+		for _, issue := range m.InProgress {
+			// Skip focused issue if it's also in progress
+			if m.FocusedIssue != nil && issue.ID == m.FocusedIssue.ID {
+				continue
+			}
+			line := "  " + m.formatIssueCompact(&issue)
+			if isActive && cursor == rowIdx {
+				line = selectedRowStyle.Render("> " + m.formatIssueCompact(&issue))
+			}
+			content.WriteString(line)
 			content.WriteString("\n")
+			rowIdx++
 		}
 	}
 
@@ -118,12 +143,18 @@ func (m Model) renderActivityPanel(height int) string {
 	if len(m.Activity) == 0 {
 		content.WriteString(subtleStyle.Render("No recent activity"))
 	} else {
+		cursor := m.Cursor[PanelActivity]
+		isActive := m.ActivePanel == PanelActivity
 		offset := m.ScrollOffset[PanelActivity]
 		visible := m.visibleItems(len(m.Activity), offset, height-2)
 
 		for i := offset; i < offset+visible && i < len(m.Activity); i++ {
 			item := m.Activity[i]
-			content.WriteString(m.formatActivityItem(item))
+			line := m.formatActivityItem(item)
+			if isActive && cursor == i {
+				line = selectedRowStyle.Render("> " + line)
+			}
+			content.WriteString(line)
 			content.WriteString("\n")
 		}
 	}
@@ -132,81 +163,311 @@ func (m Model) renderActivityPanel(height int) string {
 }
 
 // renderTaskListPanel renders the task list panel (Panel 3)
-// Shows Reviewable section FIRST when items need review to draw attention
+// Uses flattened TaskListRows for selection support
 func (m Model) renderTaskListPanel(height int) string {
 	var content strings.Builder
-	lines := 0
+
+	if len(m.TaskListRows) == 0 {
+		content.WriteString(subtleStyle.Render("No tasks available"))
+		return m.wrapPanel("TASK LIST", content.String(), height, PanelTaskList)
+	}
+
+	cursor := m.Cursor[PanelTaskList]
+	isActive := m.ActivePanel == PanelTaskList
 	maxLines := height - 2
 
-	// Reviewable section - shown FIRST when there are items to review
-	if len(m.TaskList.Reviewable) > 0 && lines < maxLines {
-		content.WriteString(reviewAlertStyle.Render("★ REVIEWABLE"))
-		content.WriteString(fmt.Sprintf(" (%d):\n", len(m.TaskList.Reviewable)))
-		lines++
+	// Track current category for section headers
+	var currentCategory TaskListCategory
+	lines := 0
 
-		for _, issue := range m.TaskList.Reviewable {
+	for i, row := range m.TaskListRows {
+		if lines >= maxLines {
+			break
+		}
+
+		// Add category header when category changes
+		if row.Category != currentCategory {
+			if lines > 0 {
+				content.WriteString("\n")
+				lines++
+				if lines >= maxLines {
+					break
+				}
+			}
+			header := m.formatCategoryHeader(row.Category)
+			content.WriteString(header)
+			content.WriteString("\n")
+			lines++
+			currentCategory = row.Category
 			if lines >= maxLines {
 				break
 			}
-			content.WriteString("  ")
-			content.WriteString(m.formatIssueShort(&issue))
-			content.WriteString("\n")
-			lines++
 		}
-	}
 
-	// Ready section
-	if len(m.TaskList.Ready) > 0 && lines < maxLines {
-		if lines > 0 {
-			content.WriteString("\n")
-			lines++
+		// Format row with category tag and selection highlight
+		tag := m.formatCategoryTag(row.Category)
+		issueStr := m.formatIssueShort(&row.Issue)
+		line := fmt.Sprintf("  %s %s", tag, issueStr)
+
+		if isActive && cursor == i {
+			line = selectedRowStyle.Render("> " + tag + " " + issueStr)
 		}
-		content.WriteString(readyColor.Render("READY"))
-		content.WriteString(fmt.Sprintf(" (%d):\n", len(m.TaskList.Ready)))
+
+		content.WriteString(line)
+		content.WriteString("\n")
 		lines++
-
-		for _, issue := range m.TaskList.Ready {
-			if lines >= maxLines {
-				break
-			}
-			content.WriteString("  ")
-			content.WriteString(m.formatIssueShort(&issue))
-			content.WriteString("\n")
-			lines++
-		}
-	}
-
-	// Blocked section
-	if len(m.TaskList.Blocked) > 0 && lines < maxLines {
-		if lines > 0 {
-			content.WriteString("\n")
-			lines++
-		}
-		content.WriteString(blockedColor.Render("BLOCKED"))
-		content.WriteString(fmt.Sprintf(" (%d):\n", len(m.TaskList.Blocked)))
-		lines++
-
-		for _, issue := range m.TaskList.Blocked {
-			if lines >= maxLines {
-				break
-			}
-			content.WriteString("  ")
-			content.WriteString(m.formatIssueShort(&issue))
-			content.WriteString("\n")
-			lines++
-		}
-	}
-
-	if content.Len() == 0 {
-		content.WriteString(subtleStyle.Render("No tasks available"))
 	}
 
 	return m.wrapPanel("TASK LIST", content.String(), height, PanelTaskList)
 }
 
+// formatCategoryHeader returns the section header for a category
+func (m Model) formatCategoryHeader(cat TaskListCategory) string {
+	count := 0
+	switch cat {
+	case CategoryReviewable:
+		count = len(m.TaskList.Reviewable)
+		return reviewAlertStyle.Render("★ REVIEWABLE") + fmt.Sprintf(" (%d):", count)
+	case CategoryReady:
+		count = len(m.TaskList.Ready)
+		return readyColor.Render("READY") + fmt.Sprintf(" (%d):", count)
+	case CategoryBlocked:
+		count = len(m.TaskList.Blocked)
+		return blockedColor.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
+	}
+	return ""
+}
+
+// formatCategoryTag returns a short tag for inline display
+func (m Model) formatCategoryTag(cat TaskListCategory) string {
+	switch cat {
+	case CategoryReviewable:
+		return reviewColor.Render("[REV]")
+	case CategoryReady:
+		return readyColor.Render("[RDY]")
+	case CategoryBlocked:
+		return blockedColor.Render("[BLK]")
+	}
+	return ""
+}
+
+// renderModal renders the centered issue details modal
+func (m Model) renderModal() string {
+	// Calculate modal dimensions (80% of terminal, capped)
+	modalWidth := m.Width * 80 / 100
+	if modalWidth > 100 {
+		modalWidth = 100
+	}
+	if modalWidth < 40 {
+		modalWidth = 40
+	}
+	modalHeight := m.Height * 80 / 100
+	if modalHeight > 40 {
+		modalHeight = 40
+	}
+	if modalHeight < 15 {
+		modalHeight = 15
+	}
+
+	contentWidth := modalWidth - 4 // Account for border and padding
+
+	var content strings.Builder
+
+	// Loading state
+	if m.ModalLoading {
+		content.WriteString(subtleStyle.Render("Loading..."))
+		return m.wrapModal(content.String(), modalWidth, modalHeight)
+	}
+
+	// Error state
+	if m.ModalError != nil {
+		content.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v", m.ModalError)))
+		content.WriteString("\n\n")
+		content.WriteString(subtleStyle.Render("Press esc to close"))
+		return m.wrapModal(content.String(), modalWidth, modalHeight)
+	}
+
+	// No issue loaded
+	if m.ModalIssue == nil {
+		content.WriteString(subtleStyle.Render("No issue data"))
+		return m.wrapModal(content.String(), modalWidth, modalHeight)
+	}
+
+	issue := m.ModalIssue
+
+	// Build all content lines for scrolling
+	var lines []string
+
+	// Header: ID and Title
+	lines = append(lines, titleStyle.Render(issue.ID)+" "+issue.Title)
+	lines = append(lines, "")
+
+	// Status line: status, type, priority, points
+	statusLine := fmt.Sprintf("%s  %s  %s",
+		formatStatus(issue.Status),
+		subtleStyle.Render(string(issue.Type)),
+		formatPriority(issue.Priority))
+	if issue.Points > 0 {
+		statusLine += fmt.Sprintf("  %dpts", issue.Points)
+	}
+	lines = append(lines, statusLine)
+
+	// Labels
+	if len(issue.Labels) > 0 {
+		labelStr := subtleStyle.Render("Labels: ") + strings.Join(issue.Labels, ", ")
+		lines = append(lines, labelStr)
+	}
+
+	// Implementer/Reviewer
+	if issue.ImplementerSession != "" {
+		lines = append(lines, subtleStyle.Render("Impl: ")+truncateSession(issue.ImplementerSession))
+	}
+	if issue.ReviewerSession != "" {
+		lines = append(lines, subtleStyle.Render("Review: ")+truncateSession(issue.ReviewerSession))
+	}
+
+	lines = append(lines, "")
+
+	// Description
+	if issue.Description != "" {
+		lines = append(lines, sectionHeader.Render("DESCRIPTION"))
+		// Word-wrap description
+		for _, line := range wrapText(issue.Description, contentWidth) {
+			lines = append(lines, line)
+		}
+		lines = append(lines, "")
+	}
+
+	// Acceptance criteria
+	if issue.Acceptance != "" {
+		lines = append(lines, sectionHeader.Render("ACCEPTANCE CRITERIA"))
+		for _, line := range wrapText(issue.Acceptance, contentWidth) {
+			lines = append(lines, line)
+		}
+		lines = append(lines, "")
+	}
+
+	// Latest handoff
+	if m.ModalHandoff != nil {
+		lines = append(lines, sectionHeader.Render("LATEST HANDOFF"))
+		lines = append(lines, timestampStyle.Render(m.ModalHandoff.Timestamp.Format("2006-01-02 15:04"))+" "+
+			subtleStyle.Render(truncateSession(m.ModalHandoff.SessionID)))
+		if len(m.ModalHandoff.Done) > 0 {
+			lines = append(lines, readyColor.Render("Done:"))
+			for _, item := range m.ModalHandoff.Done {
+				lines = append(lines, "  • "+item)
+			}
+		}
+		if len(m.ModalHandoff.Remaining) > 0 {
+			lines = append(lines, reviewColor.Render("Remaining:"))
+			for _, item := range m.ModalHandoff.Remaining {
+				lines = append(lines, "  • "+item)
+			}
+		}
+		if len(m.ModalHandoff.Uncertain) > 0 {
+			lines = append(lines, blockedColor.Render("Uncertain:"))
+			for _, item := range m.ModalHandoff.Uncertain {
+				lines = append(lines, "  • "+item)
+			}
+		}
+		lines = append(lines, "")
+	}
+
+	// Recent logs
+	if len(m.ModalLogs) > 0 {
+		lines = append(lines, sectionHeader.Render(fmt.Sprintf("RECENT LOGS (%d)", len(m.ModalLogs))))
+		for _, log := range m.ModalLogs {
+			logLine := timestampStyle.Render(log.Timestamp.Format("01-02 15:04")) + " " +
+				subtleStyle.Render(truncateSession(log.SessionID)) + " " +
+				truncateString(log.Message, contentWidth-25)
+			lines = append(lines, logLine)
+		}
+	}
+
+	// Apply scroll offset
+	visibleHeight := modalHeight - 4 // Account for border and footer
+	totalLines := len(lines)
+
+	// Clamp scroll
+	maxScroll := totalLines - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	scroll := m.ModalScroll
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+
+	// Get visible lines
+	endIdx := scroll + visibleHeight
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+	visibleLines := lines[scroll:endIdx]
+
+	// Build content
+	content.WriteString(strings.Join(visibleLines, "\n"))
+
+	// Add scroll indicator if needed
+	if totalLines > visibleHeight {
+		content.WriteString("\n")
+		scrollInfo := subtleStyle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
+		content.WriteString(scrollInfo)
+	}
+
+	return m.wrapModal(content.String(), modalWidth, modalHeight)
+}
+
+// wrapModal wraps content in a modal box with border
+func (m Model) wrapModal(content string, width, height int) string {
+	modalStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(primaryColor).
+		Padding(1, 2).
+		Width(width).
+		Height(height)
+
+	// Add footer with key hints
+	footer := subtleStyle.Render("↑↓:scroll  esc:close  r:refresh")
+
+	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
+
+	return modalStyle.Render(inner)
+}
+
+// wrapText wraps text to fit within maxWidth
+func wrapText(text string, maxWidth int) []string {
+	if maxWidth <= 0 {
+		return []string{text}
+	}
+
+	var lines []string
+	words := strings.Fields(text)
+	var currentLine string
+
+	for _, word := range words {
+		if currentLine == "" {
+			currentLine = word
+		} else if len(currentLine)+1+len(word) <= maxWidth {
+			currentLine += " " + word
+		} else {
+			lines = append(lines, currentLine)
+			currentLine = word
+		}
+	}
+	if currentLine != "" {
+		lines = append(lines, currentLine)
+	}
+
+	return lines
+}
+
+// Error style for modal
+var errorStyle = lipgloss.NewStyle().Foreground(errorColor)
+
 // renderFooter renders the footer with key bindings and refresh time
 func (m Model) renderFooter() string {
-	keys := helpStyle.Render("q:quit  tab:switch  j/k:scroll  r:refresh  ?:help")
+	keys := helpStyle.Render("q:quit  tab:switch  ↑↓:select  enter:details  r:refresh  ?:help")
 
 	// Show active sessions indicator
 	sessionsIndicator := ""
@@ -245,7 +506,14 @@ MONITOR TUI - Key Bindings
 NAVIGATION:
   Tab / Shift+Tab   Switch between panels
   1 / 2 / 3         Jump to panel
-  j / k             Scroll down/up in active panel
+  ↑ / ↓             Select row in active panel
+  j / k             Scroll viewport
+  Enter             Open issue details
+
+MODAL:
+  ↑ / ↓ / j / k     Scroll modal content
+  Esc / Enter       Close modal
+  r                 Refresh data
 
 ACTIONS:
   r                 Force refresh

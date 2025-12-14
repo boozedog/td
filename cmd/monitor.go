@@ -23,7 +23,10 @@ var monitorCmd = &cobra.Command{
 Key bindings:
   Tab/Shift+Tab  Switch panels
   1/2/3          Jump to panel
-  j/k            Scroll in active panel
+  ↑/↓            Select row in active panel
+  j/k            Scroll viewport
+  Enter          Open issue details modal
+  Esc            Close modal
   r              Force refresh
   ?              Toggle help
   q              Quit`,

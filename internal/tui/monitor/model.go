@@ -35,6 +35,21 @@ type TaskListData struct {
 	Blocked    []models.Issue
 }
 
+// TaskListCategory represents the category of a task list row
+type TaskListCategory string
+
+const (
+	CategoryReviewable TaskListCategory = "REVIEW"
+	CategoryReady      TaskListCategory = "READY"
+	CategoryBlocked    TaskListCategory = "BLOCKED"
+)
+
+// TaskListRow represents a single selectable row in the task list panel
+type TaskListRow struct {
+	Issue    models.Issue
+	Category TaskListCategory
+}
+
 // RecentHandoff represents a recent handoff for display
 type RecentHandoff struct {
 	IssueID   string
@@ -63,10 +78,26 @@ type Model struct {
 	// UI state
 	ActivePanel  Panel
 	ScrollOffset map[Panel]int
+	Cursor       map[Panel]int    // Per-panel cursor position (selected row)
+	SelectedID   map[Panel]string // Per-panel selected issue ID (preserved across refresh)
 	ShowHelp     bool
 	LastRefresh  time.Time
 	StartedAt    time.Time // When monitor started, to track new handoffs
 	Err          error     // Last error, if any
+
+	// Flattened rows for selection
+	TaskListRows    []TaskListRow // Flattened task list for selection
+	CurrentWorkRows []string      // Issue IDs for current work panel (focused + in-progress)
+
+	// Modal state for issue details
+	ModalOpen    bool
+	ModalIssueID string
+	ModalScroll  int
+	ModalLoading bool
+	ModalError   error
+	ModalIssue   *models.Issue
+	ModalHandoff *models.Handoff
+	ModalLogs    []models.Log
 
 	// Configuration
 	RefreshInterval time.Duration
@@ -92,6 +123,15 @@ type RefreshDataMsg struct {
 	Timestamp      time.Time
 }
 
+// IssueDetailsMsg carries fetched issue details for the modal
+type IssueDetailsMsg struct {
+	IssueID  string
+	Issue    *models.Issue
+	Handoff  *models.Handoff
+	Logs     []models.Log
+	Error    error
+}
+
 // NewModel creates a new monitor model
 func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
 	return Model{
@@ -99,6 +139,8 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
 		SessionID:       sessionID,
 		RefreshInterval: interval,
 		ScrollOffset:    make(map[Panel]int),
+		Cursor:          make(map[Panel]int),
+		SelectedID:      make(map[Panel]string),
 		ActivePanel:     PanelCurrentWork,
 		StartedAt:       time.Now(),
 	}
@@ -134,6 +176,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.RecentHandoffs = msg.RecentHandoffs
 		m.ActiveSessions = msg.ActiveSessions
 		m.LastRefresh = msg.Timestamp
+
+		// Build flattened rows for selection
+		m.buildCurrentWorkRows()
+		m.buildTaskListRows()
+
+		// Restore cursor positions from saved issue IDs
+		m.restoreCursors()
+		return m, nil
+
+	case IssueDetailsMsg:
+		// Only update if this is for the currently open modal
+		if m.ModalOpen && msg.IssueID == m.ModalIssueID {
+			m.ModalLoading = false
+			m.ModalError = msg.Error
+			m.ModalIssue = msg.Issue
+			m.ModalHandoff = msg.Handoff
+			m.ModalLogs = msg.Logs
+		}
 		return m, nil
 	}
 
@@ -142,6 +202,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // handleKey processes key input
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Modal-specific key handling
+	if m.ModalOpen {
+		return m.handleModalKey(msg)
+	}
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -166,11 +231,19 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.ActivePanel = PanelTaskList
 		return m, nil
 
-	case "j", "down":
+	case "down":
+		m.moveCursor(1)
+		return m, nil
+
+	case "up":
+		m.moveCursor(-1)
+		return m, nil
+
+	case "j":
 		m.ScrollOffset[m.ActivePanel]++
 		return m, nil
 
-	case "k", "up":
+	case "k":
 		if m.ScrollOffset[m.ActivePanel] > 0 {
 			m.ScrollOffset[m.ActivePanel]--
 		}
@@ -182,9 +255,71 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.ShowHelp = !m.ShowHelp
 		return m, nil
+
+	case "enter":
+		return m.openModal()
 	}
 
 	return m, nil
+}
+
+// handleModalKey processes key input when modal is open
+func (m Model) handleModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit
+
+	case "esc", "enter":
+		m.closeModal()
+		return m, nil
+
+	case "down", "j":
+		m.ModalScroll++
+		return m, nil
+
+	case "up", "k":
+		if m.ModalScroll > 0 {
+			m.ModalScroll--
+		}
+		return m, nil
+
+	case "r":
+		// Refresh both dashboard and modal details
+		return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(m.ModalIssueID))
+	}
+
+	return m, nil
+}
+
+// openModal opens the details modal for the currently selected issue
+func (m Model) openModal() (tea.Model, tea.Cmd) {
+	issueID := m.SelectedIssueID(m.ActivePanel)
+	if issueID == "" {
+		return m, nil
+	}
+
+	m.ModalOpen = true
+	m.ModalIssueID = issueID
+	m.ModalScroll = 0
+	m.ModalLoading = true
+	m.ModalError = nil
+	m.ModalIssue = nil
+	m.ModalHandoff = nil
+	m.ModalLogs = nil
+
+	return m, m.fetchIssueDetails(issueID)
+}
+
+// closeModal closes the details modal and clears transient state
+func (m *Model) closeModal() {
+	m.ModalOpen = false
+	m.ModalIssueID = ""
+	m.ModalScroll = 0
+	m.ModalLoading = false
+	m.ModalError = nil
+	m.ModalIssue = nil
+	m.ModalHandoff = nil
+	m.ModalLogs = nil
 }
 
 // View implements tea.Model
@@ -205,4 +340,185 @@ func (m Model) fetchData() tea.Cmd {
 		data := FetchData(m.DB, m.SessionID, m.StartedAt)
 		return data
 	}
+}
+
+// fetchIssueDetails returns a command that fetches issue details for the modal
+func (m Model) fetchIssueDetails(issueID string) tea.Cmd {
+	return func() tea.Msg {
+		msg := IssueDetailsMsg{IssueID: issueID}
+
+		// Fetch issue
+		issue, err := m.DB.GetIssue(issueID)
+		if err != nil {
+			msg.Error = err
+			return msg
+		}
+		msg.Issue = issue
+
+		// Fetch latest handoff (may not exist)
+		handoff, _ := m.DB.GetLatestHandoff(issueID)
+		msg.Handoff = handoff
+
+		// Fetch recent logs (cap at 20)
+		logs, _ := m.DB.GetLogs(issueID, 20)
+		msg.Logs = logs
+
+		return msg
+	}
+}
+
+// buildCurrentWorkRows builds the flattened list of current work panel rows
+func (m *Model) buildCurrentWorkRows() {
+	m.CurrentWorkRows = nil
+	if m.FocusedIssue != nil {
+		m.CurrentWorkRows = append(m.CurrentWorkRows, m.FocusedIssue.ID)
+	}
+	for _, issue := range m.InProgress {
+		// Skip focused issue if it's also in progress (avoid duplicate)
+		if m.FocusedIssue != nil && issue.ID == m.FocusedIssue.ID {
+			continue
+		}
+		m.CurrentWorkRows = append(m.CurrentWorkRows, issue.ID)
+	}
+}
+
+// buildTaskListRows builds the flattened list of task list rows with category metadata
+func (m *Model) buildTaskListRows() {
+	m.TaskListRows = nil
+	// Order: Reviewable, Ready, Blocked (matches display order)
+	for _, issue := range m.TaskList.Reviewable {
+		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryReviewable})
+	}
+	for _, issue := range m.TaskList.Ready {
+		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryReady})
+	}
+	for _, issue := range m.TaskList.Blocked {
+		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryBlocked})
+	}
+}
+
+// restoreCursors restores cursor positions from saved issue IDs after data refresh
+func (m *Model) restoreCursors() {
+	// Current Work panel
+	if savedID := m.SelectedID[PanelCurrentWork]; savedID != "" {
+		found := false
+		for i, id := range m.CurrentWorkRows {
+			if id == savedID {
+				m.Cursor[PanelCurrentWork] = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			m.clampCursor(PanelCurrentWork)
+		}
+	} else {
+		m.clampCursor(PanelCurrentWork)
+	}
+
+	// Task List panel
+	if savedID := m.SelectedID[PanelTaskList]; savedID != "" {
+		found := false
+		for i, row := range m.TaskListRows {
+			if row.Issue.ID == savedID {
+				m.Cursor[PanelTaskList] = i
+				found = true
+				break
+			}
+		}
+		if !found {
+			m.clampCursor(PanelTaskList)
+		}
+	} else {
+		m.clampCursor(PanelTaskList)
+	}
+
+	// Activity panel
+	m.clampCursor(PanelActivity)
+}
+
+// clampCursor ensures cursor is within valid bounds for a panel
+func (m *Model) clampCursor(panel Panel) {
+	count := m.rowCount(panel)
+	if count == 0 {
+		m.Cursor[panel] = 0
+		return
+	}
+	if m.Cursor[panel] >= count {
+		m.Cursor[panel] = count - 1
+	}
+	if m.Cursor[panel] < 0 {
+		m.Cursor[panel] = 0
+	}
+}
+
+// rowCount returns the number of selectable rows in a panel
+func (m Model) rowCount(panel Panel) int {
+	switch panel {
+	case PanelCurrentWork:
+		return len(m.CurrentWorkRows)
+	case PanelActivity:
+		return len(m.Activity)
+	case PanelTaskList:
+		return len(m.TaskListRows)
+	}
+	return 0
+}
+
+// moveCursor moves the cursor in the active panel by delta, clamping to bounds
+func (m *Model) moveCursor(delta int) {
+	panel := m.ActivePanel
+	count := m.rowCount(panel)
+	if count == 0 {
+		return
+	}
+
+	newPos := m.Cursor[panel] + delta
+	if newPos < 0 {
+		newPos = 0
+	}
+	if newPos >= count {
+		newPos = count - 1
+	}
+	m.Cursor[panel] = newPos
+
+	// Save the selected issue ID for persistence across refresh
+	m.saveSelectedID(panel)
+}
+
+// saveSelectedID saves the currently selected issue ID for a panel
+func (m *Model) saveSelectedID(panel Panel) {
+	switch panel {
+	case PanelCurrentWork:
+		if m.Cursor[panel] < len(m.CurrentWorkRows) {
+			m.SelectedID[panel] = m.CurrentWorkRows[m.Cursor[panel]]
+		}
+	case PanelTaskList:
+		if m.Cursor[panel] < len(m.TaskListRows) {
+			m.SelectedID[panel] = m.TaskListRows[m.Cursor[panel]].Issue.ID
+		}
+	case PanelActivity:
+		if m.Cursor[panel] < len(m.Activity) && m.Activity[m.Cursor[panel]].IssueID != "" {
+			m.SelectedID[panel] = m.Activity[m.Cursor[panel]].IssueID
+		}
+	}
+}
+
+// SelectedIssueID returns the issue ID of the currently selected row in a panel
+func (m Model) SelectedIssueID(panel Panel) string {
+	switch panel {
+	case PanelCurrentWork:
+		if m.Cursor[panel] < len(m.CurrentWorkRows) {
+			return m.CurrentWorkRows[m.Cursor[panel]]
+		}
+	case PanelTaskList:
+		if m.Cursor[panel] < len(m.TaskListRows) {
+			return m.TaskListRows[m.Cursor[panel]].Issue.ID
+		}
+	case PanelActivity:
+		if m.Cursor[panel] < len(m.Activity) {
+			return m.Activity[m.Cursor[panel]].IssueID
+		}
+	}
+	return ""
 }

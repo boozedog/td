@@ -65,6 +65,11 @@ var (
 			Bold(true).
 			Foreground(lipgloss.Color("255")).
 			MarginTop(1)
+
+	// Selected row style - inverted colors for visibility
+	selectedRowStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("237")).
+				Foreground(lipgloss.Color("255"))
 )
 
 // formatStatus renders a status with color
