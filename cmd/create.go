@@ -84,8 +84,18 @@ var createCmd = &cobra.Command{
 			}
 		}
 
-		// Description
+		// Description (support --description, --desc, and --body)
 		issue.Description, _ = cmd.Flags().GetString("description")
+		if issue.Description == "" {
+			if desc, _ := cmd.Flags().GetString("desc"); desc != "" {
+				issue.Description = desc
+			}
+		}
+		if issue.Description == "" {
+			if body, _ := cmd.Flags().GetString("body"); body != "" {
+				issue.Description = body
+			}
+		}
 
 		// Acceptance
 		issue.Acceptance, _ = cmd.Flags().GetString("acceptance")
@@ -146,6 +156,8 @@ func init() {
 	createCmd.Flags().StringP("labels", "l", "", "Comma-separated labels")
 	createCmd.Flags().String("label", "", "Alias for --labels (single or comma-separated)")
 	createCmd.Flags().StringP("description", "d", "", "Description text")
+	createCmd.Flags().String("desc", "", "Alias for --description")
+	createCmd.Flags().String("body", "", "Alias for --description")
 	createCmd.Flags().String("acceptance", "", "Acceptance criteria")
 	createCmd.Flags().String("parent", "", "Parent issue ID")
 	createCmd.Flags().String("depends-on", "", "Issues this depends on")

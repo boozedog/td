@@ -347,17 +347,41 @@ func (m Model) renderModal() string {
 		lines = append(lines, "")
 	}
 
-	// Blocked by (dependencies)
+	// Blocked by (dependencies) - split into active blockers vs resolved
 	if len(m.ModalBlockedBy) > 0 {
-		lines = append(lines, sectionHeader.Render(fmt.Sprintf("BLOCKED BY (%d)", len(m.ModalBlockedBy))))
+		var activeBlockers, resolvedDeps []models.Issue
 		for _, dep := range m.ModalBlockedBy {
-			depLine := fmt.Sprintf("  %s %s %s",
-				titleStyle.Render(dep.ID),
-				formatStatus(dep.Status),
-				truncateString(dep.Title, contentWidth-20))
-			lines = append(lines, depLine)
+			if dep.Status == models.StatusClosed {
+				resolvedDeps = append(resolvedDeps, dep)
+			} else {
+				activeBlockers = append(activeBlockers, dep)
+			}
 		}
-		lines = append(lines, "")
+
+		// Show active blockers prominently
+		if len(activeBlockers) > 0 {
+			lines = append(lines, blockedColor.Render(fmt.Sprintf("⚠ BLOCKED BY (%d)", len(activeBlockers))))
+			for _, dep := range activeBlockers {
+				depLine := fmt.Sprintf("  %s %s %s",
+					titleStyle.Render(dep.ID),
+					formatStatus(dep.Status),
+					truncateString(dep.Title, contentWidth-20))
+				lines = append(lines, depLine)
+			}
+			lines = append(lines, "")
+		}
+
+		// Show resolved dependencies dimmed
+		if len(resolvedDeps) > 0 {
+			lines = append(lines, subtleStyle.Render(fmt.Sprintf("✓ RESOLVED DEPS (%d)", len(resolvedDeps))))
+			for _, dep := range resolvedDeps {
+				depLine := subtleStyle.Render(fmt.Sprintf("  %s %s",
+					dep.ID,
+					truncateString(dep.Title, contentWidth-15)))
+				lines = append(lines, depLine)
+			}
+			lines = append(lines, "")
+		}
 	}
 
 	// Blocks (dependents)
