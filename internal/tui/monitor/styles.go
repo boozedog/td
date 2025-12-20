@@ -32,9 +32,9 @@ var (
 			Padding(0, 1)
 
 	// Text styles
-	titleStyle   = lipgloss.NewStyle().Bold(true)
-	subtleStyle  = lipgloss.NewStyle().Foreground(mutedColor)
-	helpStyle    = lipgloss.NewStyle().Foreground(mutedColor)
+	titleStyle     = lipgloss.NewStyle().Bold(true)
+	subtleStyle    = lipgloss.NewStyle().Foreground(mutedColor)
+	helpStyle      = lipgloss.NewStyle().Foreground(mutedColor)
 	timestampStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 
 	// Status styles

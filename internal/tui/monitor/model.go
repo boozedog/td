@@ -24,7 +24,7 @@ type ActivityItem struct {
 	Type      string // "log", "action", "comment"
 	IssueID   string
 	Message   string
-	LogType   models.LogType   // for logs
+	LogType   models.LogType    // for logs
 	Action    models.ActionType // for actions
 }
 
@@ -68,12 +68,12 @@ type Model struct {
 	Height int
 
 	// Panel data
-	FocusedIssue    *models.Issue
-	InProgress      []models.Issue
-	Activity        []ActivityItem
-	TaskList        TaskListData
-	RecentHandoffs  []RecentHandoff // Handoffs since monitor started
-	ActiveSessions  []string        // Sessions with recent activity
+	FocusedIssue   *models.Issue
+	InProgress     []models.Issue
+	Activity       []ActivityItem
+	TaskList       TaskListData
+	RecentHandoffs []RecentHandoff // Handoffs since monitor started
+	ActiveSessions []string        // Sessions with recent activity
 
 	// UI state
 	ActivePanel  Panel

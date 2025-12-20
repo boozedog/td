@@ -10,12 +10,12 @@ import (
 
 // State represents the current git state
 type State struct {
-	CommitSHA   string
-	Branch      string
-	IsClean     bool
-	Modified    int
-	Untracked   int
-	DirtyFiles  int
+	CommitSHA  string
+	Branch     string
+	IsClean    bool
+	Modified   int
+	Untracked  int
+	DirtyFiles int
 }
 
 // GetState returns the current git state

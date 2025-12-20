@@ -44,8 +44,14 @@ OPEN (P1):
 ## Quick Start
 
 ```bash
-# Install (requires Go 1.21+)
-git clone https://github.com/marcus/td.git && cd td && go install .
+# Install a versioned release (requires Go 1.21+)
+go install github.com/marcus/td@latest
+
+# Or install a specific version
+# go install github.com/marcus/td@v0.2.0
+
+# (Dev) Install from a local clone
+# git clone https://github.com/marcus/td.git && cd td && make install
 
 # Ensure ~/go/bin is in your PATH (add to ~/.zshrc or ~/.bashrc)
 export PATH="$PATH:$HOME/go/bin"
@@ -55,6 +61,32 @@ td init
 
 # That's it for setup. Add this to your AI's system prompt:
 # "Run `td usage` before starting work."
+
+# Verify installation
+# td version
+```
+
+## Development
+
+```bash
+# Run tests
+make test
+
+# Install from your local working tree
+make install
+
+# Install with an explicit dev version injected (useful for local binaries)
+make install-dev
+```
+
+## Release
+
+```bash
+# Create and push an annotated tag (requires clean working tree)
+make release VERSION=v0.2.0
+
+# Then anyone (including you) can install that exact version:
+# go install github.com/marcus/td@v0.2.0
 ```
 
 ## Workflow

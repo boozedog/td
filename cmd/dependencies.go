@@ -497,7 +497,6 @@ Examples:
 	},
 }
 
-
 // wouldCreateCycle checks if adding dep would create a circular dependency
 func wouldCreateCycle(database *db.DB, issueID, newDepID string) bool {
 	visited := make(map[string]bool)

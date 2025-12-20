@@ -270,29 +270,29 @@ func (db *DB) RestoreIssue(id string) error {
 
 // ListIssuesOptions contains filter options for listing issues
 type ListIssuesOptions struct {
-	Status           []models.Status
-	Type             []models.Type
-	Priority         string
-	Labels           []string
-	IncludeDeleted   bool
-	OnlyDeleted      bool
-	Search           string
-	Implementer      string
-	Reviewer         string
-	ReviewableBy     string // Issues that this session can review
-	ParentID         string
-	PointsMin        int
-	PointsMax        int
-	CreatedAfter     time.Time
-	CreatedBefore    time.Time
-	UpdatedAfter     time.Time
-	UpdatedBefore    time.Time
-	ClosedAfter      time.Time
-	ClosedBefore     time.Time
-	SortBy           string
-	SortDesc         bool
-	Limit            int
-	IDs              []string
+	Status         []models.Status
+	Type           []models.Type
+	Priority       string
+	Labels         []string
+	IncludeDeleted bool
+	OnlyDeleted    bool
+	Search         string
+	Implementer    string
+	Reviewer       string
+	ReviewableBy   string // Issues that this session can review
+	ParentID       string
+	PointsMin      int
+	PointsMax      int
+	CreatedAfter   time.Time
+	CreatedBefore  time.Time
+	UpdatedAfter   time.Time
+	UpdatedBefore  time.Time
+	ClosedAfter    time.Time
+	ClosedBefore   time.Time
+	SortBy         string
+	SortDesc       bool
+	Limit          int
+	IDs            []string
 }
 
 // ListIssues returns issues matching the filter

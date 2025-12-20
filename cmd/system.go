@@ -453,13 +453,14 @@ func importJSON(database *db.DB, data []byte, dryRun, force bool) (int, error) {
 
 // importMarkdown imports issues from markdown format
 // Supports formats like:
-//   ## Title
-//   - Status: open
-//   - Type: feature
-//   - Priority: P1
-//   - Points: 3
-//   - Labels: label1, label2
-//   Description text
+//
+//	## Title
+//	- Status: open
+//	- Type: feature
+//	- Priority: P1
+//	- Points: 3
+//	- Labels: label1, label2
+//	Description text
 func importMarkdown(database *db.DB, data string, dryRun, force bool) (int, error) {
 	scanner := bufio.NewScanner(strings.NewReader(data))
 	imported := 0

@@ -80,11 +80,11 @@ func getContextID() string {
 
 	// Priority 3: Terminal session IDs (stable across command runs)
 	for _, envVar := range []string{
-		"TERM_SESSION_ID", // iTerm2
-		"WINDOWID",        // X11 window ID
-		"TMUX_PANE",       // tmux pane
-		"STY",             // screen session
-		"KONSOLE_DBUS_SESSION", // KDE Konsole
+		"TERM_SESSION_ID",       // iTerm2
+		"WINDOWID",              // X11 window ID
+		"TMUX_PANE",             // tmux pane
+		"STY",                   // screen session
+		"KONSOLE_DBUS_SESSION",  // KDE Konsole
 		"GNOME_TERMINAL_SCREEN", // GNOME Terminal
 	} {
 		if val := os.Getenv(envVar); val != "" {

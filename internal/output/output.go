@@ -68,14 +68,14 @@ func JSON(v interface{}) error {
 
 // Error codes for structured JSON output
 const (
-	ErrCodeNotFound         = "not_found"
-	ErrCodeInvalidInput     = "invalid_input"
-	ErrCodeConflict         = "conflict"
+	ErrCodeNotFound          = "not_found"
+	ErrCodeInvalidInput      = "invalid_input"
+	ErrCodeConflict          = "conflict"
 	ErrCodeCannotSelfApprove = "cannot_self_approve"
-	ErrCodeHandoffRequired  = "handoff_required"
-	ErrCodeDatabaseError    = "database_error"
-	ErrCodeGitError         = "git_error"
-	ErrCodeNoActiveSession  = "no_active_session"
+	ErrCodeHandoffRequired   = "handoff_required"
+	ErrCodeDatabaseError     = "database_error"
+	ErrCodeGitError          = "git_error"
+	ErrCodeNoActiveSession   = "no_active_session"
 )
 
 // JSONError outputs an error as JSON

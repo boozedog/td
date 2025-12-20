@@ -214,11 +214,11 @@ Example in bash: td check-handoff || echo "Don't forget to run td handoff!"`,
 
 		if jsonOutput {
 			result := map[string]interface{}{
-				"needs_handoff":      needsHandoff,
-				"session":            sess.ID,
-				"in_progress_count":  len(inProgress),
+				"needs_handoff":       needsHandoff,
+				"session":             sess.ID,
+				"in_progress_count":   len(inProgress),
 				"active_work_session": wsID,
-				"focused_issue":      focusedID,
+				"focused_issue":       focusedID,
 			}
 			if len(inProgress) > 0 {
 				issueIDs := make([]string, len(inProgress))

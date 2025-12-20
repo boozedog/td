@@ -168,22 +168,22 @@ type Config struct {
 type ActionType string
 
 const (
-	ActionCreate       ActionType = "create"
-	ActionUpdate       ActionType = "update"
-	ActionDelete       ActionType = "delete"
-	ActionRestore      ActionType = "restore"
-	ActionStart        ActionType = "start"
-	ActionReview       ActionType = "review"
-	ActionApprove      ActionType = "approve"
-	ActionReject       ActionType = "reject"
-	ActionBlock        ActionType = "block"
-	ActionUnblock      ActionType = "unblock"
-	ActionClose        ActionType = "close"
-	ActionReopen       ActionType = "reopen"
-	ActionAddDep       ActionType = "add_dependency"
-	ActionRemoveDep    ActionType = "remove_dependency"
-	ActionLinkFile     ActionType = "link_file"
-	ActionUnlinkFile   ActionType = "unlink_file"
+	ActionCreate     ActionType = "create"
+	ActionUpdate     ActionType = "update"
+	ActionDelete     ActionType = "delete"
+	ActionRestore    ActionType = "restore"
+	ActionStart      ActionType = "start"
+	ActionReview     ActionType = "review"
+	ActionApprove    ActionType = "approve"
+	ActionReject     ActionType = "reject"
+	ActionBlock      ActionType = "block"
+	ActionUnblock    ActionType = "unblock"
+	ActionClose      ActionType = "close"
+	ActionReopen     ActionType = "reopen"
+	ActionAddDep     ActionType = "add_dependency"
+	ActionRemoveDep  ActionType = "remove_dependency"
+	ActionLinkFile   ActionType = "link_file"
+	ActionUnlinkFile ActionType = "unlink_file"
 )
 
 // ActionLog represents a logged action that can be undone
