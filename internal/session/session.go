@@ -86,23 +86,30 @@ func getContextID() string {
 		"STY",                   // screen session
 		"KONSOLE_DBUS_SESSION",  // KDE Konsole
 		"GNOME_TERMINAL_SCREEN", // GNOME Terminal
+		"SSH_TTY",               // stable-ish per SSH terminal
 	} {
 		if val := os.Getenv(envVar); val != "" {
 			return "term:" + envVar + "=" + val
 		}
 	}
 
-	// Priority 4: Shell PID (stable within a shell session)
-	// SHLVL stays constant within same shell, $$ is the shell's PID
-	if shlvl := os.Getenv("SHLVL"); shlvl != "" {
-		// Use a combination that's stable within a shell session
-		// but changes when a new shell starts
-		return "shell:shlvl=" + shlvl
+	// Priority 4: Best-effort process + tty fingerprint.
+	// os.Getppid() should be stable across commands in the same shell, and differ across terminals.
+	ppid := os.Getppid()
+
+	// Prefer a tty path if available. This helps disambiguate scenarios where ppid alone is too coarse.
+	tty := ""
+	if link, err := os.Readlink("/dev/fd/0"); err == nil {
+		tty = link
 	}
 
-	// Fallback: Use a stable default that doesn't rotate on every command
-	// This means manual rotation via `td session --new` or env var is required
-	return "default"
+	if tty != "" {
+		return fmt.Sprintf("proc:ppid=%d tty=%s", ppid, tty)
+	}
+	if shlvl := os.Getenv("SHLVL"); shlvl != "" {
+		return fmt.Sprintf("proc:ppid=%d shlvl=%s", ppid, shlvl)
+	}
+	return fmt.Sprintf("proc:ppid=%d", ppid)
 }
 
 // GetOrCreate returns the current session, creating a new one if:
@@ -111,6 +118,15 @@ func getContextID() string {
 func GetOrCreate(baseDir string) (*Session, error) {
 	sessionPath := filepath.Join(baseDir, sessionFile)
 	currentContextID := getContextID()
+
+	// Ensure project is initialized. Avoid creating .todos/ as a side effect.
+	todosDir := filepath.Join(baseDir, ".todos")
+	if _, err := os.Stat(todosDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("session not found: run 'td init' first")
+		}
+		return nil, fmt.Errorf("stat %s: %w", todosDir, err)
+	}
 
 	// Check if session file exists
 	data, err := os.ReadFile(sessionPath)
@@ -254,6 +270,15 @@ func GetWithContextCheck(baseDir string) (*Session, error) {
 func ForceNewSession(baseDir string) (*Session, error) {
 	sessionPath := filepath.Join(baseDir, sessionFile)
 	currentContextID := getContextID()
+
+	// Ensure project is initialized. Avoid creating .todos/ as a side effect.
+	todosDir := filepath.Join(baseDir, ".todos")
+	if _, err := os.Stat(todosDir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("session not found: run 'td init' first")
+		}
+		return nil, fmt.Errorf("stat %s: %w", todosDir, err)
+	}
 
 	// Get previous session ID if exists
 	var previousID string

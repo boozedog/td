@@ -92,7 +92,7 @@ var listCmd = &cobra.Command{
 
 		// Reviewable filter
 		if reviewable, _ := cmd.Flags().GetBool("reviewable"); reviewable {
-			sess, err := session.Get(baseDir)
+			sess, err := session.GetOrCreate(baseDir)
 			if err != nil {
 				output.Error("%v", err)
 				return err
@@ -102,7 +102,7 @@ var listCmd = &cobra.Command{
 
 		// Mine filter (issues where current session is implementer)
 		if mine, _ := cmd.Flags().GetBool("mine"); mine {
-			sess, err := session.Get(baseDir)
+			sess, err := session.GetOrCreate(baseDir)
 			if err != nil {
 				output.Error("%v", err)
 				return err
@@ -201,7 +201,7 @@ var reviewableCmd = &cobra.Command{
 	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
-		sess, err := session.Get(baseDir)
+		sess, err := session.GetOrCreate(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -253,7 +253,7 @@ var inReviewCmd = &cobra.Command{
 	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
-		sess, err := session.Get(baseDir)
+		sess, err := session.GetOrCreate(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err

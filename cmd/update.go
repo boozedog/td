@@ -27,7 +27,11 @@ var updateCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, _ := session.Get(baseDir)
+		sess, err := session.GetOrCreate(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
 
 		for _, issueID := range args {
 			issue, err := database.GetIssue(issueID)

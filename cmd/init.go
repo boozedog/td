@@ -89,7 +89,13 @@ func addToGitignore(path string) {
 // agentInstructionText is the text to add to agent files
 const agentInstructionText = `## MANDATORY: Use td for Task Management
 
-Run td session --new "name" then td usage for workflow. This tells you what to work on next. Use td usage -q after first read.
+Run td usage --new-session at conversation start (or after /clear). This tells you what to work on next.
+
+Sessions are automatic (based on terminal/agent context). Optional:
+- td session "name" to label the current session
+- td session --new to force a new session in the same context
+
+Use td usage -q after first read.
 `
 
 // knownAgentFiles lists agent instruction files in priority order
@@ -117,7 +123,7 @@ func suggestAgentFileAddition(baseDir string) {
 	if foundFile != "" {
 		// Check if already contains td instruction
 		content, err := os.ReadFile(foundFile)
-		if err == nil && strings.Contains(string(content), "td session") {
+		if err == nil && strings.Contains(string(content), "td usage") {
 			return // Already has td instructions
 		}
 

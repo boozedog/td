@@ -76,7 +76,7 @@ var currentCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, err := session.Get(baseDir)
+		sess, err := session.GetOrCreate(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -189,7 +189,7 @@ Example in bash: td check-handoff || echo "Don't forget to run td handoff!"`,
 		}
 		defer database.Close()
 
-		sess, err := session.Get(baseDir)
+		sess, err := session.GetOrCreate(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err

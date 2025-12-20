@@ -19,7 +19,7 @@ func FetchData(database *db.DB, sessionID string, startedAt time.Time) RefreshDa
 	// Auto-detect current session for reviewable calculation
 	// This allows the monitor to see reviewable issues when a new session starts
 	currentSessionID := sessionID
-	if sess, err := session.Get(database.BaseDir()); err == nil {
+	if sess, err := session.GetOrCreate(database.BaseDir()); err == nil {
 		currentSessionID = sess.ID
 	}
 

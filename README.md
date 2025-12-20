@@ -20,7 +20,7 @@ td handoff td-a1b2 \
   --uncertain "Should tokens expire on password change?"
 ```
 
-**Session isolation** — Every terminal/context window gets an ID. The session that writes code can't approve it. A different session has to review. This isn't process theater—it forces actual handoffs and catches the "works on my context" bugs.
+**Session isolation** — Every terminal/context window gets an ID (automatically). The session that writes code can't approve it. A different session has to review. This isn't process theater—it forces actual handoffs and catches the "works on my context" bugs.
 
 **Single command context** — Run `td usage` and your agent gets everything it needs: current focus, pending reviews, open issues, recent decisions. No prompt engineering required.
 
@@ -60,7 +60,7 @@ export PATH="$PATH:$HOME/go/bin"
 td init
 
 # That's it for setup. Add this to your AI's system prompt:
-# "Run `td usage` before starting work."
+# "Run `td usage --new-session` at conversation start (or after /clear)."
 
 # Verify installation
 # td version

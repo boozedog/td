@@ -39,7 +39,7 @@ Supports stdin input for multi-line messages or piped input:
 		}
 		defer database.Close()
 
-		sess, err := session.Get(baseDir)
+		sess, err := session.GetOrCreate(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err

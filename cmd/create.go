@@ -113,7 +113,7 @@ var createCmd = &cobra.Command{
 		}
 
 		// Log action for undo
-		sess, _ := session.Get(baseDir)
+		sess, _ := session.GetOrCreate(baseDir)
 		if sess != nil {
 			newData, _ := json.Marshal(issue)
 			database.LogAction(&models.ActionLog{

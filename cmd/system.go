@@ -31,7 +31,7 @@ var infoCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		sess, err := session.Get(baseDir)
+		sess, err := session.GetOrCreate(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -128,7 +128,7 @@ var whoamiCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 
-		sess, err := session.Get(baseDir)
+		sess, err := session.GetOrCreate(baseDir)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -198,7 +198,7 @@ var sessionNameCmd = &cobra.Command{
 		// Name existing session
 		if len(args) == 0 {
 			// Just show current session
-			sess, err := session.Get(baseDir)
+			sess, err := session.GetOrCreate(baseDir)
 			if err != nil {
 				output.Error("%v", err)
 				return err

@@ -44,16 +44,23 @@ var usageCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		// Use GetOrCreate to detect context changes and auto-rotate sessions
-		sess, err := session.GetOrCreate(baseDir)
+		compact, _ := cmd.Flags().GetBool("compact")
+		quiet, _ := cmd.Flags().GetBool("quiet")
+		jsonOutput, _ := cmd.Flags().GetBool("json")
+		newSession, _ := cmd.Flags().GetBool("new-session")
+
+		// Use GetOrCreate to detect context changes and auto-rotate sessions.
+		// If --new-session is set, force creation of a new session (useful at conversation start / after /clear).
+		var sess *session.Session
+		if newSession {
+			sess, err = session.ForceNewSession(baseDir)
+		} else {
+			sess, err = session.GetOrCreate(baseDir)
+		}
 		if err != nil {
 			output.Error("%v", err)
 			return err
 		}
-
-		compact, _ := cmd.Flags().GetBool("compact")
-		quiet, _ := cmd.Flags().GetBool("quiet")
-		jsonOutput, _ := cmd.Flags().GetBool("json")
 
 		// Get focused issue
 		focusedID, _ := config.GetFocus(baseDir)
@@ -230,7 +237,9 @@ var usageCmd = &cobra.Command{
 			fmt.Println("  Exception: `td add \"title\" --minor` creates self-reviewable tasks.")
 			fmt.Println("Use `td handoff` or `td ws handoff` before stopping work.")
 			fmt.Println()
-			fmt.Println("FOR LLMs: Run `td session --new` at conversation start for session ID.")
+			fmt.Println("FOR LLMs: Run `td usage --new-session` at conversation start (or after /clear).")
+			fmt.Println("Sessions auto-rotate when your terminal/agent context changes.")
+			fmt.Println("If you need to force a new session in the same context: `td session --new`.")
 			fmt.Println("Use `td ws start` when implementing multiple issues to group handoffs.")
 			fmt.Println("  - session = identity (always exists)  |  ws = work container (optional)")
 			fmt.Println()
@@ -262,4 +271,5 @@ func init() {
 	usageCmd.Flags().Bool("compact", false, "Shorter output")
 	usageCmd.Flags().BoolP("quiet", "q", false, "Hide workflow instructions (show only actionable items)")
 	usageCmd.Flags().Bool("json", false, "JSON output")
+	usageCmd.Flags().Bool("new-session", false, "Force create a new session (use at conversation start / after /clear)")
 }
