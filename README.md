@@ -66,6 +66,17 @@ td init
 # td version
 ```
 
+## Claude Code / OpenAI Codex Skill
+
+For AI agents in Claude Code, Codex, Cursor, or other compatible environments:
+
+```bash
+# Install the td skill from this repo
+# 1. Copy td-task-management to ~/.claude/skills (or wherever you keep skills)
+```
+
+Or use the skill directly from the repo: See `./td-task-management/SKILL.md` for full documentation.
+
 ## Development
 
 ```bash
