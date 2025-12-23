@@ -106,7 +106,8 @@ func (m Model) renderError() string {
 func (m Model) renderCurrentWorkPanel(height int) string {
 	var content strings.Builder
 
-	if len(m.CurrentWorkRows) == 0 {
+	totalRows := len(m.CurrentWorkRows)
+	if totalRows == 0 {
 		content.WriteString(subtleStyle.Render("No current work"))
 		content.WriteString("\n")
 		return m.wrapPanel("CURRENT WORK", content.String(), height, PanelCurrentWork)
@@ -114,67 +115,156 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 
 	cursor := m.Cursor[PanelCurrentWork]
 	isActive := m.ActivePanel == PanelCurrentWork
+	offset := m.ScrollOffset[PanelCurrentWork]
+	maxLines := height - 3 // Account for title + border
+
+	// Clamp offset
+	if offset > totalRows-maxLines && totalRows > maxLines {
+		offset = totalRows - maxLines
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Build title with position if scrollable
+	panelTitle := "CURRENT WORK"
+	needsScroll := totalRows > maxLines
+	if needsScroll {
+		endPos := offset + maxLines
+		if endPos > totalRows {
+			endPos = totalRows
+		}
+		panelTitle = fmt.Sprintf("CURRENT WORK (%d-%d of %d)", offset+1, endPos, totalRows)
+	}
+
+	// Show up indicator if scrolled down
+	if needsScroll && offset > 0 {
+		content.WriteString(subtleStyle.Render("  ▲ more above"))
+		content.WriteString("\n")
+		maxLines-- // Reserve line for indicator
+	}
+
 	rowIdx := 0
+	linesWritten := 0
 
 	// Focused issue (first row if present)
 	if m.FocusedIssue != nil {
-		line := titleStyle.Render("FOCUSED: ") + m.formatIssueCompact(m.FocusedIssue)
-		if isActive && cursor == rowIdx {
-			line = selectedRowStyle.Render("> " + line)
+		if rowIdx >= offset && linesWritten < maxLines {
+			line := titleStyle.Render("FOCUSED: ") + m.formatIssueCompact(m.FocusedIssue)
+			if isActive && cursor == rowIdx {
+				line = selectedRowStyle.Render("> " + line)
+			}
+			content.WriteString(line)
+			content.WriteString("\n")
+			linesWritten++
 		}
-		content.WriteString(line)
-		content.WriteString("\n")
 		rowIdx++
 	}
 
 	// In-progress issues (skip focused if it's duplicated)
-	if len(m.InProgress) > 0 {
-		content.WriteString("\n")
-		content.WriteString(sectionHeader.Render("IN PROGRESS:"))
-		content.WriteString("\n")
+	if len(m.InProgress) > 0 && linesWritten < maxLines {
+		// Only show header if in visible range
+		if rowIdx >= offset || (m.FocusedIssue != nil && offset == 0) {
+			if linesWritten < maxLines {
+				content.WriteString("\n")
+				content.WriteString(sectionHeader.Render("IN PROGRESS:"))
+				content.WriteString("\n")
+				linesWritten += 2
+			}
+		}
 
 		for _, issue := range m.InProgress {
 			// Skip focused issue if it's also in progress
 			if m.FocusedIssue != nil && issue.ID == m.FocusedIssue.ID {
 				continue
 			}
-			line := "  " + m.formatIssueCompact(&issue)
-			if isActive && cursor == rowIdx {
-				line = selectedRowStyle.Render("> " + m.formatIssueCompact(&issue))
+			if rowIdx >= offset && linesWritten < maxLines {
+				line := "  " + m.formatIssueCompact(&issue)
+				if isActive && cursor == rowIdx {
+					line = selectedRowStyle.Render("> " + m.formatIssueCompact(&issue))
+				}
+				content.WriteString(line)
+				content.WriteString("\n")
+				linesWritten++
 			}
-			content.WriteString(line)
-			content.WriteString("\n")
 			rowIdx++
 		}
 	}
 
-	return m.wrapPanel("CURRENT WORK", content.String(), height, PanelCurrentWork)
+	// Show down indicator if more content below
+	if needsScroll && offset+maxLines < totalRows {
+		content.WriteString(subtleStyle.Render("  ▼ more below"))
+		content.WriteString("\n")
+	}
+
+	return m.wrapPanel(panelTitle, content.String(), height, PanelCurrentWork)
 }
 
 // renderActivityPanel renders the activity log panel (Panel 2)
 func (m Model) renderActivityPanel(height int) string {
 	var content strings.Builder
 
-	if len(m.Activity) == 0 {
+	totalRows := len(m.Activity)
+	if totalRows == 0 {
 		content.WriteString(subtleStyle.Render("No recent activity"))
-	} else {
-		cursor := m.Cursor[PanelActivity]
-		isActive := m.ActivePanel == PanelActivity
-		offset := m.ScrollOffset[PanelActivity]
-		visible := m.visibleItems(len(m.Activity), offset, height-2)
-
-		for i := offset; i < offset+visible && i < len(m.Activity); i++ {
-			item := m.Activity[i]
-			line := m.formatActivityItem(item)
-			if isActive && cursor == i {
-				line = selectedRowStyle.Render("> " + line)
-			}
-			content.WriteString(line)
-			content.WriteString("\n")
-		}
+		return m.wrapPanel("ACTIVITY LOG", content.String(), height, PanelActivity)
 	}
 
-	return m.wrapPanel("ACTIVITY LOG", content.String(), height, PanelActivity)
+	cursor := m.Cursor[PanelActivity]
+	isActive := m.ActivePanel == PanelActivity
+	offset := m.ScrollOffset[PanelActivity]
+	maxLines := height - 3 // Account for title + border
+
+	// Clamp offset
+	if offset > totalRows-maxLines && totalRows > maxLines {
+		offset = totalRows - maxLines
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Build title with position if scrollable
+	panelTitle := "ACTIVITY LOG"
+	needsScroll := totalRows > maxLines
+	if needsScroll {
+		endPos := offset + maxLines
+		if endPos > totalRows {
+			endPos = totalRows
+		}
+		panelTitle = fmt.Sprintf("ACTIVITY LOG (%d-%d of %d)", offset+1, endPos, totalRows)
+	}
+
+	// Show up indicator if scrolled down
+	if needsScroll && offset > 0 {
+		content.WriteString(subtleStyle.Render("  ▲ more above"))
+		content.WriteString("\n")
+		maxLines-- // Reserve line for indicator
+	}
+
+	// Reserve line for down indicator if needed
+	hasMoreBelow := needsScroll && offset+maxLines < totalRows
+	if hasMoreBelow {
+		maxLines--
+	}
+
+	visible := m.visibleItems(totalRows, offset, maxLines)
+	for i := offset; i < offset+visible && i < totalRows; i++ {
+		item := m.Activity[i]
+		line := m.formatActivityItem(item)
+		if isActive && cursor == i {
+			line = selectedRowStyle.Render("> " + line)
+		}
+		content.WriteString(line)
+		content.WriteString("\n")
+	}
+
+	// Show down indicator if more content below
+	if hasMoreBelow {
+		content.WriteString(subtleStyle.Render("  ▼ more below"))
+		content.WriteString("\n")
+	}
+
+	return m.wrapPanel(panelTitle, content.String(), height, PanelActivity)
 }
 
 // renderTaskListPanel renders the task list panel (Panel 3)
@@ -182,50 +272,86 @@ func (m Model) renderActivityPanel(height int) string {
 func (m Model) renderTaskListPanel(height int) string {
 	var content strings.Builder
 
-	// Build title with result count
-	panelTitle := "TASK LIST"
-	if m.SearchQuery != "" || m.IncludeClosed {
-		totalResults := len(m.TaskListRows)
-		if totalResults == 0 {
-			panelTitle = "TASK LIST (no matches)"
-		} else {
-			panelTitle = fmt.Sprintf("TASK LIST (%d results)", totalResults)
-		}
-	}
+	totalRows := len(m.TaskListRows)
 
-	if len(m.TaskListRows) == 0 {
+	if totalRows == 0 {
+		panelTitle := "TASK LIST"
+		if m.SearchQuery != "" || m.IncludeClosed {
+			panelTitle = "TASK LIST (no matches)"
+		}
 		content.WriteString(subtleStyle.Render("No tasks available"))
 		return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)
 	}
 
 	cursor := m.Cursor[PanelTaskList]
 	isActive := m.ActivePanel == PanelTaskList
-	maxLines := height - 2
+	offset := m.ScrollOffset[PanelTaskList]
+	maxLines := height - 3 // Account for title + border
+
+	// Clamp offset
+	if offset > totalRows-maxLines && totalRows > maxLines {
+		offset = totalRows - maxLines
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Build title with position if scrollable
+	panelTitle := "TASK LIST"
+	needsScroll := totalRows > maxLines
+	if needsScroll {
+		endPos := offset + maxLines
+		if endPos > totalRows {
+			endPos = totalRows
+		}
+		panelTitle = fmt.Sprintf("TASK LIST (%d-%d of %d)", offset+1, endPos, totalRows)
+	} else if m.SearchQuery != "" || m.IncludeClosed {
+		panelTitle = fmt.Sprintf("TASK LIST (%d results)", totalRows)
+	}
+
+	// Show up indicator if scrolled down
+	if needsScroll && offset > 0 {
+		content.WriteString(subtleStyle.Render("  ▲ more above"))
+		content.WriteString("\n")
+		maxLines-- // Reserve line for indicator
+	}
+
+	// Reserve line for down indicator if needed
+	hasMoreBelow := needsScroll && offset+maxLines < totalRows
+	if hasMoreBelow {
+		maxLines--
+	}
 
 	// Track current category for section headers
 	var currentCategory TaskListCategory
-	lines := 0
+	linesWritten := 0
 
 	for i, row := range m.TaskListRows {
-		if lines >= maxLines {
+		if linesWritten >= maxLines {
 			break
+		}
+
+		// Skip rows before offset
+		if i < offset {
+			currentCategory = row.Category // Track category even when skipping
+			continue
 		}
 
 		// Add category header when category changes
 		if row.Category != currentCategory {
-			if lines > 0 {
+			if linesWritten > 0 && linesWritten < maxLines {
 				content.WriteString("\n")
-				lines++
-				if lines >= maxLines {
+				linesWritten++
+				if linesWritten >= maxLines {
 					break
 				}
 			}
 			header := m.formatCategoryHeader(row.Category)
 			content.WriteString(header)
 			content.WriteString("\n")
-			lines++
+			linesWritten++
 			currentCategory = row.Category
-			if lines >= maxLines {
+			if linesWritten >= maxLines {
 				break
 			}
 		}
@@ -241,7 +367,13 @@ func (m Model) renderTaskListPanel(height int) string {
 
 		content.WriteString(line)
 		content.WriteString("\n")
-		lines++
+		linesWritten++
+	}
+
+	// Show down indicator if more content below
+	if hasMoreBelow {
+		content.WriteString(subtleStyle.Render("  ▼ more below"))
+		content.WriteString("\n")
 	}
 
 	return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)

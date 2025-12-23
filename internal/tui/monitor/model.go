@@ -650,6 +650,47 @@ func (m *Model) moveCursor(delta int) {
 
 	// Save the selected issue ID for persistence across refresh
 	m.saveSelectedID(panel)
+
+	// Auto-scroll viewport to keep cursor visible
+	m.ensureCursorVisible(panel)
+}
+
+// ensureCursorVisible adjusts ScrollOffset to keep cursor in viewport
+func (m *Model) ensureCursorVisible(panel Panel) {
+	cursor := m.Cursor[panel]
+	offset := m.ScrollOffset[panel]
+	visibleHeight := m.visibleHeightForPanel(panel)
+
+	if visibleHeight <= 0 {
+		return
+	}
+
+	// Scroll down if cursor below viewport
+	if cursor >= offset+visibleHeight {
+		m.ScrollOffset[panel] = cursor - visibleHeight + 1
+	}
+	// Scroll up if cursor above viewport
+	if cursor < offset {
+		m.ScrollOffset[panel] = cursor
+	}
+}
+
+// visibleHeightForPanel calculates visible rows for a panel
+func (m Model) visibleHeightForPanel(panel Panel) int {
+	if m.Height == 0 {
+		return 10 // Default fallback
+	}
+
+	// Match calculation from renderView()
+	searchBarHeight := 0
+	if m.SearchMode || m.SearchQuery != "" {
+		searchBarHeight = 2
+	}
+	availableHeight := m.Height - 3 - searchBarHeight
+	panelHeight := availableHeight / 3
+
+	// Account for title + border + category headers overhead
+	return panelHeight - 3
 }
 
 // saveSelectedID saves the currently selected issue ID for a panel
