@@ -11,7 +11,7 @@ import (
 )
 
 // FetchData retrieves all data needed for the monitor display
-func FetchData(database *db.DB, sessionID string, startedAt time.Time) RefreshDataMsg {
+func FetchData(database *db.DB, sessionID string, startedAt time.Time, searchQuery string, includeClosed bool) RefreshDataMsg {
 	msg := RefreshDataMsg{
 		Timestamp: time.Now(),
 	}
@@ -42,7 +42,7 @@ func FetchData(database *db.DB, sessionID string, startedAt time.Time) RefreshDa
 	msg.Activity = fetchActivity(database, 50)
 
 	// Get task list (uses current session for reviewable calculation)
-	msg.TaskList = fetchTaskList(database, currentSessionID)
+	msg.TaskList = fetchTaskList(database, currentSessionID, searchQuery, includeClosed)
 
 	// Get recent handoffs since monitor started
 	msg.RecentHandoffs = fetchRecentHandoffs(database, startedAt)
@@ -109,13 +109,14 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 }
 
 // fetchTaskList retrieves categorized issues for the task list panel
-func fetchTaskList(database *db.DB, sessionID string) TaskListData {
+func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includeClosed bool) TaskListData {
 	var data TaskListData
 
 	// Ready issues: open status, not blocked, sorted by priority
 	openIssues, _ := database.ListIssues(db.ListIssuesOptions{
-		Status: []models.Status{models.StatusOpen},
-		SortBy: "priority",
+		Status:  []models.Status{models.StatusOpen},
+		SortBy:  "priority",
+		Search:  searchQuery,
 	})
 
 	// Separate open issues into ready vs blocked-by-dependency
@@ -141,6 +142,7 @@ func fetchTaskList(database *db.DB, sessionID string) TaskListData {
 	reviewable, _ := database.ListIssues(db.ListIssuesOptions{
 		ReviewableBy: sessionID,
 		SortBy:       "priority",
+		Search:       searchQuery,
 	})
 	data.Reviewable = reviewable
 
@@ -148,8 +150,19 @@ func fetchTaskList(database *db.DB, sessionID string) TaskListData {
 	blocked, _ := database.ListIssues(db.ListIssuesOptions{
 		Status: []models.Status{models.StatusBlocked},
 		SortBy: "priority",
+		Search: searchQuery,
 	})
 	data.Blocked = append(blocked, blockedByDep...)
+
+	// Closed issues (if toggle enabled)
+	if includeClosed {
+		closed, _ := database.ListIssues(db.ListIssuesOptions{
+			Status: []models.Status{models.StatusClosed},
+			SortBy: "priority",
+			Search: searchQuery,
+		})
+		data.Closed = closed
+	}
 
 	return data
 }

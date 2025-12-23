@@ -28,8 +28,15 @@ func (m Model) renderView() string {
 		return m.renderHelp()
 	}
 
-	// Calculate panel heights (3 panels + footer)
-	availableHeight := m.Height - 3 // Leave room for footer
+	// Render search bar if active or has query
+	searchBar := m.renderSearchBar()
+	searchBarHeight := 0
+	if searchBar != "" {
+		searchBarHeight = 2 // Content + border
+	}
+
+	// Calculate panel heights (3 panels + footer + optional search bar)
+	availableHeight := m.Height - 3 - searchBarHeight // Leave room for footer and search bar
 	panelHeight := availableHeight / 3
 
 	// Render each panel
@@ -44,10 +51,18 @@ func (m Model) renderView() string {
 		activity,
 	)
 
+	// Add search bar if present
+	var content string
+	if searchBar != "" {
+		content = lipgloss.JoinVertical(lipgloss.Left, searchBar, panels)
+	} else {
+		content = panels
+	}
+
 	// Add footer
 	footer := m.renderFooter()
 
-	base := lipgloss.JoinVertical(lipgloss.Left, panels, footer)
+	base := lipgloss.JoinVertical(lipgloss.Left, content, footer)
 
 	// Overlay modal if open
 	if m.ModalOpen {
@@ -167,9 +182,20 @@ func (m Model) renderActivityPanel(height int) string {
 func (m Model) renderTaskListPanel(height int) string {
 	var content strings.Builder
 
+	// Build title with result count
+	panelTitle := "TASK LIST"
+	if m.SearchQuery != "" || m.IncludeClosed {
+		totalResults := len(m.TaskListRows)
+		if totalResults == 0 {
+			panelTitle = "TASK LIST (no matches)"
+		} else {
+			panelTitle = fmt.Sprintf("TASK LIST (%d results)", totalResults)
+		}
+	}
+
 	if len(m.TaskListRows) == 0 {
 		content.WriteString(subtleStyle.Render("No tasks available"))
-		return m.wrapPanel("TASK LIST", content.String(), height, PanelTaskList)
+		return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)
 	}
 
 	cursor := m.Cursor[PanelTaskList]
@@ -218,7 +244,7 @@ func (m Model) renderTaskListPanel(height int) string {
 		lines++
 	}
 
-	return m.wrapPanel("TASK LIST", content.String(), height, PanelTaskList)
+	return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)
 }
 
 // formatCategoryHeader returns the section header for a category
@@ -234,6 +260,9 @@ func (m Model) formatCategoryHeader(cat TaskListCategory) string {
 	case CategoryBlocked:
 		count = len(m.TaskList.Blocked)
 		return blockedColor.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
+	case CategoryClosed:
+		count = len(m.TaskList.Closed)
+		return subtleStyle.Render("CLOSED") + fmt.Sprintf(" (%d):", count)
 	}
 	return ""
 }
@@ -247,6 +276,8 @@ func (m Model) formatCategoryTag(cat TaskListCategory) string {
 		return readyColor.Render("[RDY]")
 	case CategoryBlocked:
 		return blockedColor.Render("[BLK]")
+	case CategoryClosed:
+		return subtleStyle.Render("[CLS]")
 	}
 	return ""
 }
@@ -515,9 +546,57 @@ func wrapText(text string, maxWidth int) []string {
 // Error style for modal
 var errorStyle = lipgloss.NewStyle().Foreground(errorColor)
 
+// renderSearchBar renders the search input bar when search mode is active
+func (m Model) renderSearchBar() string {
+	if !m.SearchMode && m.SearchQuery == "" {
+		return ""
+	}
+
+	var sb strings.Builder
+
+	// Icon and query display
+	if m.SearchMode {
+		sb.WriteString("🔍 ")
+	} else {
+		sb.WriteString(subtleStyle.Render("🔍 "))
+	}
+
+	if m.SearchQuery == "" {
+		sb.WriteString(subtleStyle.Render("Search: "))
+	} else {
+		sb.WriteString("Search: ")
+		sb.WriteString(m.SearchQuery)
+	}
+
+	// Cursor if in search mode
+	if m.SearchMode {
+		sb.WriteString("█")
+	}
+
+	// Closed indicator
+	if m.IncludeClosed {
+		numClosed := len(m.TaskList.Closed)
+		sb.WriteString("  ")
+		sb.WriteString(subtleStyle.Render(fmt.Sprintf("[%d closed]", numClosed)))
+	}
+
+	// Hint
+	padding := m.Width - lipgloss.Width(sb.String()) - 12
+	if padding > 0 {
+		sb.WriteString(strings.Repeat(" ", padding))
+	}
+	sb.WriteString(subtleStyle.Render("[Esc:exit]"))
+
+	return lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder(), false, false, true, false).
+		BorderForeground(lipgloss.Color("240")).
+		Padding(0, 1).
+		Render(sb.String())
+}
+
 // renderFooter renders the footer with key bindings and refresh time
 func (m Model) renderFooter() string {
-	keys := helpStyle.Render("q:quit  tab:switch  ↑↓:select  enter:details  r:refresh  ?:help")
+	keys := helpStyle.Render("q:quit  /:search  c:closed  tab:switch  ↑↓:select  enter:details  r:refresh  ?:help")
 
 	// Show active sessions indicator
 	sessionsIndicator := ""

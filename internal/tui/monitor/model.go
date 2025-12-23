@@ -33,6 +33,7 @@ type TaskListData struct {
 	Ready      []models.Issue
 	Reviewable []models.Issue
 	Blocked    []models.Issue
+	Closed     []models.Issue
 }
 
 // TaskListCategory represents the category of a task list row
@@ -42,6 +43,7 @@ const (
 	CategoryReviewable TaskListCategory = "REVIEW"
 	CategoryReady      TaskListCategory = "READY"
 	CategoryBlocked    TaskListCategory = "BLOCKED"
+	CategoryClosed     TaskListCategory = "CLOSED"
 )
 
 // TaskListRow represents a single selectable row in the task list panel
@@ -102,6 +104,11 @@ type Model struct {
 	ModalBlockedBy   []models.Issue // Dependencies (issues blocking this one)
 	ModalBlocks      []models.Issue // Dependents (issues blocked by this one)
 
+	// Search state
+	SearchMode    bool   // Whether search mode is active
+	SearchQuery   string // Current search query
+	IncludeClosed bool   // Whether to include closed tasks
+
 	// Configuration
 	RefreshInterval time.Duration
 }
@@ -148,6 +155,9 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
 		SelectedID:      make(map[Panel]string),
 		ActivePanel:     PanelCurrentWork,
 		StartedAt:       time.Now(),
+		SearchMode:      false,
+		SearchQuery:     "",
+		IncludeClosed:   false,
 	}
 }
 
@@ -214,9 +224,23 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.handleModalKey(msg)
 	}
 
+	// Search mode key handling
+	if m.SearchMode {
+		return m.handleSearchKey(msg)
+	}
+
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+
+	case "/":
+		m.SearchMode = true
+		m.SearchQuery = ""
+		return m, nil
+
+	case "c":
+		m.IncludeClosed = !m.IncludeClosed
+		return m, m.fetchData()
 
 	case "tab":
 		m.ActivePanel = (m.ActivePanel + 1) % 3
@@ -265,6 +289,49 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		return m.openModal()
+	}
+
+	return m, nil
+}
+
+// handleSearchKey processes key input when in search mode
+func (m Model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		// Exit search mode and reset
+		m.SearchMode = false
+		m.SearchQuery = ""
+		return m, m.fetchData()
+
+	case "enter":
+		// Exit search mode but keep the query applied
+		m.SearchMode = false
+		return m, nil
+
+	case "backspace":
+		// Remove last character from query
+		if len(m.SearchQuery) > 0 {
+			m.SearchQuery = m.SearchQuery[:len(m.SearchQuery)-1]
+			return m, m.fetchData()
+		}
+		return m, nil
+
+	case "ctrl+u", "ctrl+w":
+		// Clear entire query
+		m.SearchQuery = ""
+		return m, m.fetchData()
+
+	case "space":
+		m.SearchQuery += " "
+		return m, m.fetchData()
+
+	default:
+		// Append printable characters to search query
+		keyStr := msg.String()
+		if len(keyStr) == 1 && keyStr >= " " && keyStr <= "~" {
+			m.SearchQuery += keyStr
+			return m, m.fetchData()
+		}
 	}
 
 	return m, nil
@@ -417,7 +484,7 @@ func (m Model) scheduleTick() tea.Cmd {
 // fetchData returns a command that fetches all data and sends a RefreshDataMsg
 func (m Model) fetchData() tea.Cmd {
 	return func() tea.Msg {
-		data := FetchData(m.DB, m.SessionID, m.StartedAt)
+		data := FetchData(m.DB, m.SessionID, m.StartedAt, m.SearchQuery, m.IncludeClosed)
 		return data
 	}
 }
@@ -481,7 +548,7 @@ func (m *Model) buildCurrentWorkRows() {
 // buildTaskListRows builds the flattened list of task list rows with category metadata
 func (m *Model) buildTaskListRows() {
 	m.TaskListRows = nil
-	// Order: Reviewable, Ready, Blocked (matches display order)
+	// Order: Reviewable, Ready, Blocked, Closed (matches display order)
 	for _, issue := range m.TaskList.Reviewable {
 		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryReviewable})
 	}
@@ -490,6 +557,9 @@ func (m *Model) buildTaskListRows() {
 	}
 	for _, issue := range m.TaskList.Blocked {
 		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryBlocked})
+	}
+	for _, issue := range m.TaskList.Closed {
+		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryClosed})
 	}
 }
 
