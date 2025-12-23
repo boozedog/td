@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 4
+const SchemaVersion = 5
 
 const schema = `
 -- Issues table
@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS issues (
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     closed_at DATETIME,
     deleted_at DATETIME,
+    minor INTEGER DEFAULT 0,
+    created_branch TEXT DEFAULT '',
     FOREIGN KEY (parent_id) REFERENCES issues(id)
 );
 
@@ -197,5 +199,10 @@ CREATE INDEX IF NOT EXISTS idx_logs_work_session ON logs(work_session_id);
 		Version:     4,
 		Description: "Add minor flag to issues for self-reviewable tasks",
 		SQL:         `ALTER TABLE issues ADD COLUMN minor INTEGER DEFAULT 0;`,
+	},
+	{
+		Version:     5,
+		Description: "Add created_branch to issues",
+		SQL:         `ALTER TABLE issues ADD COLUMN created_branch TEXT DEFAULT '';`,
 	},
 }

@@ -78,6 +78,7 @@ type Issue struct {
 	ClosedAt           *time.Time `json:"closed_at,omitempty"`
 	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
 	Minor              bool       `json:"minor,omitempty"`
+	CreatedBranch      string     `json:"created_branch,omitempty"`
 }
 
 // Log represents a session log entry

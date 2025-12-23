@@ -90,6 +90,35 @@ func (db *DB) BaseDir() string {
 	return db.baseDir
 }
 
+// columnExists checks whether a column exists on a table
+func (db *DB) columnExists(table, column string) (bool, error) {
+	query := fmt.Sprintf("PRAGMA table_info(%s);", table)
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			cid       int
+			name      string
+			ctype     string
+			notnull   int
+			dfltValue sql.NullString
+			pk        int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+
+	return false, rows.Err()
+}
+
 // GetSchemaVersion returns the current schema version from the database
 func (db *DB) GetSchemaVersion() (int, error) {
 	var version string
@@ -130,6 +159,32 @@ func (db *DB) RunMigrations() (int, error) {
 	migrationsRun := 0
 	for _, migration := range Migrations {
 		if migration.Version > currentVersion {
+			if migration.Version == 4 {
+				exists, err := db.columnExists("issues", "minor")
+				if err != nil {
+					return migrationsRun, fmt.Errorf("check column minor: %w", err)
+				}
+				if exists {
+					if err := db.SetSchemaVersion(migration.Version); err != nil {
+						return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+					}
+					migrationsRun++
+					continue
+				}
+			}
+			if migration.Version == 5 {
+				exists, err := db.columnExists("issues", "created_branch")
+				if err != nil {
+					return migrationsRun, fmt.Errorf("check column created_branch: %w", err)
+				}
+				if exists {
+					if err := db.SetSchemaVersion(migration.Version); err != nil {
+						return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+					}
+					migrationsRun++
+					continue
+				}
+			}
 			if _, err := db.conn.Exec(migration.SQL); err != nil {
 				return migrationsRun, fmt.Errorf("migration %d (%s): %w", migration.Version, migration.Description, err)
 			}
@@ -193,9 +248,9 @@ func (db *DB) CreateIssue(issue *models.Issue) error {
 	labels := strings.Join(issue.Labels, ",")
 
 	_, err = db.conn.Exec(`
-		INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor)
+		INSERT INTO issues (id, title, description, status, type, priority, points, labels, parent_id, acceptance, created_at, updated_at, minor, created_branch)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, issue.ID, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority, issue.Points, labels, issue.ParentID, issue.Acceptance, issue.CreatedAt, issue.UpdatedAt, issue.Minor, issue.CreatedBranch)
 
 	return err
 }
@@ -208,12 +263,12 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 
 	err := db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance,
-		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor
-		FROM issues WHERE id = ?
+		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+	FROM issues WHERE id = ?
 	`, id).Scan(
 		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 		&issue.Points, &labels, &issue.ParentID, &issue.Acceptance,
-		&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor,
+		&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
 	)
 
 	if err == sql.ErrNoRows {
@@ -298,8 +353,8 @@ type ListIssuesOptions struct {
 // ListIssues returns issues matching the filter
 func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	query := `SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance,
-	                 implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor
-	          FROM issues WHERE 1=1`
+                 implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+          FROM issues WHERE 1=1`
 	var args []interface{}
 
 	// Handle deleted filter
@@ -467,7 +522,7 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
 			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance,
-			&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor,
+			&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
 		)
 		if err != nil {
 			return nil, err
