@@ -266,7 +266,9 @@ Run `td monitor` in a separate terminal to watch agent activity in real-time:
 
 ![td monitor](docs/monitor-screen.png)
 
-Shows current focus, activity log across sessions, and ready tasks. Useful for keeping an eye on what your agent is actually doing
+Shows current focus, activity log across sessions, and ready tasks. Useful for keeping an eye on what your agent is actually doing.
+
+**Search & Filter** — Press `/` to search tasks by name/description in real-time. Press `c` to toggle viewing closed tasks. Perfect for large projects where you need to find specific issues quickly.
 
 ## Issue Lifecycle
 
