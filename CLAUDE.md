@@ -10,11 +10,38 @@ Sessions are automatic (based on your terminal/agent context). Optional:
 
 Use `td usage -q` after first read.
 
-## Build
+## Build & Install
 
 ```bash
-go build -o td .           # Build
+go build -o td .           # Build locally
 go test ./...              # Test all
+```
+
+## Version & Release
+
+```bash
+# Commit changes with proper message
+git add .
+git commit -m "feat: description of changes
+
+Details here
+
+🤖 Generated with Claude Code
+
+Co-Authored-By: Claude Haiku 4.5 <noreply@anthropic.com>"
+
+# Create version tag (bump from current version, e.g., v0.2.0 → v0.3.0)
+git tag -a v0.3.0 -m "Release v0.3.0: description"
+
+# Push commit and tag
+git push origin main
+git push origin v0.3.0
+
+# Install locally with version
+go install -ldflags "-X main.Version=v0.3.0" ./...
+
+# Verify installation
+td version
 ```
 
 ## Architecture
