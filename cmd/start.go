@@ -39,6 +39,24 @@ Examples:
 			return err
 		}
 
+		// Check for too many in-progress issues
+		inProgress, _ := database.ListIssues(db.ListIssuesOptions{
+			Status:      []models.Status{models.StatusInProgress},
+			Implementer: sess.ID,
+		})
+		if len(inProgress) > 4 {
+			fmt.Println()
+			output.Warning("You have %d issues in progress!", len(inProgress))
+			fmt.Println("  Before starting new work, move completed issues to review:")
+			fmt.Println("    td review <id>    # for each completed issue")
+			fmt.Println()
+			fmt.Println("  In-progress issues:")
+			for _, issue := range inProgress {
+				fmt.Printf("    %s \"%s\"\n", issue.ID, issue.Title)
+			}
+			fmt.Println()
+		}
+
 		force, _ := cmd.Flags().GetBool("force")
 		reason, _ := cmd.Flags().GetString("reason")
 
