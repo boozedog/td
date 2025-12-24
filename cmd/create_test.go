@@ -370,3 +370,45 @@ func TestCreateIssueTimestamps(t *testing.T) {
 		t.Error("Expected ClosedAt to be nil for new issue")
 	}
 }
+
+// TestCreateTagFlagParsing tests that --tag and --tags flags are defined and work
+func TestCreateTagFlagParsing(t *testing.T) {
+	// Test that --tag flag exists
+	if createCmd.Flags().Lookup("tag") == nil {
+		t.Error("Expected --tag flag to be defined")
+	}
+
+	// Test that --tags flag exists
+	if createCmd.Flags().Lookup("tags") == nil {
+		t.Error("Expected --tags flag to be defined")
+	}
+
+	// Test that --tag flag can be set
+	if err := createCmd.Flags().Set("tag", "test,data"); err != nil {
+		t.Errorf("Failed to set --tag flag: %v", err)
+	}
+
+	tagValue, err := createCmd.Flags().GetString("tag")
+	if err != nil {
+		t.Errorf("Failed to get --tag flag value: %v", err)
+	}
+	if tagValue != "test,data" {
+		t.Errorf("Expected tag value 'test,data', got %s", tagValue)
+	}
+
+	// Reset flags
+	createCmd.Flags().Set("tag", "")
+
+	// Test that --tags flag can be set
+	if err := createCmd.Flags().Set("tags", "backend,api"); err != nil {
+		t.Errorf("Failed to set --tags flag: %v", err)
+	}
+
+	tagsValue, err := createCmd.Flags().GetString("tags")
+	if err != nil {
+		t.Errorf("Failed to get --tags flag value: %v", err)
+	}
+	if tagsValue != "backend,api" {
+		t.Errorf("Expected tags value 'backend,api', got %s", tagsValue)
+	}
+}

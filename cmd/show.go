@@ -64,8 +64,12 @@ var showCmd = &cobra.Command{
 			diffStats, _ = git.GetDiffStatsSince(startSnapshot.CommitSHA)
 		}
 
-		// Check output format
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		// Check output format (support both --json and --format json)
+		jsonOutput, _ := cmd.Flags().GetBool("json")
+		if format, _ := cmd.Flags().GetString("format"); format == "json" {
+			jsonOutput = true
+		}
+		if jsonOutput {
 			result := map[string]interface{}{
 				"id":                  issue.ID,
 				"title":               issue.Title,
@@ -223,6 +227,9 @@ var showCmd = &cobra.Command{
 // showMultipleIssues displays multiple issues with separators
 func showMultipleIssues(cmd *cobra.Command, database *db.DB, issueIDs []string) error {
 	jsonOutput, _ := cmd.Flags().GetBool("json")
+	if format, _ := cmd.Flags().GetString("format"); format == "json" {
+		jsonOutput = true
+	}
 
 	if jsonOutput {
 		issues := make([]map[string]interface{}, 0)
@@ -275,4 +282,5 @@ func init() {
 	showCmd.Flags().Bool("long", false, "Detailed multi-line output (default)")
 	showCmd.Flags().Bool("short", false, "Compact summary")
 	showCmd.Flags().Bool("json", false, "Machine-readable JSON")
+	showCmd.Flags().StringP("format", "f", "", "Output format (json)")
 }

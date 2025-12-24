@@ -72,11 +72,22 @@ var createCmd = &cobra.Command{
 			issue.Points = pts
 		}
 
-		// Labels (support both --labels and --label)
+		// Labels (support --labels, --label, --tags, --tag)
 		labelsStr, _ := cmd.Flags().GetString("labels")
-		labelStr, _ := cmd.Flags().GetString("label")
-		if labelsStr == "" && labelStr != "" {
-			labelsStr = labelStr
+		if labelsStr == "" {
+			if s, _ := cmd.Flags().GetString("label"); s != "" {
+				labelsStr = s
+			}
+		}
+		if labelsStr == "" {
+			if s, _ := cmd.Flags().GetString("tags"); s != "" {
+				labelsStr = s
+			}
+		}
+		if labelsStr == "" {
+			if s, _ := cmd.Flags().GetString("tag"); s != "" {
+				labelsStr = s
+			}
 		}
 		if labelsStr != "" {
 			issue.Labels = strings.Split(labelsStr, ",")
@@ -165,6 +176,8 @@ func init() {
 	createCmd.Flags().Int("points", 0, "Story points (Fibonacci: 1,2,3,5,8,13,21)")
 	createCmd.Flags().StringP("labels", "l", "", "Comma-separated labels")
 	createCmd.Flags().String("label", "", "Alias for --labels (single or comma-separated)")
+	createCmd.Flags().String("tags", "", "Alias for --labels")
+	createCmd.Flags().String("tag", "", "Alias for --labels")
 	createCmd.Flags().StringP("description", "d", "", "Description text")
 	createCmd.Flags().String("desc", "", "Alias for --description")
 	createCmd.Flags().String("body", "", "Alias for --description")

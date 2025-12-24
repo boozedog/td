@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	version string
-	baseDir string
+	version         string
+	baseDir         string
+	baseDirOverride *string // For testing
 )
 
 // SetVersion sets the version string
@@ -111,5 +112,8 @@ func initBaseDir() {
 
 // getBaseDir returns the base directory for the project
 func getBaseDir() string {
+	if baseDirOverride != nil {
+		return *baseDirOverride
+	}
 	return baseDir
 }
