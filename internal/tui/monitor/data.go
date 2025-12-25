@@ -10,6 +10,18 @@ import (
 	"github.com/marcus/td/internal/session"
 )
 
+// StatsData holds statistics for the stats modal
+type StatsData struct {
+	ExtendedStats *models.ExtendedStats
+	Error         error
+}
+
+// StatsDataMsg carries fetched stats data
+type StatsDataMsg struct {
+	Data  *StatsData
+	Error error
+}
+
 // FetchData retrieves all data needed for the monitor display
 func FetchData(database *db.DB, sessionID string, startedAt time.Time, searchQuery string, includeClosed bool) RefreshDataMsg {
 	msg := RefreshDataMsg{
@@ -114,9 +126,9 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 
 	// Ready issues: open status, not blocked, sorted by priority
 	openIssues, _ := database.ListIssues(db.ListIssuesOptions{
-		Status:  []models.Status{models.StatusOpen},
-		SortBy:  "priority",
-		Search:  searchQuery,
+		Status: []models.Status{models.StatusOpen},
+		SortBy: "priority",
+		Search: searchQuery,
 	})
 
 	// Separate open issues into ready vs blocked-by-dependency
@@ -234,5 +246,19 @@ func formatActionMessage(action models.ActionLog) string {
 		return "unlinked file"
 	default:
 		return string(action.ActionType)
+	}
+}
+
+// FetchStats retrieves extended statistics for the stats modal
+func FetchStats(database *db.DB) StatsDataMsg {
+	stats, err := database.GetExtendedStats()
+	if err != nil {
+		return StatsDataMsg{
+			Data:  &StatsData{Error: err},
+			Error: err,
+		}
+	}
+	return StatsDataMsg{
+		Data: &StatsData{ExtendedStats: stats},
 	}
 }

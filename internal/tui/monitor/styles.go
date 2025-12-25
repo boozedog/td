@@ -70,6 +70,13 @@ var (
 	selectedRowStyle = lipgloss.NewStyle().
 				Background(lipgloss.Color("237")).
 				Foreground(lipgloss.Color("255"))
+
+	// Stats modal styles
+	statsBarFilled  = "█"
+	statsBarEmpty   = "░"
+	statsTableLabel = lipgloss.NewStyle().Foreground(mutedColor)
+	statsTableValue = lipgloss.NewStyle().Foreground(lipgloss.Color("255")).Bold(true)
+	statsSection    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("255")).MarginTop(1)
 )
 
 // formatStatus renders a status with color

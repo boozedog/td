@@ -3,6 +3,7 @@ package monitor
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/td/internal/models"
@@ -68,6 +69,14 @@ func (m Model) renderView() string {
 	if m.ConfirmOpen {
 		confirm := m.renderConfirmation()
 		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, confirm,
+			lipgloss.WithWhitespaceChars(" "),
+			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
+	}
+
+	// Overlay stats modal if open
+	if m.StatsOpen {
+		stats := m.renderStatsModal()
+		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, stats,
 			lipgloss.WithWhitespaceChars(" "),
 			lipgloss.WithWhitespaceForeground(lipgloss.Color("0")))
 	}
@@ -639,6 +648,272 @@ func (m Model) renderModal() string {
 	return m.wrapModal(content.String(), modalWidth, modalHeight)
 }
 
+// renderStatsModal renders the stats modal with statistics and bar charts
+func (m Model) renderStatsModal() string {
+	// Calculate modal dimensions (80% of terminal, capped)
+	modalWidth := m.Width * 80 / 100
+	if modalWidth > 100 {
+		modalWidth = 100
+	}
+	if modalWidth < 50 {
+		modalWidth = 50
+	}
+	modalHeight := m.Height * 80 / 100
+	if modalHeight > 40 {
+		modalHeight = 40
+	}
+	if modalHeight < 20 {
+		modalHeight = 20
+	}
+
+	contentWidth := modalWidth - 4 // Account for border and padding
+
+	var content strings.Builder
+
+	// Loading state
+	if m.StatsLoading {
+		content.WriteString(subtleStyle.Render("Loading statistics..."))
+		return m.wrapModal(content.String(), modalWidth, modalHeight)
+	}
+
+	// Error state
+	if m.StatsError != nil || m.StatsData == nil || m.StatsData.Error != nil {
+		var errMsg string
+		if m.StatsError != nil {
+			errMsg = m.StatsError.Error()
+		} else if m.StatsData != nil && m.StatsData.Error != nil {
+			errMsg = m.StatsData.Error.Error()
+		} else {
+			errMsg = "Unknown error"
+		}
+		content.WriteString(errorStyle.Render(fmt.Sprintf("Error: %s", errMsg)))
+		content.WriteString("\n\n")
+		content.WriteString(subtleStyle.Render("Press esc to close"))
+		return m.wrapModal(content.String(), modalWidth, modalHeight)
+	}
+
+	if m.StatsData == nil || m.StatsData.ExtendedStats == nil {
+		content.WriteString(subtleStyle.Render("No stats available"))
+		return m.wrapModal(content.String(), modalWidth, modalHeight)
+	}
+
+	stats := m.StatsData.ExtendedStats
+
+	// Build all content lines for scrolling
+	var lines []string
+
+	// Title
+	lines = append(lines, titleStyle.Render("STATISTICS"))
+	lines = append(lines, "")
+
+	// Status bar chart
+	lines = append(lines, sectionHeader.Render("STATUS BREAKDOWN"))
+	lines = append(lines, m.renderStatusBarChart(stats, contentWidth))
+	lines = append(lines, "")
+
+	// Type breakdown (compact)
+	typeBreakdown := m.formatTypeBreakdown(stats)
+	if typeBreakdown != "" {
+		lines = append(lines, sectionHeader.Render("BY TYPE"))
+		lines = append(lines, typeBreakdown)
+		lines = append(lines, "")
+	}
+
+	// Priority breakdown (compact)
+	priorityBreakdown := m.formatPriorityBreakdown(stats)
+	if priorityBreakdown != "" {
+		lines = append(lines, sectionHeader.Render("BY PRIORITY"))
+		lines = append(lines, priorityBreakdown)
+		lines = append(lines, "")
+	}
+
+	// Summary stats
+	lines = append(lines, sectionHeader.Render("SUMMARY"))
+	lines = append(lines, fmt.Sprintf("%s Total: %d", statsTableLabel.Render("  "), stats.Total))
+	lines = append(lines, fmt.Sprintf("%s Points: %d", statsTableLabel.Render("  "), stats.TotalPoints))
+	if stats.Total > 0 {
+		lines = append(lines, fmt.Sprintf("%s Avg Points: %.1f", statsTableLabel.Render("  "), stats.AvgPointsPerTask))
+	}
+	completionPct := int(stats.CompletionRate * 100)
+	lines = append(lines, fmt.Sprintf("%s Completion: %d%%", statsTableLabel.Render("  "), completionPct))
+	lines = append(lines, "")
+
+	// Timeline
+	lines = append(lines, sectionHeader.Render("TIMELINE"))
+	if stats.OldestOpen != nil {
+		age := time.Since(stats.OldestOpen.CreatedAt)
+		ageDays := int(age.Hours() / 24)
+		lines = append(lines, fmt.Sprintf("%s Oldest open: %s (%dd)", statsTableLabel.Render("  "),
+			stats.OldestOpen.ID, ageDays))
+	}
+	if stats.LastClosed != nil {
+		lines = append(lines, fmt.Sprintf("%s Last closed: %s", statsTableLabel.Render("  "),
+			stats.LastClosed.ID))
+	}
+	lines = append(lines, fmt.Sprintf("%s Created today: %d", statsTableLabel.Render("  "), stats.CreatedToday))
+	lines = append(lines, fmt.Sprintf("%s Created this week: %d", statsTableLabel.Render("  "), stats.CreatedThisWeek))
+	lines = append(lines, "")
+
+	// Activity
+	lines = append(lines, sectionHeader.Render("ACTIVITY"))
+	lines = append(lines, fmt.Sprintf("%s Total logs: %d", statsTableLabel.Render("  "), stats.TotalLogs))
+	lines = append(lines, fmt.Sprintf("%s Total handoffs: %d", statsTableLabel.Render("  "), stats.TotalHandoffs))
+	if stats.MostActiveSession != "" {
+		lines = append(lines, fmt.Sprintf("%s Most active: %s", statsTableLabel.Render("  "),
+			truncateSession(stats.MostActiveSession)))
+	}
+
+	// Apply scroll offset
+	visibleHeight := modalHeight - 4 // Account for border and footer
+	totalLines := len(lines)
+
+	// Clamp scroll
+	maxScroll := totalLines - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	scroll := m.StatsScroll
+	if scroll > maxScroll {
+		scroll = maxScroll
+	}
+
+	// Get visible lines
+	endIdx := scroll + visibleHeight
+	if endIdx > totalLines {
+		endIdx = totalLines
+	}
+	visibleLines := lines[scroll:endIdx]
+
+	// Build content
+	content.WriteString(strings.Join(visibleLines, "\n"))
+
+	// Add scroll indicator if needed
+	if totalLines > visibleHeight {
+		content.WriteString("\n")
+		scrollInfo := subtleStyle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
+		content.WriteString(scrollInfo)
+	}
+
+	return m.wrapModal(content.String(), modalWidth, modalHeight)
+}
+
+// renderStatusBarChart renders a horizontal bar chart for status breakdown
+func (m Model) renderStatusBarChart(stats *models.ExtendedStats, width int) string {
+	var lines []string
+
+	statuses := []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+		models.StatusBlocked,
+		models.StatusInReview,
+		models.StatusClosed,
+	}
+
+	// Find max count for scaling
+	var maxCount int
+	for _, status := range statuses {
+		if count := stats.ByStatus[status]; count > maxCount {
+			maxCount = count
+		}
+	}
+
+	if maxCount == 0 {
+		maxCount = 1 // Avoid division by zero
+	}
+
+	// Bar width (account for label and count)
+	barWidth := width - 20
+
+	for _, status := range statuses {
+		count := stats.ByStatus[status]
+
+		// Calculate bar length (proportional to max)
+		barLen := 0
+		if count > 0 && maxCount > 0 {
+			barLen = (count * barWidth) / maxCount
+		}
+
+		// Build bar with appropriate color
+		var statusColor lipgloss.Style
+		switch status {
+		case models.StatusOpen:
+			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("45"))
+		case models.StatusInProgress:
+			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+		case models.StatusBlocked:
+			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+		case models.StatusInReview:
+			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
+		case models.StatusClosed:
+			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+		}
+
+		// Build filled and empty segments
+		filled := strings.Repeat(statsBarFilled, barLen)
+		empty := strings.Repeat(statsBarEmpty, barWidth-barLen)
+		bar := statusColor.Render(filled) + subtleStyle.Render(empty)
+
+		// Format label and count
+		label := fmt.Sprintf("%-11s", string(status))
+		countStr := fmt.Sprintf("%2d", count)
+
+		line := fmt.Sprintf("  %s %s %s", label, bar, countStr)
+		lines = append(lines, line)
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+// formatTypeBreakdown formats a compact type breakdown
+func (m Model) formatTypeBreakdown(stats *models.ExtendedStats) string {
+	types := []models.Type{
+		models.TypeBug,
+		models.TypeFeature,
+		models.TypeTask,
+		models.TypeEpic,
+		models.TypeChore,
+	}
+
+	var parts []string
+	for _, t := range types {
+		count := stats.ByType[t]
+		if count > 0 {
+			parts = append(parts, fmt.Sprintf("%s:%d", t, count))
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return statsTableLabel.Render("  ") + strings.Join(parts, "  ")
+}
+
+// formatPriorityBreakdown formats a compact priority breakdown
+func (m Model) formatPriorityBreakdown(stats *models.ExtendedStats) string {
+	priorities := []models.Priority{
+		models.PriorityP0,
+		models.PriorityP1,
+		models.PriorityP2,
+		models.PriorityP3,
+		models.PriorityP4,
+	}
+
+	var parts []string
+	for _, p := range priorities {
+		count := stats.ByPriority[p]
+		if count > 0 {
+			parts = append(parts, fmt.Sprintf("%s:%d", p, count))
+		}
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return statsTableLabel.Render("  ") + strings.Join(parts, "  ")
+}
+
 // wrapModal wraps content in a modal box with border
 func (m Model) wrapModal(content string, width, height int) string {
 	modalStyle := lipgloss.NewStyle().
@@ -776,7 +1051,7 @@ func (m Model) renderSearchBar() string {
 
 // renderFooter renders the footer with key bindings and refresh time
 func (m Model) renderFooter() string {
-	keys := helpStyle.Render("q:quit /:search r:review a:approve x:del tab:panel ↑↓:sel enter:details ?:help")
+	keys := helpStyle.Render("q:quit s:stats /:search r:review a:approve x:del tab:panel ↑↓:sel enter:details ?:help")
 
 	// Show active sessions indicator
 	sessionsIndicator := ""
@@ -819,15 +1094,17 @@ NAVIGATION:
   j / k             Scroll viewport
   Enter             Open issue details
 
-MODAL:
+MODALS:
   ↑ / ↓ / j / k     Scroll modal content
-  ← / → / h / l     Navigate prev/next issue
+  ← / → / h / l     Navigate prev/next issue (issue details only)
   Esc / Enter       Close modal
+  r                 Refresh modal content
 
 ACTIONS:
   r                 Mark for review (Current Work) / Refresh
   a                 Approve issue (Task List reviewable)
   x                 Delete issue (confirmation required)
+  s                 Show statistics dashboard
   /                 Search tasks
   c                 Toggle closed tasks
   q / Ctrl+C        Quit

@@ -270,6 +270,19 @@ Shows current focus, activity log across sessions, and ready tasks. Useful for k
 
 **Search & Filter** — Press `/` to search tasks by name/description in real-time. Press `c` to toggle viewing closed tasks. Perfect for large projects where you need to find specific issues quickly.
 
+**Statistics Dashboard** — Press `s` to open the stats modal and see key metrics:
+
+![td stats modal](docs/stats-modal.png)
+
+The dashboard displays:
+- **Status Breakdown** — Visual bar chart showing task distribution across statuses (open, in_progress, blocked, in_review, closed)
+- **By Type & Priority** — Compact breakdowns of issue types (bug, feature, task, epic, chore) and priorities (P0-P4)
+- **Summary Metrics** — Total count, story points, average points per task, and completion rate
+- **Timeline Data** — Oldest open task (with age), last closed task, and creation statistics for today/this week
+- **Activity Stats** — Total logs, total handoffs, and most active session
+
+Navigate with arrow keys or j/k, refresh with `r`, close with `esc`.
+
 ## Issue Lifecycle
 
 ```

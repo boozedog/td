@@ -241,3 +241,29 @@ func IsValidPriority(p Priority) bool {
 	}
 	return false
 }
+
+// ExtendedStats holds detailed statistics for dashboard/stats displays
+type ExtendedStats struct {
+	// Counts
+	Total      int
+	ByStatus   map[Status]int
+	ByType     map[Type]int
+	ByPriority map[Priority]int
+
+	// Timeline
+	OldestOpen      *Issue
+	NewestTask      *Issue
+	LastClosed      *Issue
+	CreatedToday    int
+	CreatedThisWeek int
+
+	// Points/velocity
+	TotalPoints      int
+	AvgPointsPerTask float64
+	CompletionRate   float64 // closed / total created (or created + closed)
+
+	// Activity
+	TotalLogs         int
+	TotalHandoffs     int
+	MostActiveSession string
+}
