@@ -43,62 +43,43 @@ var treeCmd = &cobra.Command{
 		// Print root
 		fmt.Printf("%s %s: %s\n", issue.Type, issue.ID, issue.Title)
 
-		// Print children
-		printTree(database, issueID, 0, maxDepth)
+		// Build and print children tree
+		children := buildTreeNodes(database, issueID, 0, maxDepth)
+		treeOutput := output.RenderTree(output.TreeNode{Children: children}, output.TreeRenderOptions{
+			MaxDepth:   maxDepth,
+			ShowStatus: true,
+			ShowType:   true,
+		})
+		if treeOutput != "" {
+			fmt.Println(treeOutput)
+		}
 
 		return nil
 	},
 }
 
-func printTree(database *db.DB, parentID string, depth int, maxDepth int) {
+// buildTreeNodes recursively builds TreeNode structure from database
+func buildTreeNodes(database *db.DB, parentID string, depth int, maxDepth int) []output.TreeNode {
 	if maxDepth > 0 && depth >= maxDepth {
-		return
+		return nil
 	}
 
-	// Get children
 	children, _ := database.ListIssues(db.ListIssuesOptions{
 		ParentID: parentID,
 	})
 
-	for i, child := range children {
-		prefix := ""
-		for j := 0; j < depth; j++ {
-			prefix += "│   "
+	nodes := make([]output.TreeNode, 0, len(children))
+	for _, child := range children {
+		node := output.TreeNode{
+			ID:       child.ID,
+			Title:    child.Title,
+			Type:     child.Type,
+			Status:   child.Status,
+			Children: buildTreeNodes(database, child.ID, depth+1, maxDepth),
 		}
-
-		isLast := i == len(children)-1
-		connector := "├── "
-		if isLast {
-			connector = "└── "
-		}
-
-		statusMark := ""
-		switch child.Status {
-		case models.StatusClosed:
-			statusMark = " ✓"
-		case models.StatusInReview:
-			statusMark = " ⧗"
-		case models.StatusInProgress:
-			statusMark = " ●"
-		case models.StatusBlocked:
-			statusMark = " ✗"
-		}
-
-		fmt.Printf("%s%s%s %s: %s %s%s\n",
-			prefix, connector, child.Type, child.ID, child.Title,
-			output.FormatStatus(child.Status), statusMark)
-
-		// Recurse
-		newPrefix := prefix
-		if isLast {
-			newPrefix += "    "
-		} else {
-			newPrefix += "│   "
-		}
-		_ = newPrefix // Would be used for proper tree formatting
-
-		printTree(database, child.ID, depth+1, maxDepth)
+		nodes = append(nodes, node)
 	}
+	return nodes
 }
 
 func buildTree(database *db.DB, issueID string, depth int, maxDepth int) map[string]interface{} {

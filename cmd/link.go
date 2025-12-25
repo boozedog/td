@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/dependency"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
@@ -128,24 +129,14 @@ Examples:
 				return err
 			}
 
-			// Check for circular dependency
-			if wouldCreateCycle(database, issueID, dependsOnID) {
-				output.Error("cannot add dependency: would create circular dependency")
-				return fmt.Errorf("circular dependency")
+			// Use the dependency module to validate and add
+			err = dependency.ValidateAndAdd(database, issueID, dependsOnID)
+			if err == dependency.ErrDependencyExists {
+				output.Warning("%s already depends on %s", issueID, dependsOnID)
+				return nil
 			}
-
-			// Check if dependency already exists
-			existingDeps, _ := database.GetDependencies(issueID)
-			for _, d := range existingDeps {
-				if d == dependsOnID {
-					output.Warning("%s already depends on %s", issueID, dependsOnID)
-					return nil
-				}
-			}
-
-			// Add the dependency
-			if err := database.AddDependency(issueID, dependsOnID, "depends_on"); err != nil {
-				output.Error("failed to add dependency: %v", err)
+			if err != nil {
+				output.Error("%v", err)
 				return err
 			}
 

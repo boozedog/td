@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/dependency"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/spf13/cobra"
@@ -68,7 +69,12 @@ var blockedByCmd = &cobra.Command{
 			return nil
 		}
 
-		printBlockedTree(database, issueID, 0, make(map[string]bool), directOnly)
+		// Build and render blocked tree
+		nodes := buildBlockedTreeNodes(database, issueID, directOnly, make(map[string]bool))
+		treeOutput := output.RenderBlockedTree(nodes, output.TreeRenderOptions{}, directOnly)
+		if treeOutput != "" {
+			fmt.Println(treeOutput)
+		}
 
 		directCount := len(blocked)
 		if !directOnly {
@@ -83,14 +89,12 @@ var blockedByCmd = &cobra.Command{
 	},
 }
 
-func printBlockedTree(database *db.DB, issueID string, depth int, visited map[string]bool, directOnly bool) {
+// buildBlockedTreeNodes builds TreeNodes from blocked issues
+func buildBlockedTreeNodes(database *db.DB, issueID string, directOnly bool, visited map[string]bool) []output.TreeNode {
 	blocked, _ := database.GetBlockedBy(issueID)
+	nodes := make([]output.TreeNode, 0, len(blocked))
 
-	if depth == 0 {
-		fmt.Println("└── blocks:")
-	}
-
-	for i, id := range blocked {
+	for _, id := range blocked {
 		if visited[id] {
 			continue
 		}
@@ -101,39 +105,25 @@ func printBlockedTree(database *db.DB, issueID string, depth int, visited map[st
 			continue
 		}
 
-		prefix := "    "
-		for j := 0; j < depth; j++ {
-			prefix += "    "
-		}
-
-		isLast := i == len(blocked)-1
-		if isLast {
-			fmt.Printf("%s└── %s: %s %s\n", prefix, issue.ID, issue.Title, output.FormatStatus(issue.Status))
-		} else {
-			fmt.Printf("%s├── %s: %s %s\n", prefix, issue.ID, issue.Title, output.FormatStatus(issue.Status))
+		node := output.TreeNode{
+			ID:     issue.ID,
+			Title:  issue.Title,
+			Type:   issue.Type,
+			Status: issue.Status,
 		}
 
 		if !directOnly {
-			printBlockedTree(database, id, depth+1, visited, directOnly)
+			node.Children = buildBlockedTreeNodes(database, id, directOnly, visited)
 		}
+
+		nodes = append(nodes, node)
 	}
+
+	return nodes
 }
 
 func getTransitiveBlocked(database *db.DB, issueID string, visited map[string]bool) []string {
-	if visited[issueID] {
-		return nil
-	}
-	visited[issueID] = true
-
-	blocked, _ := database.GetBlockedBy(issueID)
-	var all []string
-	all = append(all, blocked...)
-
-	for _, id := range blocked {
-		all = append(all, getTransitiveBlocked(database, id, visited)...)
-	}
-
-	return all
+	return dependency.GetTransitiveBlocked(database, issueID, visited)
 }
 
 var dependsOnCmd = &cobra.Command{
@@ -432,15 +422,85 @@ func buildCriticalPathSequence(database *db.DB, issueMap map[string]*models.Issu
 }
 
 var depCmd = &cobra.Command{
-	Use:     "dep [issue] [depends-on-issue]",
-	Aliases: []string{"add-dep"},
-	Short:   "Add a dependency (issue depends on another)",
-	Long: `Add a dependency between issues. The first issue will depend on the second.
+	Use:   "dep [issue] [depends-on-issue]",
+	Short: "Manage dependencies between issues",
+	Long: `Manage dependencies between issues.
+
+Usage:
+  td dep add <issue> <depends-on>   Add a dependency
+  td dep rm <issue> <depends-on>    Remove a dependency
+  td dep <issue>                    Show what issue depends on
+  td dep <issue> --blocking         Show what depends on issue
+
+Backward compatible:
+  td dep <issue> <depends-on>       Same as 'td dep add'
 
 Examples:
-  td dep td-abc td-xyz     # td-abc now depends on td-xyz
-  td dep feature bugfix    # feature depends on bugfix`,
+  td dep add td-abc td-xyz    # td-abc now depends on td-xyz
+  td dep rm td-abc td-xyz     # remove that dependency
+  td dep td-abc               # show what td-abc depends on
+  td dep td-abc --blocking    # show what depends on td-abc`,
 	GroupID: "workflow",
+	Args:    cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		blocking, _ := cmd.Flags().GetBool("blocking")
+		jsonOutput, _ := cmd.Flags().GetBool("json")
+
+		// Single arg: show dependencies (or blocking issues with --blocking)
+		if len(args) == 1 {
+			issueID := args[0]
+			issue, err := database.GetIssue(issueID)
+			if err != nil {
+				output.Error("issue not found: %s", issueID)
+				return err
+			}
+
+			if blocking {
+				// Show what depends on this issue (reverse deps)
+				return showBlocking(database, issue, jsonOutput)
+			}
+			// Show what this issue depends on
+			return showDependencies(database, issue, jsonOutput)
+		}
+
+		// Two args: add dependency (backward compat)
+		issueID := args[0]
+		dependsOnID := args[1]
+		return addDependency(database, issueID, dependsOnID)
+	},
+}
+
+var depAddCmd = &cobra.Command{
+	Use:   "add <issue> <depends-on>",
+	Short: "Add a dependency (issue depends on another)",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		defer database.Close()
+
+		return addDependency(database, args[0], args[1])
+	},
+}
+
+var depRmCmd = &cobra.Command{
+	Use:     "rm <issue> <depends-on>",
+	Aliases: []string{"remove"},
+	Short:   "Remove a dependency",
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
@@ -455,7 +515,6 @@ Examples:
 		issueID := args[0]
 		dependsOnID := args[1]
 
-		// Verify both issues exist
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
 			output.Error("issue not found: %s", issueID)
@@ -468,57 +527,129 @@ Examples:
 			return err
 		}
 
-		// Check for circular dependency
-		if wouldCreateCycle(database, issueID, dependsOnID) {
-			output.Error("cannot add dependency: would create circular dependency")
-			return fmt.Errorf("circular dependency")
-		}
-
-		// Check if dependency already exists
-		existingDeps, _ := database.GetDependencies(issueID)
-		for _, d := range existingDeps {
-			if d == dependsOnID {
-				output.Warning("%s already depends on %s", issueID, dependsOnID)
-				return nil
-			}
-		}
-
-		// Add the dependency
-		if err := database.AddDependency(issueID, dependsOnID, "depends_on"); err != nil {
-			output.Error("failed to add dependency: %v", err)
+		err = dependency.Remove(database, issueID, dependsOnID)
+		if err != nil {
+			output.Error("failed to remove dependency: %v", err)
 			return err
 		}
 
-		fmt.Printf("ADDED: %s depends on %s\n", issue.ID, depIssue.ID)
-		fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
-		fmt.Printf("  └── now depends on: %s: %s\n", depIssue.ID, depIssue.Title)
-
+		fmt.Printf("REMOVED: %s no longer depends on %s\n", issue.ID, depIssue.ID)
 		return nil
 	},
 }
 
-// wouldCreateCycle checks if adding dep would create a circular dependency
-func wouldCreateCycle(database *db.DB, issueID, newDepID string) bool {
-	visited := make(map[string]bool)
-	return hasCyclePath(database, newDepID, issueID, visited)
+// addDependency adds a dependency between two issues
+func addDependency(database *db.DB, issueID, dependsOnID string) error {
+	issue, err := database.GetIssue(issueID)
+	if err != nil {
+		output.Error("issue not found: %s", issueID)
+		return err
+	}
+
+	depIssue, err := database.GetIssue(dependsOnID)
+	if err != nil {
+		output.Error("issue not found: %s", dependsOnID)
+		return err
+	}
+
+	err = dependency.ValidateAndAdd(database, issueID, dependsOnID)
+	if err == dependency.ErrDependencyExists {
+		output.Warning("%s already depends on %s", issueID, dependsOnID)
+		return nil
+	}
+	if err != nil {
+		output.Error("%v", err)
+		return err
+	}
+
+	fmt.Printf("ADDED: %s depends on %s\n", issue.ID, depIssue.ID)
+	fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+	fmt.Printf("  └── now depends on: %s: %s\n", depIssue.ID, depIssue.Title)
+	return nil
 }
 
-func hasCyclePath(database *db.DB, from, to string, visited map[string]bool) bool {
-	if from == to {
-		return true
+// showDependencies shows what an issue depends on
+func showDependencies(database *db.DB, issue *models.Issue, jsonOutput bool) error {
+	deps, err := database.GetDependencies(issue.ID)
+	if err != nil {
+		output.Error("failed to get dependencies: %v", err)
+		return err
 	}
-	if visited[from] {
-		return false
-	}
-	visited[from] = true
 
-	deps, _ := database.GetDependencies(from)
-	for _, dep := range deps {
-		if hasCyclePath(database, dep, to, visited) {
-			return true
+	if jsonOutput {
+		result := map[string]interface{}{
+			"issue":        issue,
+			"dependencies": deps,
 		}
+		return output.JSON(result)
 	}
-	return false
+
+	fmt.Printf("%s: %s %s\n", issue.ID, issue.Title, output.FormatStatus(issue.Status))
+
+	if len(deps) == 0 {
+		fmt.Println("No dependencies")
+		return nil
+	}
+
+	fmt.Println("└── depends on:")
+	blocking := 0
+	resolved := 0
+
+	for _, depID := range deps {
+		dep, err := database.GetIssue(depID)
+		if err != nil {
+			continue
+		}
+
+		statusMark := ""
+		if dep.Status == models.StatusClosed {
+			statusMark = " ✓"
+			resolved++
+		} else {
+			blocking++
+		}
+
+		fmt.Printf("    %s: %s %s%s\n", dep.ID, dep.Title, output.FormatStatus(dep.Status), statusMark)
+	}
+
+	fmt.Printf("\n%d blocking, %d resolved\n", blocking, resolved)
+	return nil
+}
+
+// showBlocking shows what issues depend on the given issue
+func showBlocking(database *db.DB, issue *models.Issue, jsonOutput bool) error {
+	blocked, err := database.GetBlockedBy(issue.ID)
+	if err != nil {
+		output.Error("failed to get blocked issues: %v", err)
+		return err
+	}
+
+	if jsonOutput {
+		result := map[string]interface{}{
+			"issue":   issue,
+			"blocked": blocked,
+		}
+		return output.JSON(result)
+	}
+
+	fmt.Printf("%s: %s %s\n", issue.ID, issue.Title, output.FormatStatus(issue.Status))
+
+	if len(blocked) == 0 {
+		fmt.Println("No issues depend on this one")
+		return nil
+	}
+
+	fmt.Println("└── blocks:")
+	for _, id := range blocked {
+		dep, err := database.GetIssue(id)
+		if err != nil {
+			continue
+		}
+		fmt.Printf("    %s: %s %s\n", dep.ID, dep.Title, output.FormatStatus(dep.Status))
+	}
+
+	fmt.Printf("\n%d issues blocked\n", len(blocked))
+	return nil
 }
 
 func init() {
@@ -527,10 +658,17 @@ func init() {
 	rootCmd.AddCommand(depCmd)
 	rootCmd.AddCommand(criticalPathCmd)
 
+	// Add subcommands to dep
+	depCmd.AddCommand(depAddCmd)
+	depCmd.AddCommand(depRmCmd)
+
 	blockedByCmd.Flags().Bool("direct", false, "Only show direct dependencies")
 	blockedByCmd.Flags().Bool("json", false, "JSON output")
 
 	dependsOnCmd.Flags().Bool("json", false, "JSON output")
+
+	depCmd.Flags().Bool("blocking", false, "Show what depends on this issue (reverse)")
+	depCmd.Flags().Bool("json", false, "JSON output")
 
 	criticalPathCmd.Flags().Int("limit", 10, "Max issues to show")
 	criticalPathCmd.Flags().Bool("json", false, "JSON output")

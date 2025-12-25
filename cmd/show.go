@@ -227,33 +227,25 @@ Examples:
 		}
 
 		// Show children if --children flag is set
-		if showChildren, _ := cmd.Flags().GetBool("children"); showChildren {
+		if showChildrenFlag, _ := cmd.Flags().GetBool("children"); showChildrenFlag {
 			children, _ := database.ListIssues(db.ListIssuesOptions{
 				ParentID: issueID,
 			})
 			if len(children) > 0 {
 				fmt.Printf("\nCHILDREN:\n")
-				for i, child := range children {
-					statusMark := ""
-					switch child.Status {
-					case "closed":
-						statusMark = " ✓"
-					case "in_review":
-						statusMark = " ⧗"
-					case "in_progress":
-						statusMark = " ●"
-					case "blocked":
-						statusMark = " ✗"
-					}
-
-					isLast := i == len(children)-1
-					connector := "├── "
-					if isLast {
-						connector = "└── "
-					}
-
-					fmt.Printf("  %s%s %s: %s [%s]%s\n",
-						connector, child.Type, child.ID, child.Title, child.Status, statusMark)
+				// Convert to TreeNodes
+				nodes := make([]output.TreeNode, 0, len(children))
+				for _, child := range children {
+					nodes = append(nodes, output.TreeNode{
+						ID:     child.ID,
+						Title:  child.Title,
+						Type:   child.Type,
+						Status: child.Status,
+					})
+				}
+				lines := output.RenderChildrenList(nodes)
+				for _, line := range lines {
+					fmt.Println(line)
 				}
 			}
 		}
