@@ -533,6 +533,8 @@ func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
 	m.ModalLogs = nil
 	m.ModalBlockedBy = nil
 	m.ModalBlocks = nil
+	m.ModalDescRender = ""
+	m.ModalAcceptRender = ""
 
 	// Update cursor position to match in source panel
 	m.Cursor[m.ModalSourcePanel] = newIdx
@@ -557,6 +559,10 @@ func (m Model) openModal() (tea.Model, tea.Cmd) {
 	m.ModalIssue = nil
 	m.ModalHandoff = nil
 	m.ModalLogs = nil
+	m.ModalBlockedBy = nil
+	m.ModalBlocks = nil
+	m.ModalDescRender = ""
+	m.ModalAcceptRender = ""
 
 	return m, m.fetchIssueDetails(issueID)
 }
@@ -594,8 +600,9 @@ func preRenderMarkdown(text string, width int) string {
 		return ""
 	}
 
+	// Use dark style directly (avoid expensive auto-detection)
 	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
+		glamour.WithStylePath("dark"),
 		glamour.WithWordWrap(width),
 	)
 	if err != nil {
