@@ -521,3 +521,213 @@ func TestFormatGitStateShortSHA(t *testing.T) {
 		t.Error("Should not contain more than 7 chars of SHA")
 	}
 }
+
+// TestIssueOneLiner tests concise one-line issue formatting
+func TestIssueOneLiner(t *testing.T) {
+	issue := &models.Issue{
+		ID:     "td-abc1",
+		Title:  "Fix login bug",
+		Status: models.StatusInProgress,
+	}
+
+	result := IssueOneLiner(issue)
+
+	if !strings.Contains(result, "td-abc1") {
+		t.Error("Should contain issue ID")
+	}
+	if !strings.Contains(result, "Fix login bug") {
+		t.Error("Should contain title")
+	}
+	if !strings.Contains(result, "in_progress") {
+		t.Error("Should contain status")
+	}
+}
+
+// TestIssueOneLinerPlain tests plain one-liner without styling
+func TestIssueOneLinerPlain(t *testing.T) {
+	issue := &models.Issue{
+		ID:     "td-xyz2",
+		Title:  "Add feature",
+		Status: models.StatusOpen,
+	}
+
+	result := IssueOneLinerPlain(issue)
+	expected := `td-xyz2 "Add feature" [open]`
+
+	if result != expected {
+		t.Errorf("IssueOneLinerPlain() = %q, want %q", result, expected)
+	}
+}
+
+// TestStatusBadge tests status badge with symbols
+func TestStatusBadge(t *testing.T) {
+	tests := []struct {
+		status   models.Status
+		contains string
+	}{
+		{models.StatusOpen, "○"},
+		{models.StatusInProgress, "▶"},
+		{models.StatusBlocked, "✗"},
+		{models.StatusInReview, "◎"},
+		{models.StatusClosed, "✓"},
+	}
+
+	for _, tc := range tests {
+		result := StatusBadge(tc.status)
+		if !strings.Contains(result, tc.contains) {
+			t.Errorf("StatusBadge(%q) = %q, should contain %q", tc.status, result, tc.contains)
+		}
+		if !strings.Contains(result, string(tc.status)) {
+			t.Errorf("StatusBadge(%q) should contain status name", tc.status)
+		}
+	}
+}
+
+// TestStatusBadgeUnknown tests badge for unknown status
+func TestStatusBadgeUnknown(t *testing.T) {
+	result := StatusBadge(models.Status("unknown"))
+	if !strings.Contains(result, "?") {
+		t.Error("Unknown status should use ? symbol")
+	}
+}
+
+// TestSectionHeader tests section header formatting
+func TestSectionHeader(t *testing.T) {
+	tests := []struct {
+		title    string
+		expected string
+	}{
+		{"dependencies", "\nDEPENDENCIES:\n"},
+		{"Git State", "\nGIT STATE:\n"},
+		{"BLOCKS", "\nBLOCKS:\n"},
+	}
+
+	for _, tc := range tests {
+		result := SectionHeader(tc.title)
+		if result != tc.expected {
+			t.Errorf("SectionHeader(%q) = %q, want %q", tc.title, result, tc.expected)
+		}
+	}
+}
+
+// TestIndentLines tests line indentation
+func TestIndentLines(t *testing.T) {
+	lines := []string{"line1", "line2", "line3"}
+
+	result := IndentLines(lines, 2)
+
+	expected := []string{"  line1", "  line2", "  line3"}
+	for i, line := range result {
+		if line != expected[i] {
+			t.Errorf("IndentLines[%d] = %q, want %q", i, line, expected[i])
+		}
+	}
+}
+
+// TestIndentLinesZero tests zero indentation
+func TestIndentLinesZero(t *testing.T) {
+	lines := []string{"a", "b"}
+	result := IndentLines(lines, 0)
+
+	if result[0] != "a" || result[1] != "b" {
+		t.Error("Zero indent should not change lines")
+	}
+}
+
+// TestIndentLinesEmpty tests empty slice
+func TestIndentLinesEmpty(t *testing.T) {
+	result := IndentLines([]string{}, 4)
+	if len(result) != 0 {
+		t.Error("Empty input should return empty output")
+	}
+}
+
+// TestIndentString tests string indentation
+func TestIndentString(t *testing.T) {
+	input := "line1\nline2\nline3"
+	result := IndentString(input, 2)
+	expected := "  line1\n  line2\n  line3"
+
+	if result != expected {
+		t.Errorf("IndentString() = %q, want %q", result, expected)
+	}
+}
+
+// TestIndentStringEmpty tests empty string
+func TestIndentStringEmpty(t *testing.T) {
+	result := IndentString("", 4)
+	if result != "" {
+		t.Error("Empty string should return empty string")
+	}
+}
+
+// TestBulletList tests bullet list formatting
+func TestBulletList(t *testing.T) {
+	items := []string{"item 1", "item 2", "item 3"}
+	result := BulletList(items, 2)
+
+	expected := []string{"  - item 1", "  - item 2", "  - item 3"}
+	for i, line := range result {
+		if line != expected[i] {
+			t.Errorf("BulletList[%d] = %q, want %q", i, line, expected[i])
+		}
+	}
+}
+
+// TestBulletListNoIndent tests bullet list with no indentation
+func TestBulletListNoIndent(t *testing.T) {
+	items := []string{"a", "b"}
+	result := BulletList(items, 0)
+
+	if result[0] != "- a" || result[1] != "- b" {
+		t.Error("Bullet list with 0 indent should have '- ' prefix only")
+	}
+}
+
+// TestDependencyLine tests dependency line formatting
+func TestDependencyLine(t *testing.T) {
+	issue := &models.Issue{
+		ID:     "td-dep1",
+		Title:  "Dependency task",
+		Status: models.StatusOpen,
+	}
+
+	result := DependencyLine(issue, false)
+	if !strings.Contains(result, "td-dep1") {
+		t.Error("Should contain issue ID")
+	}
+	if !strings.Contains(result, "Dependency task") {
+		t.Error("Should contain title")
+	}
+	if strings.Contains(result, "✓") {
+		t.Error("Should not contain checkmark when showResolved=false")
+	}
+}
+
+// TestDependencyLineResolved tests resolved dependency
+func TestDependencyLineResolved(t *testing.T) {
+	issue := &models.Issue{
+		ID:     "td-res1",
+		Title:  "Resolved task",
+		Status: models.StatusClosed,
+	}
+
+	result := DependencyLine(issue, true)
+	if !strings.Contains(result, "✓") {
+		t.Error("Should contain checkmark for closed issue with showResolved=true")
+	}
+}
+
+// TestDependencyLineNotResolved tests non-closed with showResolved
+func TestDependencyLineNotResolved(t *testing.T) {
+	issue := &models.Issue{
+		ID:     "td-open1",
+		Title:  "Open task",
+		Status: models.StatusOpen,
+	}
+
+	result := DependencyLine(issue, true)
+	if strings.Contains(result, "✓") {
+		t.Error("Open issue should not have checkmark even with showResolved=true")
+	}
+}

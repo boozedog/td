@@ -150,7 +150,7 @@ Examples:
 
 		// Add git state section
 		if startSnapshot != nil {
-			fmt.Printf("\nGIT STATE:\n")
+			fmt.Print(output.SectionHeader("Git State"))
 			fmt.Printf("  Started: %s (%s) %s\n",
 				output.ShortSHA(startSnapshot.CommitSHA), startSnapshot.Branch, output.FormatTimeAgo(startSnapshot.Timestamp))
 			if gitState != nil {
@@ -180,7 +180,7 @@ Examples:
 			sessionMap[issue.ReviewerSession] = true
 		}
 		if len(sessionMap) > 0 {
-			fmt.Printf("\nSESSIONS INVOLVED:\n")
+			fmt.Print(output.SectionHeader("Sessions Involved"))
 			for sess := range sessionMap {
 				role := ""
 				if sess == issue.ImplementerSession {
@@ -195,7 +195,7 @@ Examples:
 
 		// Show linked files
 		if len(files) > 0 {
-			fmt.Printf("\nLINKED FILES:\n")
+			fmt.Print(output.SectionHeader("Linked Files"))
 			for _, f := range files {
 				fmt.Printf("  %s (%s)\n", f.FilePath, f.Role)
 			}
@@ -203,11 +203,11 @@ Examples:
 
 		// Show dependencies
 		if len(deps) > 0 {
-			fmt.Printf("\nBLOCKED BY:\n")
+			fmt.Print(output.SectionHeader("Blocked By"))
 			for _, depID := range deps {
 				dep, _ := database.GetIssue(depID)
 				if dep != nil {
-					fmt.Printf("  %s \"%s\" [%s]\n", dep.ID, dep.Title, dep.Status)
+					fmt.Printf("  %s\n", output.IssueOneLiner(dep))
 				} else {
 					fmt.Printf("  %s\n", depID)
 				}
@@ -215,11 +215,11 @@ Examples:
 		}
 
 		if len(blocked) > 0 {
-			fmt.Printf("\nBLOCKS:\n")
+			fmt.Print(output.SectionHeader("Blocks"))
 			for _, id := range blocked {
 				b, _ := database.GetIssue(id)
 				if b != nil {
-					fmt.Printf("  %s \"%s\" [%s]\n", b.ID, b.Title, b.Status)
+					fmt.Printf("  %s\n", output.IssueOneLiner(b))
 				} else {
 					fmt.Printf("  %s\n", id)
 				}
@@ -232,7 +232,7 @@ Examples:
 				ParentID: issueID,
 			})
 			if len(children) > 0 {
-				fmt.Printf("\nCHILDREN:\n")
+				fmt.Print(output.SectionHeader("Children"))
 				// Convert to TreeNodes
 				nodes := make([]output.TreeNode, 0, len(children))
 				for _, child := range children {

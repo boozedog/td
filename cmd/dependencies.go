@@ -62,7 +62,7 @@ var blockedByCmd = &cobra.Command{
 		}
 
 		// Text output
-		fmt.Printf("%s: %s %s\n", issue.ID, issue.Title, output.FormatStatus(issue.Status))
+		fmt.Println(output.IssueOneLiner(issue))
 
 		if len(blocked) == 0 {
 			fmt.Println("No issues blocked by this one")
@@ -165,7 +165,7 @@ var dependsOnCmd = &cobra.Command{
 			return output.JSON(result)
 		}
 
-		fmt.Printf("%s: %s %s\n", issue.ID, issue.Title, output.FormatStatus(issue.Status))
+		fmt.Println(output.IssueOneLiner(issue))
 
 		if len(deps) == 0 {
 			fmt.Println("No dependencies")
@@ -182,15 +182,13 @@ var dependsOnCmd = &cobra.Command{
 				continue
 			}
 
-			statusMark := ""
 			if dep.Status == models.StatusClosed {
-				statusMark = " ✓"
 				resolved++
 			} else {
 				blocking++
 			}
 
-			fmt.Printf("    %s: %s %s%s\n", dep.ID, dep.Title, output.FormatStatus(dep.Status), statusMark)
+			fmt.Println(output.DependencyLine(dep, true))
 		}
 
 		fmt.Printf("\n%d blocking, %d resolved\n", blocking, resolved)
@@ -584,7 +582,7 @@ func showDependencies(database *db.DB, issue *models.Issue, jsonOutput bool) err
 		return output.JSON(result)
 	}
 
-	fmt.Printf("%s: %s %s\n", issue.ID, issue.Title, output.FormatStatus(issue.Status))
+	fmt.Println(output.IssueOneLiner(issue))
 
 	if len(deps) == 0 {
 		fmt.Println("No dependencies")
@@ -601,15 +599,13 @@ func showDependencies(database *db.DB, issue *models.Issue, jsonOutput bool) err
 			continue
 		}
 
-		statusMark := ""
 		if dep.Status == models.StatusClosed {
-			statusMark = " ✓"
 			resolved++
 		} else {
 			blocking++
 		}
 
-		fmt.Printf("    %s: %s %s%s\n", dep.ID, dep.Title, output.FormatStatus(dep.Status), statusMark)
+		fmt.Println(output.DependencyLine(dep, true))
 	}
 
 	fmt.Printf("\n%d blocking, %d resolved\n", blocking, resolved)
@@ -632,7 +628,7 @@ func showBlocking(database *db.DB, issue *models.Issue, jsonOutput bool) error {
 		return output.JSON(result)
 	}
 
-	fmt.Printf("%s: %s %s\n", issue.ID, issue.Title, output.FormatStatus(issue.Status))
+	fmt.Println(output.IssueOneLiner(issue))
 
 	if len(blocked) == 0 {
 		fmt.Println("No issues depend on this one")
@@ -645,7 +641,7 @@ func showBlocking(database *db.DB, issue *models.Issue, jsonOutput bool) error {
 		if err != nil {
 			continue
 		}
-		fmt.Printf("    %s: %s %s\n", dep.ID, dep.Title, output.FormatStatus(dep.Status))
+		fmt.Println(output.DependencyLine(dep, false))
 	}
 
 	fmt.Printf("\n%d issues blocked\n", len(blocked))

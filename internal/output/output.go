@@ -297,3 +297,81 @@ func FormatGitState(sha, branch string, dirty int) string {
 	}
 	return state
 }
+
+// IssueOneLiner returns a concise single-line issue representation
+// Format: "td-abc1: Title [status]" or "td-abc1 \"Title\" [status]" with quotes
+func IssueOneLiner(issue *models.Issue) string {
+	return fmt.Sprintf("%s \"%s\" %s", issue.ID, issue.Title, FormatStatus(issue.Status))
+}
+
+// IssueOneLinerPlain returns issue one-liner without status styling (for text contexts)
+func IssueOneLinerPlain(issue *models.Issue) string {
+	return fmt.Sprintf("%s \"%s\" [%s]", issue.ID, issue.Title, issue.Status)
+}
+
+// StatusBadge returns a status indicator with symbol
+// e.g., "○ open", "▶ in_progress", "✓ closed", "✗ blocked", "◎ in_review"
+func StatusBadge(status models.Status) string {
+	symbols := map[models.Status]string{
+		models.StatusOpen:       "○",
+		models.StatusInProgress: "▶",
+		models.StatusBlocked:    "✗",
+		models.StatusInReview:   "◎",
+		models.StatusClosed:     "✓",
+	}
+	symbol, ok := symbols[status]
+	if !ok {
+		symbol = "?"
+	}
+	style, hasStyle := statusStyles[status]
+	if hasStyle {
+		return style.Render(fmt.Sprintf("%s %s", symbol, status))
+	}
+	return fmt.Sprintf("%s %s", symbol, status)
+}
+
+// SectionHeader returns a formatted section header for CLI output
+// e.g., "\nDEPENDENCIES:\n"
+func SectionHeader(title string) string {
+	return fmt.Sprintf("\n%s:\n", strings.ToUpper(title))
+}
+
+// IndentLines indents each line by the specified number of spaces
+func IndentLines(lines []string, spaces int) []string {
+	indent := strings.Repeat(" ", spaces)
+	result := make([]string, len(lines))
+	for i, line := range lines {
+		result[i] = indent + line
+	}
+	return result
+}
+
+// IndentString indents each line in a string by the specified number of spaces
+func IndentString(s string, spaces int) string {
+	if s == "" {
+		return ""
+	}
+	lines := strings.Split(s, "\n")
+	indented := IndentLines(lines, spaces)
+	return strings.Join(indented, "\n")
+}
+
+// BulletList formats items as a bulleted list with optional indentation
+func BulletList(items []string, indent int) []string {
+	prefix := strings.Repeat(" ", indent)
+	result := make([]string, len(items))
+	for i, item := range items {
+		result[i] = prefix + "- " + item
+	}
+	return result
+}
+
+// DependencyLine formats a dependency with optional status mark
+// e.g., "  td-abc1: Title [status] ✓"
+func DependencyLine(issue *models.Issue, showResolved bool) string {
+	statusMark := ""
+	if showResolved && issue.Status == models.StatusClosed {
+		statusMark = " ✓"
+	}
+	return fmt.Sprintf("    %s: %s %s%s", issue.ID, issue.Title, FormatStatus(issue.Status), statusMark)
+}
