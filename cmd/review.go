@@ -139,6 +139,17 @@ Supports bulk operations:
 	},
 }
 
+func approvalReason(cmd *cobra.Command) string {
+	// Precedence: explicit --reason, then --message, then --comment
+	for _, flag := range []string{"reason", "message", "comment"} {
+		v, _ := cmd.Flags().GetString(flag)
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues",
@@ -234,11 +245,8 @@ Supports bulk operations:
 				continue
 			}
 
-			// Log (check both --reason and --message flags)
-			reason, _ := cmd.Flags().GetString("reason")
-			if reason == "" {
-				reason, _ = cmd.Flags().GetString("message")
-			}
+			// Log (supports --reason, --message, --comment)
+			reason := approvalReason(cmd)
 			logMsg := "Approved"
 			if reason != "" {
 				logMsg = reason
@@ -500,6 +508,7 @@ func init() {
 	reviewCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().String("reason", "", "Reason for approval")
 	approveCmd.Flags().String("message", "", "Reason for approval (alias for --reason)")
+	approveCmd.Flags().String("comment", "", "Reason for approval (alias for --message)")
 	approveCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
 	rejectCmd.Flags().String("reason", "", "Reason for rejection")
