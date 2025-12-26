@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/td/internal/models"
 )
@@ -509,22 +508,26 @@ func (m Model) renderModal() string {
 
 	lines = append(lines, "")
 
-	// Description
+	// Description (use pre-rendered markdown from model)
 	if issue.Description != "" {
 		lines = append(lines, sectionHeader.Render("DESCRIPTION"))
-		// Render markdown with glamour
-		rendered := renderMarkdown(issue.Description, contentWidth)
+		rendered := m.ModalDescRender
+		if rendered == "" {
+			rendered = issue.Description // fallback if not rendered yet
+		}
 		for _, line := range strings.Split(rendered, "\n") {
 			lines = append(lines, line)
 		}
 		lines = append(lines, "")
 	}
 
-	// Acceptance criteria
+	// Acceptance criteria (use pre-rendered markdown from model)
 	if issue.Acceptance != "" {
 		lines = append(lines, sectionHeader.Render("ACCEPTANCE CRITERIA"))
-		// Render markdown with glamour
-		rendered := renderMarkdown(issue.Acceptance, contentWidth)
+		rendered := m.ModalAcceptRender
+		if rendered == "" {
+			rendered = issue.Acceptance // fallback if not rendered yet
+		}
 		for _, line := range strings.Split(rendered, "\n") {
 			lines = append(lines, line)
 		}
@@ -1000,33 +1003,6 @@ func wrapText(text string, maxWidth int) []string {
 	}
 
 	return lines
-}
-
-// renderMarkdown renders markdown text using glamour, with fallback to plain text
-func renderMarkdown(text string, width int) string {
-	if text == "" {
-		return ""
-	}
-
-	// Create renderer with auto style detection and word wrap
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width),
-	)
-	if err != nil {
-		// Fallback to word-wrapped plain text on error
-		return strings.Join(wrapText(text, width), "\n")
-	}
-
-	// Render the markdown
-	rendered, err := renderer.Render(text)
-	if err != nil {
-		// Fallback to word-wrapped plain text on error
-		return strings.Join(wrapText(text, width), "\n")
-	}
-
-	// Trim trailing newline added by glamour
-	return strings.TrimSuffix(rendered, "\n")
 }
 
 // Error style for modal

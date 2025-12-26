@@ -1,9 +1,11 @@
 package monitor
 
 import (
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 )
@@ -103,6 +105,8 @@ type Model struct {
 	ModalLogs        []models.Log
 	ModalBlockedBy   []models.Issue // Dependencies (issues blocking this one)
 	ModalBlocks      []models.Issue // Dependents (issues blocked by this one)
+	ModalDescRender  string         // Pre-rendered description markdown
+	ModalAcceptRender string        // Pre-rendered acceptance criteria markdown
 
 	// Search state
 	SearchMode    bool   // Whether search mode is active
@@ -223,6 +227,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.ModalLogs = msg.Logs
 			m.ModalBlockedBy = msg.BlockedBy
 			m.ModalBlocks = msg.Blocks
+
+			// Pre-render markdown (expensive, do once not on every View)
+			if msg.Issue != nil {
+				width := m.Width - 20 // Approximate modal content width
+				if width < 40 {
+					width = 40
+				}
+				m.ModalDescRender = preRenderMarkdown(msg.Issue.Description, width)
+				m.ModalAcceptRender = preRenderMarkdown(msg.Issue.Acceptance, width)
+			}
 		}
 		return m, nil
 
@@ -545,6 +559,30 @@ func (m *Model) closeModal() {
 	m.ModalLogs = nil
 	m.ModalBlockedBy = nil
 	m.ModalBlocks = nil
+	m.ModalDescRender = ""
+	m.ModalAcceptRender = ""
+}
+
+// preRenderMarkdown renders markdown once (expensive operation)
+func preRenderMarkdown(text string, width int) string {
+	if text == "" {
+		return ""
+	}
+
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+	)
+	if err != nil {
+		return text // fallback to plain text
+	}
+
+	rendered, err := renderer.Render(text)
+	if err != nil {
+		return text // fallback to plain text
+	}
+
+	return strings.TrimSuffix(rendered, "\n")
 }
 
 // openStatsModal opens the stats modal and fetches stats data
