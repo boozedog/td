@@ -2,11 +2,13 @@ package monitor
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/query"
 	"github.com/marcus/td/internal/session"
 )
 
@@ -120,6 +122,26 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 	return items
 }
 
+// isTDQQuery checks if the query uses TDQ syntax (operators, functions, etc.)
+func isTDQQuery(q string) bool {
+	// Check for TDQ operators and patterns
+	tdqPatterns := []string{
+		" = ", " != ", " ~ ", " !~ ",
+		" < ", " > ", " <= ", " >= ",
+		" AND ", " OR ", "NOT ",
+		"has(", "is(", "any(", "blocks(", "blocked_by(", "descendant_of(",
+		"log.", "comment.", "handoff.", "file.",
+		"@me", "EMPTY",
+	}
+	upper := strings.ToUpper(q)
+	for _, pattern := range tdqPatterns {
+		if strings.Contains(upper, strings.ToUpper(pattern)) {
+			return true
+		}
+	}
+	return false
+}
+
 // fetchTaskList retrieves categorized issues for the task list panel
 func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includeClosed bool) TaskListData {
 	var data TaskListData
@@ -133,14 +155,63 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 		return issues
 	}
 
+	// Check if this is a TDQ query
+	useTDQ := searchQuery != "" && isTDQQuery(searchQuery)
+
+	if useTDQ {
+		// Use TDQ to filter issues across all categories
+		allIssues, err := query.Execute(database, searchQuery, sessionID, query.ExecuteOptions{})
+		if err != nil {
+			// Fall back to simple search on TDQ parse error
+			useTDQ = false
+		} else {
+			// Categorize the TDQ results
+			for _, issue := range allIssues {
+				switch issue.Status {
+				case models.StatusOpen:
+					// Check if blocked by dependencies
+					deps, _ := database.GetDependencies(issue.ID)
+					isBlocked := false
+					for _, depID := range deps {
+						depIssue, err := database.GetIssue(depID)
+						if err == nil && depIssue.Status != models.StatusClosed {
+							isBlocked = true
+							break
+						}
+					}
+					if isBlocked {
+						data.Blocked = append(data.Blocked, issue)
+					} else {
+						data.Ready = append(data.Ready, issue)
+					}
+				case models.StatusInProgress:
+					// In-progress issues show in Ready (active work)
+					data.Ready = append(data.Ready, issue)
+				case models.StatusBlocked:
+					data.Blocked = append(data.Blocked, issue)
+				case models.StatusInReview:
+					if issue.ImplementerSession != sessionID {
+						data.Reviewable = append(data.Reviewable, issue)
+					}
+				case models.StatusClosed:
+					if includeClosed {
+						data.Closed = append(data.Closed, issue)
+					}
+				}
+			}
+			return data
+		}
+	}
+
+	// Standard search (simple text or when TDQ fails)
 	// Ready issues: open status, not blocked, sorted by priority
 	var openIssues []models.Issue
-	if searchQuery != "" {
+	if searchQuery != "" && !useTDQ {
 		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
 			Status: []models.Status{models.StatusOpen},
 		})
 		openIssues = extractIssues(results)
-	} else {
+	} else if searchQuery == "" {
 		openIssues, _ = database.ListIssues(db.ListIssuesOptions{
 			Status: []models.Status{models.StatusOpen},
 			SortBy: "priority",
@@ -167,12 +238,12 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 	}
 
 	// Reviewable issues: in_review status, different implementer than current session
-	if searchQuery != "" {
+	if searchQuery != "" && !useTDQ {
 		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
 			ReviewableBy: sessionID,
 		})
 		data.Reviewable = extractIssues(results)
-	} else {
+	} else if searchQuery == "" {
 		data.Reviewable, _ = database.ListIssues(db.ListIssuesOptions{
 			ReviewableBy: sessionID,
 			SortBy:       "priority",
@@ -180,27 +251,29 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 	}
 
 	// Blocked issues: explicit blocked status + issues blocked by dependencies
-	if searchQuery != "" {
+	if searchQuery != "" && !useTDQ {
 		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
 			Status: []models.Status{models.StatusBlocked},
 		})
 		data.Blocked = append(extractIssues(results), blockedByDep...)
-	} else {
+	} else if searchQuery == "" {
 		blocked, _ := database.ListIssues(db.ListIssuesOptions{
 			Status: []models.Status{models.StatusBlocked},
 			SortBy: "priority",
 		})
 		data.Blocked = append(blocked, blockedByDep...)
+	} else {
+		data.Blocked = blockedByDep
 	}
 
 	// Closed issues (if toggle enabled)
 	if includeClosed {
-		if searchQuery != "" {
+		if searchQuery != "" && !useTDQ {
 			results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
 				Status: []models.Status{models.StatusClosed},
 			})
 			data.Closed = extractIssues(results)
-		} else {
+		} else if searchQuery == "" {
 			data.Closed, _ = database.ListIssues(db.ListIssuesOptions{
 				Status: []models.Status{models.StatusClosed},
 				SortBy: "priority",

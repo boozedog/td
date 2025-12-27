@@ -1,0 +1,383 @@
+package query
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/marcus/td/internal/db"
+	"github.com/marcus/td/internal/models"
+)
+
+// ExecuteOptions contains options for query execution
+type ExecuteOptions struct {
+	Limit   int
+	SortBy  string
+	SortDesc bool
+}
+
+// Execute parses and executes a TDQ query
+func Execute(database *db.DB, queryStr string, sessionID string, opts ExecuteOptions) ([]models.Issue, error) {
+	// Parse the query
+	query, err := Parse(queryStr)
+	if err != nil {
+		return nil, fmt.Errorf("parse error: %w", err)
+	}
+
+	// Validate the query
+	if errs := query.Validate(); len(errs) > 0 {
+		return nil, fmt.Errorf("validation error: %v", errs[0])
+	}
+
+	// Create evaluation context
+	ctx := NewEvalContext(sessionID)
+	evaluator := NewEvaluator(ctx, query)
+
+	// Check if we need cross-entity queries
+	hasCrossEntity := evaluator.HasCrossEntityConditions()
+
+	// Fetch all issues (we'll filter in-memory for now)
+	// Future optimization: push simple conditions to SQL
+	fetchOpts := db.ListIssuesOptions{
+		SortBy:   opts.SortBy,
+		SortDesc: opts.SortDesc,
+		// Don't limit here - we need to filter first, then limit
+	}
+	issues, err := database.ListIssues(fetchOpts)
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+
+	// Apply in-memory filtering for complex conditions
+	matcher, err := evaluator.ToMatcher()
+	if err != nil {
+		return nil, fmt.Errorf("matcher error: %w", err)
+	}
+
+	var filtered []models.Issue
+	for _, issue := range issues {
+		if matcher(issue) {
+			filtered = append(filtered, issue)
+		}
+	}
+
+	// Handle cross-entity queries
+	if hasCrossEntity {
+		filtered, err = applyCrossEntityFilters(database, filtered, query, ctx)
+		if err != nil {
+			return nil, fmt.Errorf("cross-entity filter error: %w", err)
+		}
+	}
+
+	// Apply limit after filtering
+	if opts.Limit > 0 && len(filtered) > opts.Limit {
+		filtered = filtered[:opts.Limit]
+	}
+
+	return filtered, nil
+}
+
+func applyCrossEntityFilters(database *db.DB, issues []models.Issue, query *Query, ctx *EvalContext) ([]models.Issue, error) {
+	if query.Root == nil {
+		return issues, nil
+	}
+
+	// Find cross-entity conditions in the AST
+	crossFilters := extractCrossEntityConditions(query.Root)
+	if len(crossFilters) == 0 {
+		return issues, nil
+	}
+
+	var result []models.Issue
+	for _, issue := range issues {
+		matches := true
+		for _, filter := range crossFilters {
+			match, err := applyCrossEntityFilter(database, issue, filter, ctx)
+			if err != nil {
+				return nil, err
+			}
+			if !match {
+				matches = false
+				break
+			}
+		}
+		if matches {
+			result = append(result, issue)
+		}
+	}
+	return result, nil
+}
+
+type crossEntityFilter struct {
+	entity   string // log, comment, handoff, file, dep
+	field    string // message, type, text, etc.
+	operator string
+	value    interface{}
+}
+
+func extractCrossEntityConditions(n Node) []crossEntityFilter {
+	var filters []crossEntityFilter
+
+	switch node := n.(type) {
+	case *BinaryExpr:
+		filters = append(filters, extractCrossEntityConditions(node.Left)...)
+		filters = append(filters, extractCrossEntityConditions(node.Right)...)
+	case *UnaryExpr:
+		filters = append(filters, extractCrossEntityConditions(node.Expr)...)
+	case *FieldExpr:
+		parts := strings.Split(node.Field, ".")
+		if len(parts) > 1 {
+			prefix := parts[0]
+			if prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" {
+				filters = append(filters, crossEntityFilter{
+					entity:   prefix,
+					field:    parts[1],
+					operator: node.Operator,
+					value:    node.Value,
+				})
+			}
+		}
+	case *FunctionCall:
+		if node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" {
+			filters = append(filters, crossEntityFilter{
+				entity:   "function",
+				field:    node.Name,
+				operator: "",
+				value:    node.Args,
+			})
+		}
+	}
+
+	return filters
+}
+
+func applyCrossEntityFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, ctx *EvalContext) (bool, error) {
+	switch filter.entity {
+	case "log":
+		logs, err := database.GetLogs(issue.ID, 0) // 0 = no limit
+		if err != nil {
+			return false, err
+		}
+		return matchLogs(logs, filter, ctx), nil
+
+	case "comment":
+		comments, err := database.GetComments(issue.ID)
+		if err != nil {
+			return false, err
+		}
+		return matchComments(comments, filter, ctx), nil
+
+	case "handoff":
+		handoff, err := database.GetLatestHandoff(issue.ID)
+		if err != nil {
+			// No handoff = no match for handoff queries
+			return false, nil
+		}
+		if handoff == nil {
+			return false, nil
+		}
+		return matchHandoff(handoff, filter, ctx), nil
+
+	case "file":
+		files, err := database.GetLinkedFiles(issue.ID)
+		if err != nil {
+			return false, err
+		}
+		return matchFiles(files, filter, ctx), nil
+
+	case "function":
+		return applyFunctionFilter(database, issue, filter)
+
+	default:
+		return true, nil
+	}
+}
+
+func matchLogs(logs []models.Log, filter crossEntityFilter, ctx *EvalContext) bool {
+	for _, log := range logs {
+		var fieldValue string
+		switch filter.field {
+		case "message":
+			fieldValue = log.Message
+		case "type":
+			fieldValue = string(log.Type)
+		case "session":
+			fieldValue = log.SessionID
+		default:
+			continue
+		}
+
+		if matchValue(fieldValue, filter.operator, filter.value, ctx) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchComments(comments []models.Comment, filter crossEntityFilter, ctx *EvalContext) bool {
+	for _, comment := range comments {
+		var fieldValue string
+		switch filter.field {
+		case "text":
+			fieldValue = comment.Text
+		case "session":
+			fieldValue = comment.SessionID
+		default:
+			continue
+		}
+
+		if matchValue(fieldValue, filter.operator, filter.value, ctx) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchHandoff(handoff *models.Handoff, filter crossEntityFilter, ctx *EvalContext) bool {
+	var fieldValue string
+	switch filter.field {
+	case "done":
+		fieldValue = strings.Join(handoff.Done, " ")
+	case "remaining":
+		fieldValue = strings.Join(handoff.Remaining, " ")
+	case "decisions":
+		fieldValue = strings.Join(handoff.Decisions, " ")
+	case "uncertain":
+		fieldValue = strings.Join(handoff.Uncertain, " ")
+	default:
+		return false
+	}
+
+	return matchValue(fieldValue, filter.operator, filter.value, ctx)
+}
+
+func matchFiles(files []models.IssueFile, filter crossEntityFilter, ctx *EvalContext) bool {
+	for _, file := range files {
+		var fieldValue string
+		switch filter.field {
+		case "path":
+			fieldValue = file.FilePath
+		case "role":
+			fieldValue = string(file.Role)
+		default:
+			continue
+		}
+
+		if matchValue(fieldValue, filter.operator, filter.value, ctx) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchValue(fieldValue, operator string, value interface{}, ctx *EvalContext) bool {
+	// Resolve special values
+	strValue := fmt.Sprintf("%v", value)
+	if sv, ok := value.(*SpecialValue); ok {
+		if sv.Type == "me" {
+			strValue = ctx.CurrentSession
+		}
+	}
+
+	switch operator {
+	case OpEq:
+		return strings.EqualFold(fieldValue, strValue)
+	case OpNeq:
+		return !strings.EqualFold(fieldValue, strValue)
+	case OpContains:
+		return strings.Contains(strings.ToLower(fieldValue), strings.ToLower(strValue))
+	case OpNotContains:
+		return !strings.Contains(strings.ToLower(fieldValue), strings.ToLower(strValue))
+	default:
+		return false
+	}
+}
+
+func applyFunctionFilter(database *db.DB, issue models.Issue, filter crossEntityFilter) (bool, error) {
+	args, ok := filter.value.([]interface{})
+	if !ok || len(args) == 0 {
+		return false, nil
+	}
+
+	targetID := fmt.Sprintf("%v", args[0])
+
+	switch filter.field {
+	case "blocks":
+		// Check if this issue blocks the target
+		deps, err := database.GetBlockedBy(targetID)
+		if err != nil {
+			return false, err
+		}
+		for _, depID := range deps {
+			if depID == issue.ID {
+				return true, nil
+			}
+		}
+		return false, nil
+
+	case "blocked_by":
+		// Check if this issue is blocked by the target
+		deps, err := database.GetDependencies(issue.ID)
+		if err != nil {
+			return false, err
+		}
+		for _, depID := range deps {
+			if depID == targetID {
+				return true, nil
+			}
+		}
+		return false, nil
+
+	case "linked_to":
+		// Check if this issue is linked to the file
+		files, err := database.GetLinkedFiles(issue.ID)
+		if err != nil {
+			return false, err
+		}
+		for _, file := range files {
+			if strings.Contains(file.FilePath, targetID) {
+				return true, nil
+			}
+		}
+		return false, nil
+
+	case "descendant_of":
+		// Check if this issue is a descendant of the target (recursive parent check)
+		current := issue.ParentID
+		visited := make(map[string]bool)
+		for current != "" && !visited[current] {
+			if current == targetID {
+				return true, nil
+			}
+			visited[current] = true
+			parent, err := database.GetIssue(current)
+			if err != nil {
+				break
+			}
+			current = parent.ParentID
+		}
+		return false, nil
+
+	default:
+		return false, nil
+	}
+}
+
+// QuickSearch performs a simple text search (backward compatible with existing search)
+func QuickSearch(database *db.DB, text string, sessionID string, limit int) ([]models.Issue, error) {
+	// Use the ranked search for simple text queries
+	opts := db.ListIssuesOptions{
+		Search: text,
+		Limit:  limit,
+	}
+	results, err := database.SearchIssuesRanked(text, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Extract issues from search results
+	issues := make([]models.Issue, len(results))
+	for i, r := range results {
+		issues[i] = r.Issue
+	}
+	return issues, nil
+}

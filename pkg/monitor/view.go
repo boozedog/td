@@ -29,6 +29,10 @@ func (m Model) renderView() string {
 		return m.renderHelp()
 	}
 
+	if m.ShowTDQHelp {
+		return m.renderTDQHelp()
+	}
+
 	// Render search bar if active or has query
 	searchBar := m.renderSearchBar()
 	searchBarHeight := 0
@@ -1166,6 +1170,11 @@ func (m Model) renderFooter() string {
 // renderHelp renders the help overlay
 func (m Model) renderHelp() string {
 	return helpStyle.Render(m.Keymap.GenerateHelp())
+}
+
+// renderTDQHelp renders the TDQ query language help overlay
+func (m Model) renderTDQHelp() string {
+	return helpStyle.Render(m.Keymap.GenerateTDQHelp())
 }
 
 // wrapPanel wraps content in a panel with title and border

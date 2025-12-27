@@ -113,6 +113,7 @@ type Model struct {
 	Cursor       map[Panel]int    // Per-panel cursor position (selected row)
 	SelectedID   map[Panel]string // Per-panel selected issue ID (preserved across refresh)
 	ShowHelp     bool
+	ShowTDQHelp  bool // Show TDQ query syntax help (when in search mode)
 	LastRefresh  time.Time
 	StartedAt    time.Time // When monitor started, to track new handoffs
 	Err          error     // Last error, if any
@@ -350,6 +351,10 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	// Search mode handles printable characters specially
 	if ctx == keymap.ContextSearch {
+		// Special case: ? triggers help even in search mode
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == '?' {
+			return m.executeCommand(keymap.CmdToggleHelp)
+		}
 		if keymap.IsPrintable(msg) {
 			m.SearchQuery += string(msg.Runes)
 			return m, m.fetchData()
@@ -379,7 +384,14 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case keymap.CmdToggleHelp:
-		m.ShowHelp = !m.ShowHelp
+		// Show TDQ help when in search mode, regular help otherwise
+		if m.SearchMode {
+			m.ShowTDQHelp = !m.ShowTDQHelp
+			m.ShowHelp = false
+		} else {
+			m.ShowHelp = !m.ShowHelp
+			m.ShowTDQHelp = false
+		}
 		return m, nil
 
 	case keymap.CmdRefresh:
@@ -614,9 +626,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	// Search commands
 	case keymap.CmdSearchConfirm:
 		m.SearchMode = false
+		m.ShowTDQHelp = false
 		return m, nil
 
 	case keymap.CmdSearchCancel:
+		// If TDQ help is open, close it but stay in search mode
+		if m.ShowTDQHelp {
+			m.ShowTDQHelp = false
+			return m, nil
+		}
+		// Otherwise exit search mode entirely
 		m.SearchMode = false
 		m.SearchQuery = ""
 		return m, m.fetchData()

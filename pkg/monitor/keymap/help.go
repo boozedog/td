@@ -91,10 +91,117 @@ func (r *Registry) GenerateHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
 	}
 
+	sb.WriteString("\nSEARCH (TDQ Query Language):\n")
+	searchBindings := []HelpBinding{
+		{Keys: "Enter", Description: "Confirm search"},
+		{Keys: "Esc", Description: "Cancel search"},
+		{Keys: "Backspace", Description: "Delete character"},
+		{Keys: "?", Description: "Show TDQ syntax help"},
+	}
+	for _, b := range searchBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
 	sb.WriteString("\nPress ? to close help\n")
 
 	// Add sections from actual bindings (unused for now but available)
 	_ = sections
+
+	return sb.String()
+}
+
+// GenerateTDQHelp generates help text for TDQ query language
+func (r *Registry) GenerateTDQHelp() string {
+	var sb strings.Builder
+
+	sb.WriteString("\nTDQ QUERY LANGUAGE - Search Syntax\n")
+	sb.WriteString("═══════════════════════════════════\n\n")
+
+	sb.WriteString("BASIC OPERATORS:\n")
+	ops := []HelpBinding{
+		{Keys: "field = value", Description: "Exact match"},
+		{Keys: "field != value", Description: "Not equal"},
+		{Keys: `field ~ "text"`, Description: "Contains (case-insensitive)"},
+		{Keys: "field < value", Description: "Less than"},
+		{Keys: "field > value", Description: "Greater than"},
+		{Keys: "field <= value", Description: "Less than or equal"},
+		{Keys: "field >= value", Description: "Greater than or equal"},
+	}
+	for _, b := range ops {
+		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nBOOLEAN LOGIC:\n")
+	bools := []HelpBinding{
+		{Keys: "expr AND expr", Description: "Both must match"},
+		{Keys: "expr OR expr", Description: "Either matches"},
+		{Keys: "NOT expr", Description: "Negation"},
+		{Keys: "(expr)", Description: "Grouping"},
+	}
+	for _, b := range bools {
+		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nFIELDS:\n")
+	fields := []HelpBinding{
+		{Keys: "status", Description: "open, in_progress, blocked, in_review, closed"},
+		{Keys: "type", Description: "bug, feature, task, epic, chore"},
+		{Keys: "priority", Description: "P0, P1, P2, P3, P4"},
+		{Keys: "points", Description: "1, 2, 3, 5, 8, 13, 21"},
+		{Keys: "labels", Description: "comma-separated tags"},
+		{Keys: "title / description", Description: "text search"},
+		{Keys: "created / updated", Description: "date fields"},
+		{Keys: "implementer / reviewer", Description: "session IDs"},
+	}
+	for _, b := range fields {
+		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nFUNCTIONS:\n")
+	funcs := []HelpBinding{
+		{Keys: "has(field)", Description: "Field is not empty"},
+		{Keys: "is(status)", Description: "Shorthand status check"},
+		{Keys: "any(field, v1, v2)", Description: "Field matches any value"},
+		{Keys: "descendant_of(id)", Description: "Children of epic"},
+	}
+	for _, b := range funcs {
+		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nCROSS-ENTITY:\n")
+	cross := []HelpBinding{
+		{Keys: `log.message ~ "x"`, Description: "Search log messages"},
+		{Keys: "log.type = blocker", Description: "Filter by log type"},
+		{Keys: `comment.text ~ "x"`, Description: "Search comments"},
+		{Keys: "file.role = test", Description: "Linked file role"},
+	}
+	for _, b := range cross {
+		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nSPECIAL VALUES:\n")
+	special := []HelpBinding{
+		{Keys: "@me", Description: "Current session"},
+		{Keys: "today / -7d", Description: "Relative dates"},
+		{Keys: "EMPTY", Description: "Empty/null field"},
+	}
+	for _, b := range special {
+		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nEXAMPLES:\n")
+	examples := []string{
+		`  type = bug AND priority <= P1`,
+		`  status = open AND created >= -7d`,
+		`  implementer = @me AND is(in_progress)`,
+		`  log.type = blocker`,
+		`  title ~ auth OR description ~ auth`,
+	}
+	for _, ex := range examples {
+		sb.WriteString(ex + "\n")
+	}
+
+	sb.WriteString("\nPress ? to close | Plain text = simple search\n")
 
 	return sb.String()
 }
