@@ -125,6 +125,21 @@ func DefaultBindings() []Binding {
 		{Key: "n", Command: CmdCancel, Context: ContextConfirm, Description: "Cancel"},
 		{Key: "N", Command: CmdCancel, Context: ContextConfirm, Description: "Cancel"},
 		{Key: "esc", Command: CmdCancel, Context: ContextConfirm, Description: "Cancel"},
+
+		// ============================================================
+		// EPIC TASKS BINDINGS (when task section in epic modal is focused)
+		// Active when viewing tasks within an epic
+		// ============================================================
+		{Key: "j", Command: CmdCursorDown, Context: ContextEpicTasks, Description: "Move down"},
+		{Key: "down", Command: CmdCursorDown, Context: ContextEpicTasks, Description: "Move down"},
+		{Key: "k", Command: CmdCursorUp, Context: ContextEpicTasks, Description: "Move up"},
+		{Key: "up", Command: CmdCursorUp, Context: ContextEpicTasks, Description: "Move up"},
+		{Key: "enter", Command: CmdOpenEpicTask, Context: ContextEpicTasks, Description: "Open task"},
+		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextEpicTasks, Description: "Exit task list"},
+		{Key: "esc", Command: CmdClose, Context: ContextEpicTasks, Description: "Close modal"},
+
+		// Modal context: add tab to toggle task section focus
+		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextModal, Description: "Focus task list"},
 	}
 }
 

@@ -375,3 +375,293 @@ func TestCategoryHeaderLinesBetween(t *testing.T) {
 		})
 	}
 }
+
+// Tests for modal stack functionality
+
+func TestModalStackEmpty(t *testing.T) {
+	m := Model{}
+
+	if m.ModalOpen() {
+		t.Error("ModalOpen() should be false for empty stack")
+	}
+	if m.ModalDepth() != 0 {
+		t.Errorf("ModalDepth() = %d, want 0", m.ModalDepth())
+	}
+	if m.CurrentModal() != nil {
+		t.Error("CurrentModal() should be nil for empty stack")
+	}
+	if m.ModalBreadcrumb() != "" {
+		t.Errorf("ModalBreadcrumb() = %q, want empty", m.ModalBreadcrumb())
+	}
+}
+
+func TestModalStackPush(t *testing.T) {
+	m := Model{
+		ModalStack: []ModalEntry{},
+	}
+
+	// Push first modal
+	m.ModalStack = append(m.ModalStack, ModalEntry{
+		IssueID:     "td-001",
+		SourcePanel: PanelTaskList,
+		Loading:     true,
+	})
+
+	if !m.ModalOpen() {
+		t.Error("ModalOpen() should be true after push")
+	}
+	if m.ModalDepth() != 1 {
+		t.Errorf("ModalDepth() = %d, want 1", m.ModalDepth())
+	}
+
+	modal := m.CurrentModal()
+	if modal == nil {
+		t.Fatal("CurrentModal() should not be nil")
+	}
+	if modal.IssueID != "td-001" {
+		t.Errorf("CurrentModal().IssueID = %q, want %q", modal.IssueID, "td-001")
+	}
+
+	// Push second modal
+	m.ModalStack = append(m.ModalStack, ModalEntry{
+		IssueID: "td-002",
+		Loading: true,
+	})
+
+	if m.ModalDepth() != 2 {
+		t.Errorf("ModalDepth() = %d, want 2", m.ModalDepth())
+	}
+
+	modal = m.CurrentModal()
+	if modal.IssueID != "td-002" {
+		t.Errorf("CurrentModal().IssueID = %q, want %q", modal.IssueID, "td-002")
+	}
+}
+
+func TestModalStackPop(t *testing.T) {
+	m := Model{
+		ModalStack: []ModalEntry{
+			{IssueID: "td-001", SourcePanel: PanelTaskList},
+			{IssueID: "td-002"},
+		},
+	}
+
+	// Pop second modal
+	m.closeModal()
+
+	if m.ModalDepth() != 1 {
+		t.Errorf("ModalDepth() after pop = %d, want 1", m.ModalDepth())
+	}
+	if m.CurrentModal().IssueID != "td-001" {
+		t.Errorf("CurrentModal().IssueID = %q, want %q", m.CurrentModal().IssueID, "td-001")
+	}
+
+	// Pop first modal
+	m.closeModal()
+
+	if m.ModalOpen() {
+		t.Error("ModalOpen() should be false after popping all modals")
+	}
+	if m.ModalDepth() != 0 {
+		t.Errorf("ModalDepth() = %d, want 0", m.ModalDepth())
+	}
+}
+
+func TestModalSourcePanel(t *testing.T) {
+	m := Model{
+		ModalStack: []ModalEntry{
+			{IssueID: "td-001", SourcePanel: PanelActivity},
+			{IssueID: "td-002"},
+			{IssueID: "td-003"},
+		},
+	}
+
+	// Source panel should always return the base modal's source panel
+	if m.ModalSourcePanel() != PanelActivity {
+		t.Errorf("ModalSourcePanel() = %v, want %v", m.ModalSourcePanel(), PanelActivity)
+	}
+}
+
+func TestModalBreadcrumb(t *testing.T) {
+	tests := []struct {
+		name     string
+		stack    []ModalEntry
+		expected string
+	}{
+		{
+			name:     "empty stack",
+			stack:    nil,
+			expected: "",
+		},
+		{
+			name: "single modal",
+			stack: []ModalEntry{
+				{IssueID: "td-001"},
+			},
+			expected: "", // No breadcrumb for depth 1
+		},
+		{
+			name: "two modals with types",
+			stack: []ModalEntry{
+				{IssueID: "td-001", Issue: &models.Issue{Type: models.TypeEpic}},
+				{IssueID: "td-002", Issue: &models.Issue{Type: models.TypeTask}},
+			},
+			expected: "epic: td-001 > task: td-002",
+		},
+		{
+			name: "three modals",
+			stack: []ModalEntry{
+				{IssueID: "td-001", Issue: &models.Issue{Type: models.TypeEpic}},
+				{IssueID: "td-002", Issue: &models.Issue{Type: models.TypeTask}},
+				{IssueID: "td-003", Issue: &models.Issue{Type: models.TypeBug}},
+			},
+			expected: "epic: td-001 > task: td-002 > bug: td-003",
+		},
+		{
+			name: "modals without issue loaded",
+			stack: []ModalEntry{
+				{IssueID: "td-001"},
+				{IssueID: "td-002"},
+			},
+			expected: "td-001 > td-002",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{ModalStack: tt.stack}
+			got := m.ModalBreadcrumb()
+			if got != tt.expected {
+				t.Errorf("ModalBreadcrumb() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestEpicTasksCursor(t *testing.T) {
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID: "td-001",
+				Issue:   &models.Issue{ID: "td-001", Type: models.TypeEpic},
+				EpicTasks: []models.Issue{
+					{ID: "td-002"},
+					{ID: "td-003"},
+					{ID: "td-004"},
+				},
+				TaskSectionFocused: true,
+				EpicTasksCursor:    0,
+			},
+		},
+	}
+
+	// Move cursor down
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m2 := updated.(Model)
+
+	if m2.CurrentModal().EpicTasksCursor != 1 {
+		t.Errorf("EpicTasksCursor after j = %d, want 1", m2.CurrentModal().EpicTasksCursor)
+	}
+
+	// Move cursor down again
+	updated, _ = m2.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m3 := updated.(Model)
+
+	if m3.CurrentModal().EpicTasksCursor != 2 {
+		t.Errorf("EpicTasksCursor after j = %d, want 2", m3.CurrentModal().EpicTasksCursor)
+	}
+
+	// Move cursor down at bottom (should stay at 2)
+	updated, _ = m3.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m4 := updated.(Model)
+
+	if m4.CurrentModal().EpicTasksCursor != 2 {
+		t.Errorf("EpicTasksCursor at bottom after j = %d, want 2", m4.CurrentModal().EpicTasksCursor)
+	}
+
+	// Move cursor up
+	updated, _ = m4.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m5 := updated.(Model)
+
+	if m5.CurrentModal().EpicTasksCursor != 1 {
+		t.Errorf("EpicTasksCursor after k = %d, want 1", m5.CurrentModal().EpicTasksCursor)
+	}
+}
+
+func TestToggleTaskSectionFocus(t *testing.T) {
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID: "td-001",
+				Issue:   &models.Issue{ID: "td-001", Type: models.TypeEpic},
+				EpicTasks: []models.Issue{
+					{ID: "td-002"},
+				},
+				TaskSectionFocused: false,
+			},
+		},
+	}
+
+	// Toggle focus on
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyTab})
+	m2 := updated.(Model)
+
+	if !m2.CurrentModal().TaskSectionFocused {
+		t.Error("TaskSectionFocused should be true after Tab")
+	}
+
+	// Toggle focus off
+	updated, _ = m2.handleKey(tea.KeyMsg{Type: tea.KeyTab})
+	m3 := updated.(Model)
+
+	if m3.CurrentModal().TaskSectionFocused {
+		t.Error("TaskSectionFocused should be false after Tab")
+	}
+}
+
+func TestContextEpicTasks(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    Model
+		expected keymap.Context
+	}{
+		{
+			name: "main context",
+			model: Model{
+				Keymap: newTestKeymap(),
+			},
+			expected: keymap.ContextMain,
+		},
+		{
+			name: "modal context",
+			model: Model{
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{IssueID: "td-001", TaskSectionFocused: false},
+				},
+			},
+			expected: keymap.ContextModal,
+		},
+		{
+			name: "epic tasks context",
+			model: Model{
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{IssueID: "td-001", TaskSectionFocused: true},
+				},
+			},
+			expected: keymap.ContextEpicTasks,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.model.currentContext()
+			if got != tt.expected {
+				t.Errorf("currentContext() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

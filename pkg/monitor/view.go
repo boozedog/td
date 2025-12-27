@@ -90,7 +90,7 @@ func (m Model) renderView() string {
 	}
 
 	// Overlay modal if open
-	if m.ModalOpen {
+	if m.ModalOpen() {
 		modal := m.renderModal()
 		return lipgloss.Place(m.Width, m.Height, lipgloss.Center, lipgloss.Center, modal,
 			lipgloss.WithWhitespaceChars(" "),
@@ -441,6 +441,11 @@ func (m Model) formatCategoryTag(cat TaskListCategory) string {
 
 // renderModal renders the centered issue details modal
 func (m Model) renderModal() string {
+	modal := m.CurrentModal()
+	if modal == nil {
+		return ""
+	}
+
 	// Calculate modal dimensions (80% of terminal, capped)
 	modalWidth := m.Width * 80 / 100
 	if modalWidth > 100 {
@@ -462,26 +467,26 @@ func (m Model) renderModal() string {
 	var content strings.Builder
 
 	// Loading state
-	if m.ModalLoading {
+	if modal.Loading {
 		content.WriteString(subtleStyle.Render("Loading..."))
-		return m.wrapModal(content.String(), modalWidth, modalHeight)
+		return m.wrapModalWithDepth(content.String(), modalWidth, modalHeight)
 	}
 
 	// Error state
-	if m.ModalError != nil {
-		content.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v", m.ModalError)))
+	if modal.Error != nil {
+		content.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v", modal.Error)))
 		content.WriteString("\n\n")
 		content.WriteString(subtleStyle.Render("Press esc to close"))
-		return m.wrapModal(content.String(), modalWidth, modalHeight)
+		return m.wrapModalWithDepth(content.String(), modalWidth, modalHeight)
 	}
 
 	// No issue loaded
-	if m.ModalIssue == nil {
+	if modal.Issue == nil {
 		content.WriteString(subtleStyle.Render("No issue data"))
-		return m.wrapModal(content.String(), modalWidth, modalHeight)
+		return m.wrapModalWithDepth(content.String(), modalWidth, modalHeight)
 	}
 
-	issue := m.ModalIssue
+	issue := modal.Issue
 
 	// Build all content lines for scrolling
 	var lines []string
@@ -516,10 +521,37 @@ func (m Model) renderModal() string {
 
 	lines = append(lines, "")
 
+	// Epic tasks section (if this is an epic with children)
+	if issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
+		header := fmt.Sprintf("TASKS IN EPIC (%d)", len(modal.EpicTasks))
+		if modal.TaskSectionFocused {
+			header = epicTasksFocusedStyle.Render(header + " [Tab:exit]")
+		} else {
+			header = sectionHeader.Render(header + " [Tab:focus]")
+		}
+		lines = append(lines, header)
+
+		for i, task := range modal.EpicTasks {
+			prefix := "  "
+			taskLine := fmt.Sprintf("%s %s %s",
+				subtleStyle.Render(task.ID),
+				formatStatus(task.Status),
+				truncateString(task.Title, contentWidth-25))
+
+			if modal.TaskSectionFocused && i == modal.EpicTasksCursor {
+				taskLine = epicTaskSelectedStyle.Render("> " + task.ID + " " + string(task.Status) + " " + truncateString(task.Title, contentWidth-27))
+			} else {
+				taskLine = prefix + taskLine
+			}
+			lines = append(lines, taskLine)
+		}
+		lines = append(lines, "")
+	}
+
 	// Description (use pre-rendered markdown from model)
 	if issue.Description != "" {
 		lines = append(lines, sectionHeader.Render("DESCRIPTION"))
-		rendered := m.ModalDescRender
+		rendered := modal.DescRender
 		if rendered == "" {
 			rendered = issue.Description // fallback if not rendered yet
 		}
@@ -532,7 +564,7 @@ func (m Model) renderModal() string {
 	// Acceptance criteria (use pre-rendered markdown from model)
 	if issue.Acceptance != "" {
 		lines = append(lines, sectionHeader.Render("ACCEPTANCE CRITERIA"))
-		rendered := m.ModalAcceptRender
+		rendered := modal.AcceptRender
 		if rendered == "" {
 			rendered = issue.Acceptance // fallback if not rendered yet
 		}
@@ -543,9 +575,9 @@ func (m Model) renderModal() string {
 	}
 
 	// Blocked by (dependencies) - split into active blockers vs resolved
-	if len(m.ModalBlockedBy) > 0 {
+	if len(modal.BlockedBy) > 0 {
 		var activeBlockers, resolvedDeps []models.Issue
-		for _, dep := range m.ModalBlockedBy {
+		for _, dep := range modal.BlockedBy {
 			if dep.Status == models.StatusClosed {
 				resolvedDeps = append(resolvedDeps, dep)
 			} else {
@@ -580,9 +612,9 @@ func (m Model) renderModal() string {
 	}
 
 	// Blocks (dependents)
-	if len(m.ModalBlocks) > 0 {
-		lines = append(lines, sectionHeader.Render(fmt.Sprintf("BLOCKS (%d)", len(m.ModalBlocks))))
-		for _, dep := range m.ModalBlocks {
+	if len(modal.Blocks) > 0 {
+		lines = append(lines, sectionHeader.Render(fmt.Sprintf("BLOCKS (%d)", len(modal.Blocks))))
+		for _, dep := range modal.Blocks {
 			depLine := fmt.Sprintf("  %s %s %s",
 				titleStyle.Render(dep.ID),
 				formatStatus(dep.Status),
@@ -593,25 +625,25 @@ func (m Model) renderModal() string {
 	}
 
 	// Latest handoff
-	if m.ModalHandoff != nil {
+	if modal.Handoff != nil {
 		lines = append(lines, sectionHeader.Render("LATEST HANDOFF"))
-		lines = append(lines, timestampStyle.Render(m.ModalHandoff.Timestamp.Format("2006-01-02 15:04"))+" "+
-			subtleStyle.Render(truncateSession(m.ModalHandoff.SessionID)))
-		if len(m.ModalHandoff.Done) > 0 {
+		lines = append(lines, timestampStyle.Render(modal.Handoff.Timestamp.Format("2006-01-02 15:04"))+" "+
+			subtleStyle.Render(truncateSession(modal.Handoff.SessionID)))
+		if len(modal.Handoff.Done) > 0 {
 			lines = append(lines, readyColor.Render("Done:"))
-			for _, item := range m.ModalHandoff.Done {
+			for _, item := range modal.Handoff.Done {
 				lines = append(lines, "  • "+item)
 			}
 		}
-		if len(m.ModalHandoff.Remaining) > 0 {
+		if len(modal.Handoff.Remaining) > 0 {
 			lines = append(lines, reviewColor.Render("Remaining:"))
-			for _, item := range m.ModalHandoff.Remaining {
+			for _, item := range modal.Handoff.Remaining {
 				lines = append(lines, "  • "+item)
 			}
 		}
-		if len(m.ModalHandoff.Uncertain) > 0 {
+		if len(modal.Handoff.Uncertain) > 0 {
 			lines = append(lines, blockedColor.Render("Uncertain:"))
-			for _, item := range m.ModalHandoff.Uncertain {
+			for _, item := range modal.Handoff.Uncertain {
 				lines = append(lines, "  • "+item)
 			}
 		}
@@ -619,9 +651,9 @@ func (m Model) renderModal() string {
 	}
 
 	// Recent logs
-	if len(m.ModalLogs) > 0 {
-		lines = append(lines, sectionHeader.Render(fmt.Sprintf("RECENT LOGS (%d)", len(m.ModalLogs))))
-		for _, log := range m.ModalLogs {
+	if len(modal.Logs) > 0 {
+		lines = append(lines, sectionHeader.Render(fmt.Sprintf("RECENT LOGS (%d)", len(modal.Logs))))
+		for _, log := range modal.Logs {
 			logLine := timestampStyle.Render(log.Timestamp.Format("01-02 15:04")) + " " +
 				subtleStyle.Render(truncateSession(log.SessionID)) + " " +
 				truncateString(log.Message, contentWidth-25)
@@ -638,7 +670,7 @@ func (m Model) renderModal() string {
 	if maxScroll < 0 {
 		maxScroll = 0
 	}
-	scroll := m.ModalScroll
+	scroll := modal.Scroll
 	if scroll > maxScroll {
 		scroll = maxScroll
 	}
@@ -660,7 +692,7 @@ func (m Model) renderModal() string {
 		content.WriteString(scrollInfo)
 	}
 
-	return m.wrapModal(content.String(), modalWidth, modalHeight)
+	return m.wrapModalWithDepth(content.String(), modalWidth, modalHeight)
 }
 
 // renderStatsModal renders the stats modal with statistics and bar charts
@@ -929,18 +961,52 @@ func (m Model) formatPriorityBreakdown(stats *models.ExtendedStats) string {
 	return statsTableLabel.Render("  ") + strings.Join(parts, "  ")
 }
 
-// wrapModal wraps content in a modal box with border
+// wrapModal wraps content in a modal box with border (deprecated, use wrapModalWithDepth)
 func (m Model) wrapModal(content string, width, height int) string {
+	return m.wrapModalWithDepth(content, width, height)
+}
+
+// wrapModalWithDepth wraps content in a modal box with depth-aware styling
+func (m Model) wrapModalWithDepth(content string, width, height int) string {
+	depth := m.ModalDepth()
+
+	// Select border color based on depth
+	var borderColor lipgloss.Color
+	switch depth {
+	case 1:
+		borderColor = primaryColor // Purple/Magenta (212)
+	case 2:
+		borderColor = lipgloss.Color("45") // Cyan
+	default:
+		borderColor = lipgloss.Color("214") // Orange for depth 3+
+	}
+
 	modalStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(primaryColor).
+		BorderForeground(borderColor).
 		Padding(1, 2).
 		Width(width).
 		Height(height)
 
-	// Add footer with key hints (from keymap registry)
-	footer := subtleStyle.Render(m.Keymap.ModalFooterHelp())
+	// Build footer with breadcrumb if depth > 1
+	var footerParts []string
 
+	// Add breadcrumb for stacked modals
+	if breadcrumb := m.ModalBreadcrumb(); breadcrumb != "" {
+		footerParts = append(footerParts, breadcrumbStyle.Render(breadcrumb))
+	}
+
+	// Add key hints
+	modal := m.CurrentModal()
+	if modal != nil && modal.TaskSectionFocused {
+		footerParts = append(footerParts, subtleStyle.Render("↑↓:select  Enter:open  Tab:exit  Esc:close"))
+	} else if depth > 1 {
+		footerParts = append(footerParts, subtleStyle.Render("↑↓:scroll  Esc:back  r:refresh"))
+	} else {
+		footerParts = append(footerParts, subtleStyle.Render(m.Keymap.ModalFooterHelp()))
+	}
+
+	footer := strings.Join(footerParts, "\n")
 	inner := lipgloss.JoinVertical(lipgloss.Left, content, "", footer)
 
 	return modalStyle.Render(inner)

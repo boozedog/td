@@ -63,6 +63,32 @@ type RecentHandoff struct {
 	Timestamp time.Time
 }
 
+// ModalEntry represents a single modal in the stack
+type ModalEntry struct {
+	// Core
+	IssueID     string
+	SourcePanel Panel // Only meaningful for base entry (depth 1)
+
+	// Display
+	Scroll int
+
+	// Async data
+	Loading      bool
+	Error        error
+	Issue        *models.Issue
+	Handoff      *models.Handoff
+	Logs         []models.Log
+	BlockedBy    []models.Issue
+	Blocks       []models.Issue
+	DescRender   string
+	AcceptRender string
+
+	// Epic-specific (when Issue.Type == "epic")
+	EpicTasks          []models.Issue
+	EpicTasksCursor    int
+	TaskSectionFocused bool
+}
+
 // Model is the main Bubble Tea model for the monitor TUI
 type Model struct {
 	// Database and session
@@ -96,20 +122,8 @@ type Model struct {
 	TaskListRows    []TaskListRow // Flattened task list for selection
 	CurrentWorkRows []string      // Issue IDs for current work panel (focused + in-progress)
 
-	// Modal state for issue details
-	ModalOpen        bool
-	ModalIssueID     string
-	ModalSourcePanel Panel // Panel the modal was opened from (for navigation)
-	ModalScroll      int
-	ModalLoading     bool
-	ModalError       error
-	ModalIssue       *models.Issue
-	ModalHandoff     *models.Handoff
-	ModalLogs        []models.Log
-	ModalBlockedBy   []models.Issue // Dependencies (issues blocking this one)
-	ModalBlocks      []models.Issue // Dependents (issues blocked by this one)
-	ModalDescRender  string         // Pre-rendered description markdown
-	ModalAcceptRender string        // Pre-rendered acceptance criteria markdown
+	// Modal stack for stacking modals (empty = no modal open)
+	ModalStack []ModalEntry
 
 	// Search state
 	SearchMode    bool   // Whether search mode is active
@@ -164,6 +178,7 @@ type IssueDetailsMsg struct {
 	Logs      []models.Log
 	BlockedBy []models.Issue // Dependencies (issues blocking this one)
 	Blocks    []models.Issue // Dependents (issues blocked by this one)
+	EpicTasks []models.Issue // Child tasks (when issue is an epic)
 	Error     error
 }
 
@@ -266,14 +281,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case IssueDetailsMsg:
 		// Only update if this is for the currently open modal
-		if m.ModalOpen && msg.IssueID == m.ModalIssueID {
-			m.ModalLoading = false
-			m.ModalError = msg.Error
-			m.ModalIssue = msg.Issue
-			m.ModalHandoff = msg.Handoff
-			m.ModalLogs = msg.Logs
-			m.ModalBlockedBy = msg.BlockedBy
-			m.ModalBlocks = msg.Blocks
+		if modal := m.CurrentModal(); modal != nil && msg.IssueID == modal.IssueID {
+			modal.Loading = false
+			modal.Error = msg.Error
+			modal.Issue = msg.Issue
+			modal.Handoff = msg.Handoff
+			modal.Logs = msg.Logs
+			modal.BlockedBy = msg.BlockedBy
+			modal.Blocks = msg.Blocks
+			modal.EpicTasks = msg.EpicTasks
 
 			// Trigger async markdown rendering (expensive)
 			if msg.Issue != nil && (msg.Issue.Description != "" || msg.Issue.Acceptance != "") {
@@ -288,9 +304,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case MarkdownRenderedMsg:
 		// Only update if this is for the currently open modal
-		if m.ModalOpen && msg.IssueID == m.ModalIssueID {
-			m.ModalDescRender = msg.DescRender
-			m.ModalAcceptRender = msg.AcceptRender
+		if modal := m.CurrentModal(); modal != nil && msg.IssueID == modal.IssueID {
+			modal.DescRender = msg.DescRender
+			modal.AcceptRender = msg.AcceptRender
 		}
 		return m, nil
 
@@ -315,7 +331,11 @@ func (m Model) currentContext() keymap.Context {
 	if m.StatsOpen {
 		return keymap.ContextStats
 	}
-	if m.ModalOpen {
+	if m.ModalOpen() {
+		// Check if epic tasks section is focused
+		if modal := m.CurrentModal(); modal != nil && modal.TaskSectionFocused {
+			return keymap.ContextEpicTasks
+		}
 		return keymap.ContextModal
 	}
 	if m.SearchMode {
@@ -363,8 +383,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case keymap.CmdRefresh:
-		if m.ModalOpen {
-			return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(m.ModalIssueID))
+		if modal := m.CurrentModal(); modal != nil {
+			return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(modal.IssueID))
 		}
 		if m.StatsOpen {
 			return m, m.fetchStats()
@@ -404,8 +424,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Cursor movement
 	case keymap.CmdCursorDown, keymap.CmdScrollDown:
-		if m.ModalOpen {
-			m.ModalScroll++
+		if modal := m.CurrentModal(); modal != nil {
+			if modal.TaskSectionFocused {
+				// Move epic task cursor
+				if modal.EpicTasksCursor < len(modal.EpicTasks)-1 {
+					modal.EpicTasksCursor++
+				}
+			} else {
+				modal.Scroll++
+			}
 		} else if m.StatsOpen {
 			m.StatsScroll++
 		} else {
@@ -414,9 +441,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case keymap.CmdCursorUp, keymap.CmdScrollUp:
-		if m.ModalOpen {
-			if m.ModalScroll > 0 {
-				m.ModalScroll--
+		if modal := m.CurrentModal(); modal != nil {
+			if modal.TaskSectionFocused {
+				// Move epic task cursor
+				if modal.EpicTasksCursor > 0 {
+					modal.EpicTasksCursor--
+				}
+			} else {
+				if modal.Scroll > 0 {
+					modal.Scroll--
+				}
 			}
 		} else if m.StatsOpen {
 			if m.StatsScroll > 0 {
@@ -428,8 +462,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case keymap.CmdCursorTop:
-		if m.ModalOpen {
-			m.ModalScroll = 0
+		if modal := m.CurrentModal(); modal != nil {
+			modal.Scroll = 0
 		} else if m.StatsOpen {
 			m.StatsScroll = 0
 		} else {
@@ -440,8 +474,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case keymap.CmdCursorBottom:
-		if m.ModalOpen {
-			m.ModalScroll = 9999 // Will be clamped by view
+		if modal := m.CurrentModal(); modal != nil {
+			modal.Scroll = 9999 // Will be clamped by view
 		} else if m.StatsOpen {
 			m.StatsScroll = 9999 // Will be clamped by view
 		} else {
@@ -459,8 +493,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if pageSize < 1 {
 			pageSize = 5
 		}
-		if m.ModalOpen {
-			m.ModalScroll += pageSize
+		if modal := m.CurrentModal(); modal != nil {
+			modal.Scroll += pageSize
 		} else if m.StatsOpen {
 			m.StatsScroll += pageSize
 		} else {
@@ -475,10 +509,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if pageSize < 1 {
 			pageSize = 5
 		}
-		if m.ModalOpen {
-			m.ModalScroll -= pageSize
-			if m.ModalScroll < 0 {
-				m.ModalScroll = 0
+		if modal := m.CurrentModal(); modal != nil {
+			modal.Scroll -= pageSize
+			if modal.Scroll < 0 {
+				modal.Scroll = 0
 			}
 		} else if m.StatsOpen {
 			m.StatsScroll -= pageSize
@@ -497,8 +531,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if pageSize < 1 {
 			pageSize = 10
 		}
-		if m.ModalOpen {
-			m.ModalScroll += pageSize
+		if modal := m.CurrentModal(); modal != nil {
+			modal.Scroll += pageSize
 		} else if m.StatsOpen {
 			m.StatsScroll += pageSize
 		} else {
@@ -513,10 +547,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if pageSize < 1 {
 			pageSize = 10
 		}
-		if m.ModalOpen {
-			m.ModalScroll -= pageSize
-			if m.ModalScroll < 0 {
-				m.ModalScroll = 0
+		if modal := m.CurrentModal(); modal != nil {
+			modal.Scroll -= pageSize
+			if modal.Scroll < 0 {
+				modal.Scroll = 0
 			}
 		} else if m.StatsOpen {
 			m.StatsScroll -= pageSize
@@ -538,7 +572,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m.navigateModal(1)
 
 	case keymap.CmdClose:
-		if m.ModalOpen {
+		if m.ModalOpen() {
 			m.closeModal()
 		} else if m.StatsOpen {
 			m.closeStatsModal()
@@ -610,16 +644,51 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			m.ConfirmOpen = false
 		}
 		return m, nil
+
+	// Epic task navigation
+	case keymap.CmdFocusTaskSection:
+		if modal := m.CurrentModal(); modal != nil {
+			// Only toggle if this is an epic with tasks
+			if modal.Issue != nil && modal.Issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
+				modal.TaskSectionFocused = !modal.TaskSectionFocused
+				if modal.TaskSectionFocused {
+					// Reset cursor when entering task section
+					modal.EpicTasksCursor = 0
+				}
+			}
+		}
+		return m, nil
+
+	case keymap.CmdOpenEpicTask:
+		if modal := m.CurrentModal(); modal != nil && modal.TaskSectionFocused {
+			if modal.EpicTasksCursor < len(modal.EpicTasks) {
+				taskID := modal.EpicTasks[modal.EpicTasksCursor].ID
+				modal.TaskSectionFocused = false // Unfocus before pushing
+				return m.pushModal(taskID, m.ModalSourcePanel())
+			}
+		}
+		return m, nil
 	}
 
 	return m, nil
 }
 
 // navigateModal moves to the prev/next issue in the source panel's list
+// Only works at modal depth 1 (base modal)
 func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
+	// Only allow h/l navigation at depth 1
+	if m.ModalDepth() != 1 {
+		return m, nil
+	}
+
+	modal := m.CurrentModal()
+	if modal == nil {
+		return m, nil
+	}
+
 	// Get the list of issue IDs for the source panel (panel that opened the modal)
 	var issueIDs []string
-	switch m.ModalSourcePanel {
+	switch m.ModalSourcePanel() {
 	case PanelCurrentWork:
 		issueIDs = m.CurrentWorkRows
 	case PanelTaskList:
@@ -644,7 +713,7 @@ func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
 	// Find current position
 	currentIdx := -1
 	for i, id := range issueIDs {
-		if id == m.ModalIssueID {
+		if id == modal.IssueID {
 			currentIdx = i
 			break
 		}
@@ -660,23 +729,26 @@ func (m Model) navigateModal(delta int) (tea.Model, tea.Cmd) {
 		return m, nil // At boundary, don't wrap
 	}
 
-	// Navigate to new issue
+	// Navigate to new issue - replace the current modal entry
 	newIssueID := issueIDs[newIdx]
-	m.ModalIssueID = newIssueID
-	m.ModalScroll = 0
-	m.ModalLoading = true
-	m.ModalError = nil
-	m.ModalIssue = nil
-	m.ModalHandoff = nil
-	m.ModalLogs = nil
-	m.ModalBlockedBy = nil
-	m.ModalBlocks = nil
-	m.ModalDescRender = ""
-	m.ModalAcceptRender = ""
+	modal.IssueID = newIssueID
+	modal.Scroll = 0
+	modal.Loading = true
+	modal.Error = nil
+	modal.Issue = nil
+	modal.Handoff = nil
+	modal.Logs = nil
+	modal.BlockedBy = nil
+	modal.Blocks = nil
+	modal.EpicTasks = nil
+	modal.EpicTasksCursor = 0
+	modal.TaskSectionFocused = false
+	modal.DescRender = ""
+	modal.AcceptRender = ""
 
 	// Update cursor position to match in source panel
-	m.Cursor[m.ModalSourcePanel] = newIdx
-	m.saveSelectedID(m.ModalSourcePanel)
+	m.Cursor[m.ModalSourcePanel()] = newIdx
+	m.saveSelectedID(m.ModalSourcePanel())
 
 	return m, m.fetchIssueDetails(newIssueID)
 }
@@ -688,37 +760,68 @@ func (m Model) openModal() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.ModalOpen = true
-	m.ModalIssueID = issueID
-	m.ModalSourcePanel = m.ActivePanel // Track which panel opened the modal
-	m.ModalScroll = 0
-	m.ModalLoading = true
-	m.ModalError = nil
-	m.ModalIssue = nil
-	m.ModalHandoff = nil
-	m.ModalLogs = nil
-	m.ModalBlockedBy = nil
-	m.ModalBlocks = nil
-	m.ModalDescRender = ""
-	m.ModalAcceptRender = ""
+	return m.pushModal(issueID, m.ActivePanel)
+}
+
+// pushModal pushes a new modal onto the stack
+func (m Model) pushModal(issueID string, sourcePanel Panel) (tea.Model, tea.Cmd) {
+	entry := ModalEntry{
+		IssueID:     issueID,
+		SourcePanel: sourcePanel,
+		Loading:     true,
+	}
+	m.ModalStack = append(m.ModalStack, entry)
 
 	return m, m.fetchIssueDetails(issueID)
 }
 
-// closeModal closes the details modal and clears transient state
+// closeModal pops the top modal from the stack
 func (m *Model) closeModal() {
-	m.ModalOpen = false
-	m.ModalIssueID = ""
-	m.ModalScroll = 0
-	m.ModalLoading = false
-	m.ModalError = nil
-	m.ModalIssue = nil
-	m.ModalHandoff = nil
-	m.ModalLogs = nil
-	m.ModalBlockedBy = nil
-	m.ModalBlocks = nil
-	m.ModalDescRender = ""
-	m.ModalAcceptRender = ""
+	if len(m.ModalStack) > 0 {
+		m.ModalStack = m.ModalStack[:len(m.ModalStack)-1]
+	}
+}
+
+// ModalOpen returns true if any modal is open
+func (m Model) ModalOpen() bool {
+	return len(m.ModalStack) > 0
+}
+
+// ModalDepth returns the current modal stack depth (0 = no modal)
+func (m Model) ModalDepth() int {
+	return len(m.ModalStack)
+}
+
+// CurrentModal returns a pointer to the current (top) modal entry, or nil if none
+func (m *Model) CurrentModal() *ModalEntry {
+	if len(m.ModalStack) == 0 {
+		return nil
+	}
+	return &m.ModalStack[len(m.ModalStack)-1]
+}
+
+// ModalSourcePanel returns the source panel of the base modal (depth 1)
+func (m Model) ModalSourcePanel() Panel {
+	if len(m.ModalStack) == 0 {
+		return PanelCurrentWork
+	}
+	return m.ModalStack[0].SourcePanel
+}
+
+// ModalBreadcrumb returns a breadcrumb string for the modal stack
+func (m Model) ModalBreadcrumb() string {
+	if len(m.ModalStack) <= 1 {
+		return ""
+	}
+	var parts []string
+	for _, entry := range m.ModalStack {
+		if entry.Issue != nil {
+			parts = append(parts, string(entry.Issue.Type)+": "+entry.IssueID)
+		} else {
+			parts = append(parts, entry.IssueID)
+		}
+	}
+	return strings.Join(parts, " > ")
 }
 
 // renderMarkdownAsync returns a command that renders markdown in background
@@ -831,6 +934,12 @@ func (m Model) fetchIssueDetails(issueID string) tea.Cmd {
 			if blockedIssue, err := m.DB.GetIssue(blockedID); err == nil {
 				msg.Blocks = append(msg.Blocks, *blockedIssue)
 			}
+		}
+
+		// Fetch child tasks if this is an epic
+		if issue.Type == models.TypeEpic {
+			epicTasks, _ := m.DB.ListIssues(db.ListIssuesOptions{ParentID: issueID})
+			msg.EpicTasks = epicTasks
 		}
 
 		return msg

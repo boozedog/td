@@ -60,8 +60,20 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "← / → / h / l", Description: "Navigate prev/next issue"},
 		{Keys: "Esc / Enter", Description: "Close modal"},
 		{Keys: "r", Description: "Refresh modal content"},
+		{Keys: "Tab", Description: "Focus epic task list (if epic)"},
 	}
 	for _, b := range modalBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
+	sb.WriteString("\nEPIC TASKS (when focused):\n")
+	epicBindings := []HelpBinding{
+		{Keys: "↑ / ↓ / j / k", Description: "Select task in list"},
+		{Keys: "Enter", Description: "Open selected task"},
+		{Keys: "Tab", Description: "Exit task list"},
+		{Keys: "Esc", Description: "Close modal"},
+	}
+	for _, b := range epicBindings {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
 	}
 

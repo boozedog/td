@@ -14,12 +14,13 @@ const sequenceTimeout = 500 * time.Millisecond
 type Context string
 
 const (
-	ContextGlobal  Context = "global"
-	ContextMain    Context = "main"
-	ContextModal   Context = "modal"
-	ContextStats   Context = "stats"
-	ContextSearch  Context = "search"
-	ContextConfirm Context = "confirm"
+	ContextGlobal    Context = "global"
+	ContextMain      Context = "main"
+	ContextModal     Context = "modal"
+	ContextStats     Context = "stats"
+	ContextSearch    Context = "search"
+	ContextConfirm   Context = "confirm"
+	ContextEpicTasks Context = "epic-tasks" // When task list in epic modal is focused
 )
 
 // Command represents a named command that can be triggered by key bindings
@@ -66,11 +67,15 @@ const (
 	CmdCancel         Command = "cancel"
 
 	// Search-specific commands
-	CmdSearchConfirm  Command = "search-confirm"
-	CmdSearchCancel   Command = "search-cancel"
-	CmdSearchClear    Command = "search-clear"
+	CmdSearchConfirm   Command = "search-confirm"
+	CmdSearchCancel    Command = "search-cancel"
+	CmdSearchClear     Command = "search-clear"
 	CmdSearchBackspace Command = "search-backspace"
-	CmdSearchInput    Command = "search-input"
+	CmdSearchInput     Command = "search-input"
+
+	// Epic task navigation commands
+	CmdFocusTaskSection Command = "focus-task-section"
+	CmdOpenEpicTask     Command = "open-epic-task"
 )
 
 // Binding maps a key or key sequence to a command in a specific context
