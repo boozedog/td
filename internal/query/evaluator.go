@@ -24,6 +24,14 @@ func NewEvalContext(sessionID string) *EvalContext {
 	}
 }
 
+// escapeSQLWildcards escapes SQL LIKE pattern wildcards (% and _) in user input
+// to prevent unintended pattern matching
+func escapeSQLWildcards(s string) string {
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
+}
+
 // QueryResult contains the result of query evaluation
 type QueryResult struct {
 	Issues []models.Issue
@@ -119,7 +127,7 @@ func (e *Evaluator) hasCrossEntity(n Node) bool {
 		}
 		return false
 	case *FunctionCall:
-		return node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to"
+		return node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of"
 	default:
 		return false
 	}
@@ -220,17 +228,20 @@ func (e *Evaluator) fieldExprToSQL(node *FieldExpr) ([]SQLCondition, error) {
 		return []SQLCondition{{Clause: fmt.Sprintf("%s >= ?", dbField), Args: []interface{}{value}}}, nil
 	case OpContains:
 		strVal := fmt.Sprintf("%v", value)
+		escapedVal := escapeSQLWildcards(strVal)
 		if dbField == "labels" {
 			// Special handling for labels (comma-separated)
+			// Use ESCAPE clause since we're escaping % and _ with backslash
 			return []SQLCondition{{
-				Clause: "(labels LIKE ? OR labels LIKE ? OR labels LIKE ? OR labels = ?)",
-				Args:   []interface{}{strVal + ",%", "%," + strVal + ",%", "%," + strVal, strVal},
+				Clause: "(labels LIKE ? ESCAPE '\\' OR labels LIKE ? ESCAPE '\\' OR labels LIKE ? ESCAPE '\\' OR labels = ?)",
+				Args:   []interface{}{escapedVal + ",%", "%," + escapedVal + ",%", "%," + escapedVal, strVal},
 			}}, nil
 		}
-		return []SQLCondition{{Clause: fmt.Sprintf("%s LIKE ?", dbField), Args: []interface{}{"%" + strVal + "%"}}}, nil
+		return []SQLCondition{{Clause: fmt.Sprintf("%s LIKE ? ESCAPE '\\\\'", dbField), Args: []interface{}{"%" + escapedVal + "%"}}}, nil
 	case OpNotContains:
 		strVal := fmt.Sprintf("%v", value)
-		return []SQLCondition{{Clause: fmt.Sprintf("%s NOT LIKE ?", dbField), Args: []interface{}{"%" + strVal + "%"}}}, nil
+		escapedVal := escapeSQLWildcards(strVal)
+		return []SQLCondition{{Clause: fmt.Sprintf("%s NOT LIKE ? ESCAPE '\\\\'", dbField), Args: []interface{}{"%" + escapedVal + "%"}}}, nil
 	default:
 		return nil, fmt.Errorf("unsupported operator: %s", node.Operator)
 	}

@@ -8,11 +8,19 @@ import (
 	"github.com/marcus/td/internal/models"
 )
 
+const (
+	// DefaultMaxResults limits in-memory filtering to prevent OOM
+	DefaultMaxResults = 10000
+	// MaxDescendantDepth prevents infinite recursion in descendant_of
+	MaxDescendantDepth = 100
+)
+
 // ExecuteOptions contains options for query execution
 type ExecuteOptions struct {
-	Limit   int
-	SortBy  string
-	SortDesc bool
+	Limit      int
+	SortBy     string
+	SortDesc   bool
+	MaxResults int // Max issues to process in-memory (0 = DefaultMaxResults)
 }
 
 // Execute parses and executes a TDQ query
@@ -28,6 +36,12 @@ func Execute(database *db.DB, queryStr string, sessionID string, opts ExecuteOpt
 		return nil, fmt.Errorf("validation error: %v", errs[0])
 	}
 
+	// Set memory limits
+	maxResults := opts.MaxResults
+	if maxResults <= 0 {
+		maxResults = DefaultMaxResults
+	}
+
 	// Create evaluation context
 	ctx := NewEvalContext(sessionID)
 	evaluator := NewEvaluator(ctx, query)
@@ -35,12 +49,12 @@ func Execute(database *db.DB, queryStr string, sessionID string, opts ExecuteOpt
 	// Check if we need cross-entity queries
 	hasCrossEntity := evaluator.HasCrossEntityConditions()
 
-	// Fetch all issues (we'll filter in-memory for now)
-	// Future optimization: push simple conditions to SQL
+	// Fetch issues with a limit to prevent OOM
+	// We fetch more than maxResults to allow for filtering, but cap it
 	fetchOpts := db.ListIssuesOptions{
 		SortBy:   opts.SortBy,
 		SortDesc: opts.SortDesc,
-		// Don't limit here - we need to filter first, then limit
+		Limit:    maxResults, // Cap fetch to prevent loading entire DB
 	}
 	issues, err := database.ListIssues(fetchOpts)
 	if err != nil {
@@ -344,16 +358,26 @@ func applyFunctionFilter(database *db.DB, issue models.Issue, filter crossEntity
 		// Check if this issue is a descendant of the target (recursive parent check)
 		current := issue.ParentID
 		visited := make(map[string]bool)
-		for current != "" && !visited[current] {
+		depth := 0
+		for current != "" && !visited[current] && depth < MaxDescendantDepth {
 			if current == targetID {
 				return true, nil
 			}
 			visited[current] = true
+			depth++
 			parent, err := database.GetIssue(current)
 			if err != nil {
-				break
+				// "not found" is expected at end of chain - treat as no match
+				if strings.Contains(err.Error(), "not found") {
+					break
+				}
+				// Actual DB errors should be returned
+				return false, fmt.Errorf("descendant_of: failed to get parent %s: %w", current, err)
 			}
 			current = parent.ParentID
+		}
+		if depth >= MaxDescendantDepth {
+			return false, fmt.Errorf("descendant_of: max depth %d exceeded (possible cycle)", MaxDescendantDepth)
 		}
 		return false, nil
 
