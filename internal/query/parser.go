@@ -6,11 +6,15 @@ import (
 	"strings"
 )
 
+// MaxQueryDepth limits nesting to prevent stack overflow
+const MaxQueryDepth = 50
+
 // Parser parses TDQ query strings into an AST
 type Parser struct {
 	tokens []Token
 	pos    int
 	input  string
+	depth  int // Current nesting depth
 }
 
 // ParseError represents a parsing error with position information
@@ -143,7 +147,19 @@ func (p *Parser) parseUnary() (Node, error) {
 func (p *Parser) parsePrimary() (Node, error) {
 	// Grouped expression
 	if p.match(TokenLParen) {
+		p.depth++
+		if p.depth > MaxQueryDepth {
+			tok := p.current()
+			return nil, &ParseError{
+				Message:  fmt.Sprintf("query exceeds maximum nesting depth of %d", MaxQueryDepth),
+				Pos:      tok.Pos,
+				Line:     tok.Line,
+				Column:   tok.Column,
+				Token:    tok,
+			}
+		}
 		expr, err := p.parseQuery()
+		p.depth--
 		if err != nil {
 			return nil, err
 		}
@@ -291,8 +307,18 @@ func (p *Parser) parseFunctionArg() (interface{}, error) {
 		return tok.Value, nil
 	case TokenNumber:
 		p.advance()
-		n, _ := strconv.Atoi(tok.Value)
-		return n, nil
+		n, err := strconv.ParseInt(tok.Value, 10, 64)
+		if err != nil {
+			return nil, &ParseError{
+				Message:  fmt.Sprintf("invalid number: %s", tok.Value),
+				Pos:      tok.Pos,
+				Line:     tok.Line,
+				Column:   tok.Column,
+				Token:    tok,
+				Expected: "valid integer",
+			}
+		}
+		return int(n), nil
 	case TokenDate:
 		p.advance()
 		return &DateValue{Raw: tok.Value, Relative: isRelativeDate(tok.Value)}, nil
@@ -358,8 +384,18 @@ func (p *Parser) parseValue() (interface{}, error) {
 		return tok.Value, nil
 	case TokenNumber:
 		p.advance()
-		n, _ := strconv.Atoi(tok.Value)
-		return n, nil
+		n, err := strconv.ParseInt(tok.Value, 10, 64)
+		if err != nil {
+			return nil, &ParseError{
+				Message:  fmt.Sprintf("invalid number: %s", tok.Value),
+				Pos:      tok.Pos,
+				Line:     tok.Line,
+				Column:   tok.Column,
+				Token:    tok,
+				Expected: "valid integer",
+			}
+		}
+		return int(n), nil
 	case TokenDate:
 		p.advance()
 		return &DateValue{Raw: tok.Value, Relative: isRelativeDate(tok.Value)}, nil

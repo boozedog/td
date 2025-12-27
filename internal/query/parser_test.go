@@ -353,3 +353,39 @@ func TestOperatorPrecedence(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryDepthLimit(t *testing.T) {
+	// Build a deeply nested query that exceeds MaxQueryDepth
+	deepQuery := "status = open"
+	for i := 0; i < MaxQueryDepth+1; i++ {
+		deepQuery = "(" + deepQuery + ")"
+	}
+
+	_, err := Parse(deepQuery)
+	if err == nil {
+		t.Errorf("expected error for deeply nested query (depth %d), got nil", MaxQueryDepth+1)
+	}
+
+	// Verify error message contains depth info
+	if err != nil && !containsDepthError(err.Error()) {
+		t.Errorf("expected depth error, got: %v", err)
+	}
+
+	// Verify that MaxQueryDepth nesting is allowed
+	allowedQuery := "status = open"
+	for i := 0; i < MaxQueryDepth; i++ {
+		allowedQuery = "(" + allowedQuery + ")"
+	}
+	_, err = Parse(allowedQuery)
+	if err != nil {
+		t.Errorf("expected no error for query at max depth (%d), got: %v", MaxQueryDepth, err)
+	}
+}
+
+func containsDepthError(s string) bool {
+	return containsSubstring(s, "depth") || containsSubstring(s, "nesting")
+}
+
+func containsSubstring(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || (len(s) > len(substr) && (s[:len(substr)] == substr || containsSubstring(s[1:], substr))))
+}
