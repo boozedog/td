@@ -857,3 +857,218 @@ func TestCloseModalPopsStack(t *testing.T) {
 		t.Error("expected modal to be closed")
 	}
 }
+
+// Tests for parent epic focus navigation
+
+func TestParentEpicFocus_JKeyFocusesEpicWhenScroll0(t *testing.T) {
+	parentEpic := &models.Issue{ID: "td-epic", Type: models.TypeEpic, Title: "Parent Epic"}
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:     "td-story",
+				Issue:       &models.Issue{ID: "td-story", Type: models.TypeTask},
+				ParentEpic:  parentEpic,
+				Scroll:      0,
+				ParentEpicFocused: false,
+			},
+		},
+	}
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m2 := updated.(Model)
+
+	if !m2.CurrentModal().ParentEpicFocused {
+		t.Error("j key at scroll=0 with parent epic should focus the epic")
+	}
+}
+
+func TestParentEpicFocus_JKeyUnfocusesAndScrollsPastEpicZone(t *testing.T) {
+	parentEpic := &models.Issue{ID: "td-epic", Type: models.TypeEpic}
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:           "td-story",
+				Issue:             &models.Issue{ID: "td-story", Type: models.TypeTask},
+				ParentEpic:        parentEpic,
+				Scroll:            0,
+				ParentEpicFocused: true,
+			},
+		},
+	}
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m2 := updated.(Model)
+
+	if m2.CurrentModal().ParentEpicFocused {
+		t.Error("j key when focused on epic should unfocus it")
+	}
+	if m2.CurrentModal().Scroll != 1 {
+		t.Errorf("j key when unfocusing epic should set scroll=1, got %d", m2.CurrentModal().Scroll)
+	}
+
+	// Pressing j again should NOT re-focus (it should scroll)
+	updated, _ = m2.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m3 := updated.(Model)
+
+	if m3.CurrentModal().ParentEpicFocused {
+		t.Error("j key after unfocusing should scroll, not re-focus epic")
+	}
+	if m3.CurrentModal().Scroll != 2 {
+		t.Errorf("j key should increment scroll, got %d", m3.CurrentModal().Scroll)
+	}
+}
+
+func TestParentEpicFocus_KKeyAtScroll0FocusesEpic(t *testing.T) {
+	parentEpic := &models.Issue{ID: "td-epic", Type: models.TypeEpic}
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:           "td-story",
+				Issue:             &models.Issue{ID: "td-story", Type: models.TypeTask},
+				ParentEpic:        parentEpic,
+				Scroll:            0,
+				ParentEpicFocused: false,
+			},
+		},
+	}
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m2 := updated.(Model)
+
+	if !m2.CurrentModal().ParentEpicFocused {
+		t.Error("k key at scroll=0 with parent epic should focus the epic")
+	}
+}
+
+func TestParentEpicFocus_EnterOpensEpicModal(t *testing.T) {
+	parentEpic := &models.Issue{ID: "td-epic", Type: models.TypeEpic}
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:           "td-story",
+				Issue:             &models.Issue{ID: "td-story", Type: models.TypeTask},
+				ParentEpic:        parentEpic,
+				Scroll:            0,
+				ParentEpicFocused: true,
+				SourcePanel:       PanelTaskList,
+			},
+		},
+	}
+
+	updated, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := updated.(Model)
+
+	if m2.ModalDepth() != 2 {
+		t.Errorf("Enter on focused epic should push modal, depth = %d, want 2", m2.ModalDepth())
+	}
+	if m2.CurrentModal().IssueID != "td-epic" {
+		t.Errorf("pushed modal should be for epic, got %q", m2.CurrentModal().IssueID)
+	}
+	if cmd == nil {
+		t.Error("Enter on epic should return a fetch command")
+	}
+}
+
+func TestParentEpicFocus_EscClosesModalDoesNotOpenEpic(t *testing.T) {
+	parentEpic := &models.Issue{ID: "td-epic", Type: models.TypeEpic}
+	m := Model{
+		Keymap:      newTestKeymap(),
+		ActivePanel: PanelTaskList,
+		ModalStack: []ModalEntry{
+			{
+				IssueID:           "td-story",
+				Issue:             &models.Issue{ID: "td-story", Type: models.TypeTask},
+				ParentEpic:        parentEpic,
+				Scroll:            0,
+				ParentEpicFocused: true,
+				SourcePanel:       PanelTaskList,
+			},
+		},
+	}
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m2 := updated.(Model)
+
+	if m2.ModalOpen() {
+		t.Error("ESC when parent epic focused should close modal")
+	}
+	if m2.ModalDepth() != 0 {
+		t.Errorf("modal depth should be 0, got %d", m2.ModalDepth())
+	}
+}
+
+func TestParentEpicFocus_OrphanStoryNoEpic(t *testing.T) {
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:           "td-story",
+				Issue:             &models.Issue{ID: "td-story", Type: models.TypeTask},
+				ParentEpic:        nil, // No parent
+				Scroll:            0,
+				ParentEpicFocused: false,
+			},
+		},
+	}
+
+	// j should scroll, not try to focus a nonexistent epic
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m2 := updated.(Model)
+
+	if m2.CurrentModal().ParentEpicFocused {
+		t.Error("j key should not focus epic when there is no parent epic")
+	}
+	if m2.CurrentModal().Scroll != 1 {
+		t.Errorf("j key on orphan story should scroll, got scroll=%d", m2.CurrentModal().Scroll)
+	}
+}
+
+func TestParentEpicFocus_ContextReturnsParentEpicFocused(t *testing.T) {
+	parentEpic := &models.Issue{ID: "td-epic", Type: models.TypeEpic}
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:           "td-story",
+				ParentEpic:        parentEpic,
+				ParentEpicFocused: true,
+			},
+		},
+	}
+
+	ctx := m.currentContext()
+	if ctx != keymap.ContextParentEpicFocused {
+		t.Errorf("context = %q, want %q", ctx, keymap.ContextParentEpicFocused)
+	}
+}
+
+func TestParentEpicFocus_KKeyStaysOnEpicWhenAlreadyFocused(t *testing.T) {
+	parentEpic := &models.Issue{ID: "td-epic", Type: models.TypeEpic}
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:           "td-story",
+				Issue:             &models.Issue{ID: "td-story", Type: models.TypeTask},
+				ParentEpic:        parentEpic,
+				Scroll:            0,
+				ParentEpicFocused: true,
+			},
+		},
+	}
+
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m2 := updated.(Model)
+
+	// Should stay focused on epic, not open it or do anything else
+	if !m2.CurrentModal().ParentEpicFocused {
+		t.Error("k key when already focused on epic should stay focused")
+	}
+	if m2.ModalDepth() != 1 {
+		t.Errorf("k key should not push new modal, depth = %d", m2.ModalDepth())
+	}
+}
