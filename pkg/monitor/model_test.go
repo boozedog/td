@@ -665,3 +665,195 @@ func TestContextEpicTasks(t *testing.T) {
 		})
 	}
 }
+
+func TestNavigateModal(t *testing.T) {
+	tests := []struct {
+		name        string
+		model       Model
+		delta       int
+		expectIssue string // empty means no change
+	}{
+		{
+			name: "navigate next in task list",
+			model: Model{
+				Keymap:     newTestKeymap(),
+				Cursor:     map[Panel]int{PanelTaskList: 0},
+				SelectedID: map[Panel]string{},
+				TaskListRows: []TaskListRow{
+					{Issue: models.Issue{ID: "td-001"}},
+					{Issue: models.Issue{ID: "td-002"}},
+					{Issue: models.Issue{ID: "td-003"}},
+				},
+				ModalStack: []ModalEntry{
+					{IssueID: "td-001", SourcePanel: PanelTaskList},
+				},
+			},
+			delta:       1,
+			expectIssue: "td-002",
+		},
+		{
+			name: "navigate prev in task list",
+			model: Model{
+				Keymap:     newTestKeymap(),
+				Cursor:     map[Panel]int{PanelTaskList: 1},
+				SelectedID: map[Panel]string{},
+				TaskListRows: []TaskListRow{
+					{Issue: models.Issue{ID: "td-001"}},
+					{Issue: models.Issue{ID: "td-002"}},
+					{Issue: models.Issue{ID: "td-003"}},
+				},
+				ModalStack: []ModalEntry{
+					{IssueID: "td-002", SourcePanel: PanelTaskList},
+				},
+			},
+			delta:       -1,
+			expectIssue: "td-001",
+		},
+		{
+			name: "navigate at boundary stays at edge",
+			model: Model{
+				Keymap:     newTestKeymap(),
+				Cursor:     map[Panel]int{PanelTaskList: 1},
+				SelectedID: map[Panel]string{},
+				TaskListRows: []TaskListRow{
+					{Issue: models.Issue{ID: "td-001"}},
+					{Issue: models.Issue{ID: "td-002"}},
+				},
+				ModalStack: []ModalEntry{
+					{IssueID: "td-002", SourcePanel: PanelTaskList},
+				},
+			},
+			delta:       1,
+			expectIssue: "td-002", // stays at last
+		},
+		{
+			name: "no navigation at depth > 1",
+			model: Model{
+				Keymap:     newTestKeymap(),
+				Cursor:     map[Panel]int{PanelTaskList: 0},
+				SelectedID: map[Panel]string{},
+				TaskListRows: []TaskListRow{
+					{Issue: models.Issue{ID: "td-001"}},
+					{Issue: models.Issue{ID: "td-002"}},
+				},
+				ModalStack: []ModalEntry{
+					{IssueID: "td-001", SourcePanel: PanelTaskList},
+					{IssueID: "td-002", SourcePanel: PanelTaskList},
+				},
+			},
+			delta:       1,
+			expectIssue: "td-002", // no change (depth 2)
+		},
+		{
+			name: "no modal returns no change",
+			model: Model{
+				Keymap:     newTestKeymap(),
+				Cursor:     map[Panel]int{},
+				SelectedID: map[Panel]string{},
+				ModalStack: []ModalEntry{},
+			},
+			delta:       1,
+			expectIssue: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, _ := tt.model.navigateModal(tt.delta)
+			m := result.(Model)
+
+			if tt.expectIssue == "" {
+				if m.ModalOpen() {
+					t.Error("expected no modal, but modal is open")
+				}
+				return
+			}
+
+			if !m.ModalOpen() {
+				t.Fatal("expected modal to be open")
+			}
+			if m.CurrentModal().IssueID != tt.expectIssue {
+				t.Errorf("modal issue = %q, want %q", m.CurrentModal().IssueID, tt.expectIssue)
+			}
+		})
+	}
+}
+
+func TestPushModal(t *testing.T) {
+	m := Model{
+		Keymap:     newTestKeymap(),
+		ModalStack: []ModalEntry{},
+	}
+
+	// Push first modal
+	result, cmd := m.pushModal("td-001", PanelTaskList)
+	m = result.(Model)
+
+	if m.ModalDepth() != 1 {
+		t.Errorf("after first push, depth = %d, want 1", m.ModalDepth())
+	}
+	if m.CurrentModal().IssueID != "td-001" {
+		t.Errorf("first modal issue = %q, want td-001", m.CurrentModal().IssueID)
+	}
+	if !m.CurrentModal().Loading {
+		t.Error("new modal should be loading")
+	}
+	if cmd == nil {
+		t.Error("pushModal should return a fetch command")
+	}
+
+	// Push second modal
+	result, _ = m.pushModal("td-002", PanelTaskList)
+	m = result.(Model)
+
+	if m.ModalDepth() != 2 {
+		t.Errorf("after second push, depth = %d, want 2", m.ModalDepth())
+	}
+	if m.CurrentModal().IssueID != "td-002" {
+		t.Errorf("top modal issue = %q, want td-002", m.CurrentModal().IssueID)
+	}
+}
+
+func TestCloseModalOnEmptyStack(t *testing.T) {
+	m := Model{
+		Keymap:     newTestKeymap(),
+		ModalStack: []ModalEntry{},
+	}
+
+	// Closing empty stack should not panic
+	m.closeModal()
+
+	if m.ModalDepth() != 0 {
+		t.Errorf("after close on empty, depth = %d, want 0", m.ModalDepth())
+	}
+}
+
+func TestCloseModalPopsStack(t *testing.T) {
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{IssueID: "td-001"},
+			{IssueID: "td-002"},
+		},
+	}
+
+	// Close should pop top
+	m.closeModal()
+
+	if m.ModalDepth() != 1 {
+		t.Errorf("after first close, depth = %d, want 1", m.ModalDepth())
+	}
+	if m.CurrentModal().IssueID != "td-001" {
+		t.Errorf("remaining modal = %q, want td-001", m.CurrentModal().IssueID)
+	}
+
+	// Close again
+	m.closeModal()
+
+	if m.ModalDepth() != 0 {
+		t.Errorf("after second close, depth = %d, want 0", m.ModalDepth())
+	}
+	if m.ModalOpen() {
+		t.Error("expected modal to be closed")
+	}
+}

@@ -30,8 +30,31 @@ Optimized for session continuity—capturing working state so new context window
 // Execute runs the root command
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
+		// Check if this is an unknown command that we can provide workflow hints for
+		args := os.Args[1:]
+		if len(args) > 0 && handleWorkflowHint(args[0]) {
+			os.Exit(1)
+		}
+		// Print the error for non-workflow unknown commands
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// handleWorkflowHint checks if the command is a common workflow alias and shows a hint
+// Returns true if a hint was shown
+func handleWorkflowHint(cmd string) bool {
+	switch cmd {
+	case "done", "complete", "submit":
+		showWorkflowHint(cmd, "review",
+			"Or use 'td close <id>' to close directly without review.")
+		return true
+	case "finish":
+		showWorkflowHint(cmd, "close",
+			"Use 'td close <id>' for direct close, or 'td review' → 'td approve' for reviewed completion.")
+		return true
+	}
+	return false
 }
 
 // nameWithAliases returns "name, alias1, alias2" if aliases exist, else just "name"
@@ -99,6 +122,9 @@ Use "{{.CommandPath}} [command] --help" for more information about a command.{{e
 	// Assign built-in commands to system group
 	rootCmd.SetHelpCommandGroupID("system")
 	rootCmd.SetCompletionCommandGroupID("system")
+
+	// Don't print Cobra's default error message - we handle it ourselves
+	rootCmd.SilenceErrors = true
 }
 
 func initBaseDir() {
@@ -116,4 +142,17 @@ func getBaseDir() string {
 		return *baseDirOverride
 	}
 	return baseDir
+}
+
+// showWorkflowHint prints a helpful hint when a user tries an unknown workflow command
+func showWorkflowHint(attempted, suggested, hint string) {
+	fmt.Fprintf(os.Stderr, "\nUnknown command: '%s'\n\n", attempted)
+	fmt.Fprintf(os.Stderr, "Did you mean: td %s <id>\n\n", suggested)
+	fmt.Fprintf(os.Stderr, "td workflow:\n")
+	fmt.Fprintf(os.Stderr, "  1. td start <id>     - Begin work\n")
+	fmt.Fprintf(os.Stderr, "  2. td handoff <id>   - Capture state (required)\n")
+	fmt.Fprintf(os.Stderr, "  3. td review <id>    - Submit for review\n")
+	fmt.Fprintf(os.Stderr, "  4. td approve <id>   - Complete (different session)\n\n")
+	fmt.Fprintf(os.Stderr, "%s\n\n", hint)
+	fmt.Fprintf(os.Stderr, "Run 'td usage -q' for full reference.\n")
 }

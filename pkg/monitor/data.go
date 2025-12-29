@@ -25,7 +25,7 @@ type StatsDataMsg struct {
 }
 
 // FetchData retrieves all data needed for the monitor display
-func FetchData(database *db.DB, sessionID string, startedAt time.Time, searchQuery string, includeClosed bool) RefreshDataMsg {
+func FetchData(database *db.DB, sessionID string, startedAt time.Time, searchQuery string, includeClosed bool, sortMode SortMode) RefreshDataMsg {
 	msg := RefreshDataMsg{
 		Timestamp: time.Now(),
 	}
@@ -56,7 +56,7 @@ func FetchData(database *db.DB, sessionID string, startedAt time.Time, searchQue
 	msg.Activity = fetchActivity(database, 50)
 
 	// Get task list (uses current session for reviewable calculation)
-	msg.TaskList = fetchTaskList(database, currentSessionID, searchQuery, includeClosed)
+	msg.TaskList = fetchTaskList(database, currentSessionID, searchQuery, includeClosed, sortMode)
 
 	// Get recent handoffs since monitor started
 	msg.RecentHandoffs = fetchRecentHandoffs(database, startedAt)
@@ -132,6 +132,7 @@ func isTDQQuery(q string) bool {
 		"has(", "is(", "any(", "blocks(", "blocked_by(", "descendant_of(",
 		"log.", "comment.", "handoff.", "file.",
 		"@me", "EMPTY",
+		"sort:", // Sort prefix is considered TDQ
 	}
 	upper := strings.ToUpper(q)
 	for _, pattern := range tdqPatterns {
@@ -142,9 +143,49 @@ func isTDQQuery(q string) bool {
 	return false
 }
 
+// extractSortFromQuery parses sort: prefix and returns remaining query + sort options
+func extractSortFromQuery(query string) (remaining string, sortBy string, sortDesc bool) {
+	trimmed := strings.TrimSpace(query)
+	lower := strings.ToLower(trimmed)
+
+	// Check for sort: prefix variants
+	sortPrefixes := []struct {
+		prefix   string
+		sortBy   string
+		sortDesc bool
+	}{
+		{"sort:-created", "created_at", true},
+		{"sort:-updated", "updated_at", true},
+		{"sort:created", "created_at", false},
+		{"sort:updated", "updated_at", false},
+		{"sort:-priority", "priority", true},
+		{"sort:priority", "priority", false},
+	}
+
+	for _, sp := range sortPrefixes {
+		if strings.HasPrefix(lower, sp.prefix) {
+			remaining = strings.TrimSpace(trimmed[len(sp.prefix):])
+			return remaining, sp.sortBy, sp.sortDesc
+		}
+	}
+	return query, "", false
+}
+
 // fetchTaskList retrieves categorized issues for the task list panel
-func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includeClosed bool) TaskListData {
+func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includeClosed bool, sortMode SortMode) TaskListData {
 	var data TaskListData
+
+	// Check for sort: prefix in search query
+	queryRemainder, querySortBy, querySortDesc := extractSortFromQuery(searchQuery)
+	var sortBy string
+	var sortDesc bool
+	if querySortBy != "" {
+		searchQuery = queryRemainder
+		sortBy = querySortBy
+		sortDesc = querySortDesc
+	} else {
+		sortBy, sortDesc = sortMode.ToDBOptions()
+	}
 
 	// Helper to extract issues from ranked results
 	extractIssues := func(results []db.SearchResult) []models.Issue {
@@ -213,8 +254,9 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 		openIssues = extractIssues(results)
 	} else if searchQuery == "" {
 		openIssues, _ = database.ListIssues(db.ListIssuesOptions{
-			Status: []models.Status{models.StatusOpen},
-			SortBy: "priority",
+			Status:   []models.Status{models.StatusOpen},
+			SortBy:   sortBy,
+			SortDesc: sortDesc,
 		})
 	}
 
@@ -246,7 +288,8 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 	} else if searchQuery == "" {
 		data.Reviewable, _ = database.ListIssues(db.ListIssuesOptions{
 			ReviewableBy: sessionID,
-			SortBy:       "priority",
+			SortBy:       sortBy,
+			SortDesc:     sortDesc,
 		})
 	}
 
@@ -258,8 +301,9 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 		data.Blocked = append(extractIssues(results), blockedByDep...)
 	} else if searchQuery == "" {
 		blocked, _ := database.ListIssues(db.ListIssuesOptions{
-			Status: []models.Status{models.StatusBlocked},
-			SortBy: "priority",
+			Status:   []models.Status{models.StatusBlocked},
+			SortBy:   sortBy,
+			SortDesc: sortDesc,
 		})
 		data.Blocked = append(blocked, blockedByDep...)
 	} else {
@@ -275,8 +319,9 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 			data.Closed = extractIssues(results)
 		} else if searchQuery == "" {
 			data.Closed, _ = database.ListIssues(db.ListIssuesOptions{
-				Status: []models.Status{models.StatusClosed},
-				SortBy: "priority",
+				Status:   []models.Status{models.StatusClosed},
+				SortBy:   sortBy,
+				SortDesc: sortDesc,
 			})
 		}
 	}

@@ -50,6 +50,39 @@ const (
 	CategoryClosed     TaskListCategory = "CLOSED"
 )
 
+// SortMode represents task list sorting
+type SortMode int
+
+const (
+	SortByPriority    SortMode = iota // Default: priority ASC
+	SortByCreatedDesc                 // created_at DESC (newest first)
+	SortByUpdatedDesc                 // updated_at DESC (recently changed first)
+)
+
+// String returns display name for sort mode
+func (s SortMode) String() string {
+	switch s {
+	case SortByCreatedDesc:
+		return "created"
+	case SortByUpdatedDesc:
+		return "updated"
+	default:
+		return "priority"
+	}
+}
+
+// ToDBOptions returns SortBy and SortDesc for ListIssuesOptions
+func (s SortMode) ToDBOptions() (sortBy string, sortDesc bool) {
+	switch s {
+	case SortByCreatedDesc:
+		return "created_at", true
+	case SortByUpdatedDesc:
+		return "updated_at", true
+	default:
+		return "priority", false
+	}
+}
+
 // TaskListRow represents a single selectable row in the task list panel
 type TaskListRow struct {
 	Issue    models.Issue
@@ -87,6 +120,10 @@ type ModalEntry struct {
 	EpicTasks          []models.Issue
 	EpicTasksCursor    int
 	TaskSectionFocused bool
+
+	// Parent epic (when issue has ParentID pointing to an epic)
+	ParentEpic        *models.Issue
+	ParentEpicFocused bool
 }
 
 // Model is the main Bubble Tea model for the monitor TUI
@@ -127,9 +164,10 @@ type Model struct {
 	ModalStack []ModalEntry
 
 	// Search state
-	SearchMode    bool   // Whether search mode is active
-	SearchQuery   string // Current search query
-	IncludeClosed bool   // Whether to include closed tasks
+	SearchMode    bool     // Whether search mode is active
+	SearchQuery   string   // Current search query
+	IncludeClosed bool     // Whether to include closed tasks
+	SortMode      SortMode // Task list sort order
 
 	// Confirmation dialog state
 	ConfirmOpen    bool
@@ -173,14 +211,15 @@ type RefreshDataMsg struct {
 
 // IssueDetailsMsg carries fetched issue details for the modal
 type IssueDetailsMsg struct {
-	IssueID   string
-	Issue     *models.Issue
-	Handoff   *models.Handoff
-	Logs      []models.Log
-	BlockedBy []models.Issue // Dependencies (issues blocking this one)
-	Blocks    []models.Issue // Dependents (issues blocked by this one)
-	EpicTasks []models.Issue // Child tasks (when issue is an epic)
-	Error     error
+	IssueID    string
+	Issue      *models.Issue
+	Handoff    *models.Handoff
+	Logs       []models.Log
+	BlockedBy  []models.Issue // Dependencies (issues blocking this one)
+	Blocks     []models.Issue // Dependents (issues blocked by this one)
+	EpicTasks  []models.Issue // Child tasks (when issue is an epic)
+	ParentEpic *models.Issue  // Parent epic (when issue.ParentID is set)
+	Error      error
 }
 
 // MarkdownRenderedMsg carries pre-rendered markdown for the modal
@@ -291,6 +330,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			modal.BlockedBy = msg.BlockedBy
 			modal.Blocks = msg.Blocks
 			modal.EpicTasks = msg.EpicTasks
+			modal.ParentEpic = msg.ParentEpic
+			modal.ParentEpicFocused = false // Reset focus on load
 
 			// Trigger async markdown rendering (expensive)
 			if msg.Issue != nil && (msg.Issue.Description != "" || msg.Issue.Acceptance != "") {
@@ -437,7 +478,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	// Cursor movement
 	case keymap.CmdCursorDown, keymap.CmdScrollDown:
 		if modal := m.CurrentModal(); modal != nil {
-			if modal.TaskSectionFocused {
+			if modal.ParentEpicFocused {
+				// Unfocus parent epic, start scrolling content
+				modal.ParentEpicFocused = false
+			} else if modal.TaskSectionFocused {
 				// Move epic task cursor
 				if modal.EpicTasksCursor < len(modal.EpicTasks)-1 {
 					modal.EpicTasksCursor++
@@ -454,15 +498,18 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdCursorUp, keymap.CmdScrollUp:
 		if modal := m.CurrentModal(); modal != nil {
-			if modal.TaskSectionFocused {
+			if modal.ParentEpicFocused {
+				// Already at top, stay focused on epic
+			} else if modal.TaskSectionFocused {
 				// Move epic task cursor
 				if modal.EpicTasksCursor > 0 {
 					modal.EpicTasksCursor--
 				}
-			} else {
-				if modal.Scroll > 0 {
-					modal.Scroll--
-				}
+			} else if modal.Scroll == 0 && modal.ParentEpic != nil {
+				// At top of scroll with parent epic, focus it
+				modal.ParentEpicFocused = true
+			} else if modal.Scroll > 0 {
+				modal.Scroll--
 			}
 		} else if m.StatsOpen {
 			if m.StatsScroll > 0 {
@@ -584,6 +631,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m.navigateModal(1)
 
 	case keymap.CmdClose:
+		// If parent epic is focused, open it instead of closing
+		if modal := m.CurrentModal(); modal != nil && modal.ParentEpicFocused && modal.ParentEpic != nil {
+			modal.ParentEpicFocused = false
+			return m.pushModal(modal.ParentEpic.ID, m.ModalSourcePanel())
+		}
 		if m.ModalOpen() {
 			m.closeModal()
 		} else if m.StatsOpen {
@@ -593,6 +645,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Actions
 	case keymap.CmdOpenDetails:
+		// If in modal with parent epic focused, open the parent epic
+		if modal := m.CurrentModal(); modal != nil && modal.ParentEpicFocused && modal.ParentEpic != nil {
+			modal.ParentEpicFocused = false // Reset before push
+			return m.pushModal(modal.ParentEpic.ID, m.ModalSourcePanel())
+		}
 		return m.openModal()
 
 	case keymap.CmdOpenStats:
@@ -605,6 +662,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdToggleClosed:
 		m.IncludeClosed = !m.IncludeClosed
+		return m, m.fetchData()
+
+	case keymap.CmdCycleSortMode:
+		m.SortMode = (m.SortMode + 1) % 3
 		return m, m.fetchData()
 
 	case keymap.CmdMarkForReview:
@@ -913,7 +974,7 @@ func (m Model) scheduleTick() tea.Cmd {
 // fetchData returns a command that fetches all data and sends a RefreshDataMsg
 func (m Model) fetchData() tea.Cmd {
 	return func() tea.Msg {
-		data := FetchData(m.DB, m.SessionID, m.StartedAt, m.SearchQuery, m.IncludeClosed)
+		data := FetchData(m.DB, m.SessionID, m.StartedAt, m.SearchQuery, m.IncludeClosed, m.SortMode)
 		return data
 	}
 }
@@ -938,6 +999,14 @@ func (m Model) fetchIssueDetails(issueID string) tea.Cmd {
 		// Fetch recent logs (cap at 20)
 		logs, _ := m.DB.GetLogs(issueID, 20)
 		msg.Logs = logs
+
+		// Fetch parent epic if this issue has a parent
+		if issue.ParentID != "" {
+			if parent, err := m.DB.GetIssue(issue.ParentID); err == nil && parent.Type == models.TypeEpic {
+				msg.ParentEpic = parent
+			}
+			// Silently ignore errors - parent may have been deleted
+		}
 
 		// Fetch dependencies (blocked by)
 		depIDs, _ := m.DB.GetDependencies(issueID)

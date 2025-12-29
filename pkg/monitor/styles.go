@@ -88,6 +88,15 @@ var (
 				Background(lipgloss.Color("237")).
 				Foreground(lipgloss.Color("255"))
 
+	// Parent epic styles (shown at top of story/task modals)
+	parentEpicStyle = lipgloss.NewStyle().
+			Foreground(primaryColor) // Purple/magenta
+
+	parentEpicFocusedStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("237")).
+				Foreground(primaryColor).
+				Bold(true)
+
 	// Breadcrumb style for stacked modals
 	breadcrumbStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244")).

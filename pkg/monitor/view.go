@@ -303,10 +303,19 @@ func (m Model) renderTaskListPanel(height int) string {
 
 	totalRows := len(m.TaskListRows)
 
+	// Build sort indicator
+	sortIndicator := ""
+	switch m.SortMode {
+	case SortByCreatedDesc:
+		sortIndicator = " [by:created]"
+	case SortByUpdatedDesc:
+		sortIndicator = " [by:updated]"
+	}
+
 	if totalRows == 0 {
-		panelTitle := "TASK LIST"
+		panelTitle := "TASK LIST" + sortIndicator
 		if m.SearchQuery != "" || m.IncludeClosed {
-			panelTitle = "TASK LIST (no matches)"
+			panelTitle = "TASK LIST" + sortIndicator + " (no matches)"
 		}
 		content.WriteString(subtleStyle.Render("No tasks available"))
 		return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)
@@ -326,16 +335,16 @@ func (m Model) renderTaskListPanel(height int) string {
 	}
 
 	// Build title with position if scrollable
-	panelTitle := "TASK LIST"
+	panelTitle := "TASK LIST" + sortIndicator
 	needsScroll := totalRows > maxLines
 	if needsScroll {
 		endPos := offset + maxLines
 		if endPos > totalRows {
 			endPos = totalRows
 		}
-		panelTitle = fmt.Sprintf("TASK LIST (%d-%d of %d)", offset+1, endPos, totalRows)
+		panelTitle = fmt.Sprintf("TASK LIST%s (%d-%d of %d)", sortIndicator, offset+1, endPos, totalRows)
 	} else if m.SearchQuery != "" || m.IncludeClosed {
-		panelTitle = fmt.Sprintf("TASK LIST (%d results)", totalRows)
+		panelTitle = fmt.Sprintf("TASK LIST%s (%d results)", sortIndicator, totalRows)
 	}
 
 	// Show up indicator if scrolled down
@@ -499,6 +508,18 @@ func (m Model) renderModal() string {
 	lines = append(lines, titleStyle.Render(issue.ID)+" "+issue.Title)
 	lines = append(lines, "")
 
+	// Parent epic (if exists) - selectable row
+	if modal.ParentEpic != nil {
+		epicText := "Epic: " + modal.ParentEpic.ID + " " +
+			truncateString(modal.ParentEpic.Title, contentWidth-20)
+		if modal.ParentEpicFocused {
+			lines = append(lines, parentEpicFocusedStyle.Render("> "+epicText)+" [Enter:open]")
+		} else {
+			lines = append(lines, parentEpicStyle.Render("  "+epicText))
+		}
+		lines = append(lines, "")
+	}
+
 	// Status line: status, type, priority, points
 	statusLine := fmt.Sprintf("%s  %s  %s",
 		formatStatus(issue.Status),
@@ -543,7 +564,7 @@ func (m Model) renderModal() string {
 				truncateString(task.Title, contentWidth-25))
 
 			if modal.TaskSectionFocused && i == modal.EpicTasksCursor {
-				taskLine = epicTaskSelectedStyle.Render("> " + task.ID + " " + string(task.Status) + " " + truncateString(task.Title, contentWidth-27))
+				taskLine = epicTaskSelectedStyle.Render("> " + task.ID + " " + formatStatus(task.Status) + " " + truncateString(task.Title, contentWidth-25))
 			} else {
 				taskLine = prefix + taskLine
 			}
@@ -1005,7 +1026,12 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	if modal != nil && modal.TaskSectionFocused {
 		footerParts = append(footerParts, subtleStyle.Render("↑↓:select  Enter:open  Tab:exit  Esc:close"))
 	} else if depth > 1 {
-		footerParts = append(footerParts, subtleStyle.Render("↑↓:scroll  Esc:back  r:refresh"))
+		// Show Tab hint if this is an epic with tasks
+		if modal != nil && modal.Issue != nil && modal.Issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
+			footerParts = append(footerParts, subtleStyle.Render("↑↓:scroll  Tab:tasks  Esc:back  r:refresh"))
+		} else {
+			footerParts = append(footerParts, subtleStyle.Render("↑↓:scroll  Esc:back  r:refresh"))
+		}
 	} else {
 		footerParts = append(footerParts, subtleStyle.Render(m.Keymap.ModalFooterHelp()))
 	}

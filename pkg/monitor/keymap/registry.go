@@ -65,6 +65,7 @@ const (
 	CmdDelete         Command = "delete"
 	CmdConfirm        Command = "confirm"
 	CmdCancel         Command = "cancel"
+	CmdCycleSortMode  Command = "cycle-sort-mode"
 
 	// Search-specific commands
 	CmdSearchConfirm   Command = "search-confirm"
@@ -76,6 +77,9 @@ const (
 	// Epic task navigation commands
 	CmdFocusTaskSection Command = "focus-task-section"
 	CmdOpenEpicTask     Command = "open-epic-task"
+
+	// Parent epic navigation
+	CmdOpenParentEpic Command = "open-parent-epic"
 )
 
 // Binding maps a key or key sequence to a command in a specific context
@@ -357,19 +361,6 @@ func KeyToString(key tea.KeyMsg) string {
 	default:
 		return key.String()
 	}
-}
-
-// IsModifier returns true if the key is a modifier that shouldn't be processed alone
-func IsModifier(key tea.KeyMsg) bool {
-	switch key.Type {
-	case tea.KeyCtrlC, tea.KeyCtrlA, tea.KeyCtrlB, tea.KeyCtrlD, tea.KeyCtrlE,
-		tea.KeyCtrlF, tea.KeyCtrlG, tea.KeyCtrlH, tea.KeyCtrlJ, tea.KeyCtrlK,
-		tea.KeyCtrlL, tea.KeyCtrlN, tea.KeyCtrlO, tea.KeyCtrlP, tea.KeyCtrlQ,
-		tea.KeyCtrlR, tea.KeyCtrlS, tea.KeyCtrlT, tea.KeyCtrlU, tea.KeyCtrlV,
-		tea.KeyCtrlW, tea.KeyCtrlX, tea.KeyCtrlY, tea.KeyCtrlZ:
-		return false // These are actual key combinations, not modifiers
-	}
-	return false
 }
 
 // IsPrintable returns true if the key represents a printable character

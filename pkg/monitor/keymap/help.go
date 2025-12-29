@@ -26,18 +26,6 @@ func (r *Registry) GenerateHelp() string {
 	var sb strings.Builder
 	sb.WriteString("\nMONITOR TUI - Key Bindings\n")
 
-	// Generate sections based on context
-	sections := []struct {
-		context Context
-		title   string
-	}{
-		{ContextMain, "NAVIGATION"},
-		{ContextModal, "MODALS"},
-		{ContextMain, "ACTIONS"},
-		{ContextSearch, "SEARCH"},
-		{ContextConfirm, "CONFIRMATION"},
-	}
-
 	// Build navigation section manually for better grouping
 	sb.WriteString("\nNAVIGATION:\n")
 	navBindings := []HelpBinding{
@@ -55,10 +43,11 @@ func (r *Registry) GenerateHelp() string {
 
 	sb.WriteString("\nMODALS:\n")
 	modalBindings := []HelpBinding{
-		{Keys: "↑ / ↓ / j / k", Description: "Scroll modal content"},
+		{Keys: "↑ / ↓ / j / k", Description: "Scroll (k at top focuses parent epic)"},
 		{Keys: "Ctrl+d / Ctrl+u", Description: "Half page down/up"},
 		{Keys: "← / → / h / l", Description: "Navigate prev/next issue"},
-		{Keys: "Esc / Enter", Description: "Close modal"},
+		{Keys: "Enter", Description: "Open focused epic / close modal"},
+		{Keys: "Esc", Description: "Close modal (return to previous)"},
 		{Keys: "r", Description: "Refresh modal content"},
 		{Keys: "Tab", Description: "Focus epic task list (if epic)"},
 	}
@@ -83,6 +72,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "a", Description: "Approve issue (Task List reviewable)"},
 		{Keys: "x", Description: "Delete issue (confirmation required)"},
 		{Keys: "s", Description: "Show statistics dashboard"},
+		{Keys: "S", Description: "Cycle sort (priority/created/updated)"},
 		{Keys: "/", Description: "Search tasks"},
 		{Keys: "c", Description: "Toggle closed tasks"},
 		{Keys: "q / Ctrl+C", Description: "Quit"},
@@ -103,9 +93,6 @@ func (r *Registry) GenerateHelp() string {
 	}
 
 	sb.WriteString("\nPress ? to close help\n")
-
-	// Add sections from actual bindings (unused for now but available)
-	_ = sections
 
 	return sb.String()
 }
@@ -189,13 +176,24 @@ func (r *Registry) GenerateTDQHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
 	}
 
+	sb.WriteString("\nSORTING:\n")
+	sortOps := []HelpBinding{
+		{Keys: "sort:priority", Description: "Sort by priority (default)"},
+		{Keys: "sort:-created", Description: "Newest first"},
+		{Keys: "sort:-updated", Description: "Recently updated first"},
+		{Keys: "sort:created", Description: "Oldest first"},
+	}
+	for _, b := range sortOps {
+		sb.WriteString(fmt.Sprintf("  %-22s %s\n", b.Keys, b.Description))
+	}
+
 	sb.WriteString("\nEXAMPLES:\n")
 	examples := []string{
 		`  type = bug AND priority <= P1`,
 		`  status = open AND created >= -7d`,
+		`  sort:-created status = open`,
 		`  implementer = @me AND is(in_progress)`,
 		`  log.type = blocker`,
-		`  title ~ auth OR description ~ auth`,
 	}
 	for _, ex := range examples {
 		sb.WriteString(ex + "\n")
@@ -208,7 +206,7 @@ func (r *Registry) GenerateTDQHelp() string {
 
 // FooterHelp generates a compact help string for the footer
 func (r *Registry) FooterHelp() string {
-	return "q:quit s:stats /:search r:review a:approve x:del tab:panel ↑↓:sel enter:details ?:help"
+	return "q:quit s:stats S:sort /:search c:closed r:review a:approve x:del tab:panel ?:help"
 }
 
 // ModalFooterHelp generates help text for the modal footer
@@ -258,6 +256,8 @@ func CommandHelp(cmd Command) string {
 		return "Enter search mode"
 	case CmdToggleClosed:
 		return "Show/hide closed tasks"
+	case CmdCycleSortMode:
+		return "Cycle sort: priority → created → updated"
 	case CmdMarkForReview:
 		return "Mark issue for review"
 	case CmdApprove:
@@ -268,6 +268,8 @@ func CommandHelp(cmd Command) string {
 		return "Toggle focus on epic task list"
 	case CmdOpenEpicTask:
 		return "Open selected task from epic"
+	case CmdOpenParentEpic:
+		return "Open parent epic from story/task"
 	default:
 		return string(cmd)
 	}
@@ -332,10 +334,10 @@ func AllCommands() []Command {
 		CmdHalfPageDown, CmdHalfPageUp, CmdFullPageDown, CmdFullPageUp,
 		CmdScrollDown, CmdScrollUp, CmdSelect, CmdBack, CmdClose,
 		CmdNavigatePrev, CmdNavigateNext,
-		CmdOpenDetails, CmdOpenStats, CmdSearch, CmdToggleClosed,
+		CmdOpenDetails, CmdOpenStats, CmdSearch, CmdToggleClosed, CmdCycleSortMode,
 		CmdMarkForReview, CmdApprove, CmdDelete, CmdConfirm, CmdCancel,
 		CmdSearchConfirm, CmdSearchCancel, CmdSearchClear, CmdSearchBackspace, CmdSearchInput,
-		CmdFocusTaskSection, CmdOpenEpicTask,
+		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic,
 	}
 
 	sort.Slice(cmds, func(i, j int) bool {
