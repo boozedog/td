@@ -930,6 +930,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdSearch:
 		m.SearchMode = true
 		m.SearchQuery = ""
+		m.updatePanelBounds() // Recalc bounds for search bar
 		return m, nil
 
 	case keymap.CmdToggleClosed:
@@ -960,6 +961,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdSearchConfirm:
 		m.SearchMode = false
 		m.ShowTDQHelp = false
+		m.updatePanelBounds() // Recalc bounds after search bar closes
 		return m, nil
 
 	case keymap.CmdSearchCancel:
@@ -971,6 +973,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		// Otherwise exit search mode entirely
 		m.SearchMode = false
 		m.SearchQuery = ""
+		m.updatePanelBounds() // Recalc bounds after search bar closes
 		return m, m.fetchData()
 
 	case keymap.CmdSearchClear:

@@ -44,6 +44,13 @@ func TestUpdateCommand(t *testing.T) {
 		{"v1.2.3; echo pwned", ""},
 		{"v1.2.3$(whoami)", ""},
 		{"../../../etc/passwd", ""},
+		// Edge cases: malformed prerelease identifiers
+		{"v1.2.3--", ""},       // double hyphen
+		{"v1.2.3-", ""},        // trailing hyphen
+		{"v1.2.3-beta-", ""},   // trailing hyphen in prerelease
+		{"v1.2.3-.beta", ""},   // leading dot after hyphen
+		{"v1.2.3-beta.", ""},   // trailing dot
+		{"v1.2.3-beta..rc", ""}, // double dot
 	}
 
 	for _, tt := range tests {

@@ -79,7 +79,9 @@ func IsDevelopmentVersion(v string) bool {
 }
 
 // validVersionRegex matches valid semver versions (v1.2.3, v1.2.3-beta, etc.)
-var validVersionRegex = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[a-zA-Z0-9.-]+)?$`)
+// Prerelease identifiers must be alphanumeric, separated by dots or hyphens.
+// Rejects double hyphens (v1.2.3--), trailing hyphens (v1.2.3-), etc.
+var validVersionRegex = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[a-zA-Z0-9]+([.-][a-zA-Z0-9]+)*)?$`)
 
 // UpdateCommand generates the go install command for updating.
 // Returns empty string if version is invalid (prevents shell injection).
