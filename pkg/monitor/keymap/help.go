@@ -49,6 +49,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "Enter", Description: "Open focused epic / close modal"},
 		{Keys: "Esc", Description: "Close modal (return to previous)"},
 		{Keys: "r", Description: "Refresh modal content"},
+		{Keys: "y", Description: "Copy to clipboard (markdown)"},
 		{Keys: "Tab", Description: "Focus epic task list (if epic)"},
 	}
 	for _, b := range modalBindings {
@@ -60,6 +61,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "↑ / ↓ / j / k", Description: "Select task in list"},
 		{Keys: "Enter", Description: "Open selected task"},
 		{Keys: "Tab", Description: "Exit task list"},
+		{Keys: "y", Description: "Copy epic to clipboard (markdown)"},
 		{Keys: "Esc", Description: "Close modal"},
 	}
 	for _, b := range epicBindings {
@@ -223,7 +225,7 @@ func (r *Registry) FooterHelp() string {
 
 // ModalFooterHelp generates help text for the modal footer
 func (r *Registry) ModalFooterHelp() string {
-	return "↑↓:scroll  Ctrl+d/u:½page  ←→:prev/next  esc:close  r:refresh"
+	return "↑↓:scroll  ←→:prev/next  y:copy  esc:close  r:refresh"
 }
 
 // StatsFooterHelp generates help text for the stats modal footer
@@ -284,6 +286,8 @@ func CommandHelp(cmd Command) string {
 		return "Open selected task from epic"
 	case CmdOpenParentEpic:
 		return "Open parent epic from story/task"
+	case CmdCopyToClipboard:
+		return "Copy issue as markdown to clipboard"
 	default:
 		return string(cmd)
 	}
@@ -351,7 +355,7 @@ func AllCommands() []Command {
 		CmdOpenDetails, CmdOpenStats, CmdOpenHandoffs, CmdSearch, CmdToggleClosed, CmdCycleSortMode,
 		CmdMarkForReview, CmdApprove, CmdDelete, CmdConfirm, CmdCancel,
 		CmdSearchConfirm, CmdSearchCancel, CmdSearchClear, CmdSearchBackspace, CmdSearchInput,
-		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic,
+		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic, CmdCopyToClipboard,
 	}
 
 	sort.Slice(cmds, func(i, j int) bool {

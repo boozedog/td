@@ -81,6 +81,9 @@ func DefaultBindings() []Binding {
 		// Refresh
 		{Key: "r", Command: CmdRefresh, Context: ContextModal, Description: "Refresh"},
 
+		// Copy to clipboard
+		{Key: "y", Command: CmdCopyToClipboard, Context: ContextModal, Description: "Copy to clipboard"},
+
 		// ============================================================
 		// STATS MODAL BINDINGS
 		// Active when the statistics modal is open
@@ -139,6 +142,7 @@ func DefaultBindings() []Binding {
 		{Key: "enter", Command: CmdOpenEpicTask, Context: ContextEpicTasks, Description: "Open task"},
 		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextEpicTasks, Description: "Exit task list"},
 		{Key: "esc", Command: CmdClose, Context: ContextEpicTasks, Description: "Close modal"},
+		{Key: "y", Command: CmdCopyToClipboard, Context: ContextEpicTasks, Description: "Copy to clipboard"},
 
 		// Modal context: add tab to toggle task section focus
 		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextModal, Description: "Focus task list"},
@@ -153,6 +157,7 @@ func DefaultBindings() []Binding {
 		{Key: "down", Command: CmdCursorDown, Context: ContextParentEpicFocused, Description: "Unfocus epic"},
 		{Key: "k", Command: CmdCursorUp, Context: ContextParentEpicFocused, Description: "Stay on epic"},
 		{Key: "up", Command: CmdCursorUp, Context: ContextParentEpicFocused, Description: "Stay on epic"},
+		{Key: "y", Command: CmdCopyToClipboard, Context: ContextParentEpicFocused, Description: "Copy to clipboard"},
 
 		// ============================================================
 		// HANDOFFS MODAL BINDINGS

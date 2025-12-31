@@ -85,6 +85,9 @@ const (
 
 	// Handoffs modal
 	CmdOpenHandoffs Command = "open-handoffs"
+
+	// Clipboard
+	CmdCopyToClipboard Command = "copy-to-clipboard"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

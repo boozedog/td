@@ -1149,6 +1149,11 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	// Build footer with breadcrumb if depth > 1
 	var footerParts []string
 
+	// Add status message if present
+	if m.StatusMessage != "" {
+		footerParts = append(footerParts, readyColor.Render(m.StatusMessage))
+	}
+
 	// Add breadcrumb for stacked modals
 	if breadcrumb := m.ModalBreadcrumb(); breadcrumb != "" {
 		footerParts = append(footerParts, breadcrumbStyle.Render(breadcrumb))

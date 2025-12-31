@@ -195,6 +195,9 @@ type Model struct {
 
 	// Keymap registry for keyboard shortcuts
 	Keymap *keymap.Registry
+
+	// Status message (temporary feedback, e.g., "Copied to clipboard")
+	StatusMessage string
 }
 
 // MinWidth is the minimum terminal width for proper display
@@ -242,6 +245,9 @@ type HandoffsDataMsg struct {
 	Data  []models.Handoff
 	Error error
 }
+
+// ClearStatusMsg clears the status message
+type ClearStatusMsg struct{}
 
 // NewModel creates a new monitor model
 func NewModel(database *db.DB, sessionID string, interval time.Duration) Model {
@@ -388,6 +394,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.HandoffsError = msg.Error
 			m.HandoffsData = msg.Data
 		}
+		return m, nil
+
+	case ClearStatusMsg:
+		m.StatusMessage = ""
 		return m, nil
 	}
 
@@ -826,6 +836,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			return m.pushModal(modal.ParentEpic.ID, m.ModalSourcePanel())
 		}
 		return m, nil
+
+	case keymap.CmdCopyToClipboard:
+		return m.copyCurrentIssueToClipboard()
 	}
 
 	return m, nil
@@ -1558,4 +1571,30 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 	m.SelectedID[PanelTaskList] = ""
 
 	return m, m.fetchData()
+}
+
+// copyCurrentIssueToClipboard copies the current modal issue to clipboard as markdown
+func (m Model) copyCurrentIssueToClipboard() (tea.Model, tea.Cmd) {
+	modal := m.CurrentModal()
+	if modal == nil || modal.Issue == nil {
+		return m, nil
+	}
+
+	var markdown string
+	if modal.Issue.Type == models.TypeEpic {
+		markdown = formatEpicAsMarkdown(modal.Issue, modal.EpicTasks)
+	} else {
+		markdown = formatIssueAsMarkdown(modal.Issue)
+	}
+
+	if err := copyToClipboard(markdown); err != nil {
+		m.StatusMessage = "Copy failed: " + err.Error()
+	} else {
+		m.StatusMessage = "Copied to clipboard"
+	}
+
+	// Clear status after 2 seconds
+	return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return ClearStatusMsg{}
+	})
 }
