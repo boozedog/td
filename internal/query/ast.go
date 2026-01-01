@@ -224,15 +224,46 @@ var KnownFunctions = map[string]struct {
 	"linked_to":     {1, 1, "linked_to(path) - issues linked to file path"},
 }
 
+// SortClause represents a sort specification
+type SortClause struct {
+	Field      string // DB column name (e.g., "created_at", "priority")
+	Descending bool   // true for descending order
+}
+
+func (s *SortClause) String() string {
+	if s.Descending {
+		return fmt.Sprintf("sort:-%s", s.Field)
+	}
+	return fmt.Sprintf("sort:%s", s.Field)
+}
+
+// SortFieldToColumn maps user-facing sort field names to DB columns
+var SortFieldToColumn = map[string]string{
+	"created":  "created_at",
+	"updated":  "updated_at",
+	"closed":   "closed_at",
+	"deleted":  "deleted_at",
+	"priority": "priority",
+	"id":       "id",
+	"title":    "title",
+	"status":   "status",
+	"points":   "points",
+}
+
 // Query represents a parsed TDQ query
 type Query struct {
 	Root Node
-	Raw  string // original query string
+	Raw  string       // original query string
+	Sort *SortClause  // optional sort clause
 }
 
 func (q *Query) String() string {
-	if q.Root == nil {
-		return ""
+	var parts []string
+	if q.Root != nil {
+		parts = append(parts, q.Root.String())
 	}
-	return q.Root.String()
+	if q.Sort != nil {
+		parts = append(parts, q.Sort.String())
+	}
+	return strings.Join(parts, " ")
 }

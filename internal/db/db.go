@@ -632,7 +632,7 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	allowedSortCols := map[string]bool{
 		"id": true, "title": true, "status": true, "type": true,
 		"priority": true, "points": true, "created_at": true,
-		"updated_at": true, "closed_at": true,
+		"updated_at": true, "closed_at": true, "deleted_at": true,
 	}
 	sortCol := "priority"
 	if opts.SortBy != "" && allowedSortCols[opts.SortBy] {

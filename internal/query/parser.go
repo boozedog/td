@@ -48,10 +48,35 @@ func Parse(input string) (*Query, error) {
 		return nil, err
 	}
 
+	// Extract sort clause(s) from tokens
+	var sortClause *SortClause
+	var filteredTokens []Token
+	for _, tok := range tokens {
+		if tok.Type == TokenSort {
+			if sortClause != nil {
+				return nil, &ParseError{
+					Message: "multiple sort clauses not allowed",
+					Pos:     tok.Pos,
+					Line:    tok.Line,
+					Column:  tok.Column,
+					Token:   tok,
+				}
+			}
+			sortClause = parseSortToken(tok.Value)
+		} else {
+			filteredTokens = append(filteredTokens, tok)
+		}
+	}
+
 	p := &Parser{
-		tokens: tokens,
+		tokens: filteredTokens,
 		pos:    0,
 		input:  input,
+	}
+
+	// If only sort clause and no filter, return query with just sort
+	if p.isAtEnd() {
+		return &Query{Root: nil, Raw: input, Sort: sortClause}, nil
 	}
 
 	root, err := p.parseQuery()
@@ -71,7 +96,30 @@ func Parse(input string) (*Query, error) {
 		}
 	}
 
-	return &Query{Root: root, Raw: input}, nil
+	return &Query{Root: root, Raw: input, Sort: sortClause}, nil
+}
+
+// parseSortToken converts a sort token value to a SortClause
+// Value format: "field" or "-field" (descending)
+func parseSortToken(value string) *SortClause {
+	descending := false
+	field := value
+
+	if len(value) > 0 && value[0] == '-' {
+		descending = true
+		field = value[1:]
+	}
+
+	// Map user field name to DB column
+	dbColumn := field
+	if col, ok := SortFieldToColumn[field]; ok {
+		dbColumn = col
+	}
+
+	return &SortClause{
+		Field:      dbColumn,
+		Descending: descending,
+	}
 }
 
 func (p *Parser) parseQuery() (Node, error) {

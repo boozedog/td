@@ -389,3 +389,99 @@ func containsDepthError(s string) bool {
 func containsSubstring(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || (len(s) > len(substr) && (s[:len(substr)] == substr || containsSubstring(s[1:], substr))))
 }
+
+func TestSortClauseLexer(t *testing.T) {
+	tests := []struct {
+		input       string
+		wantToken   TokenType
+		wantValue   string
+		wantErr     bool
+	}{
+		{"sort:created", TokenSort, "created", false},
+		{"sort:-updated", TokenSort, "-updated", false},
+		{"sort:priority", TokenSort, "priority", false},
+		{"sort:-closed", TokenSort, "-closed", false},
+		{"sort:deleted", TokenSort, "deleted", false},
+		{"sort:id", TokenSort, "id", false},
+		{"sort:invalid", TokenError, "", true}, // invalid field
+		{"sort:", TokenError, "", true},        // missing field
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			lexer := NewLexer(tt.input)
+			tokens, err := lexer.Tokenize()
+
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			// First token should be SORT
+			if len(tokens) < 1 {
+				t.Fatalf("expected at least 1 token, got %d", len(tokens))
+			}
+			if tokens[0].Type != tt.wantToken {
+				t.Errorf("expected token type %v, got %v", tt.wantToken, tokens[0].Type)
+			}
+			if tokens[0].Value != tt.wantValue {
+				t.Errorf("expected value %q, got %q", tt.wantValue, tokens[0].Value)
+			}
+		})
+	}
+}
+
+func TestSortClauseParser(t *testing.T) {
+	tests := []struct {
+		input     string
+		wantField string
+		wantDesc  bool
+		wantRoot  bool // whether there's a filter expression
+	}{
+		{"sort:created", "created_at", false, false},
+		{"sort:-updated", "updated_at", true, false},
+		{"sort:priority", "priority", false, false},
+		{"type=epic sort:-created", "created_at", true, true},
+		{"sort:-closed status=open", "closed_at", true, true},
+		{"status=open AND type=bug sort:id", "id", false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			query, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+
+			if query.Sort == nil {
+				t.Fatal("expected Sort clause, got nil")
+			}
+			if query.Sort.Field != tt.wantField {
+				t.Errorf("sort field: expected %q, got %q", tt.wantField, query.Sort.Field)
+			}
+			if query.Sort.Descending != tt.wantDesc {
+				t.Errorf("sort descending: expected %v, got %v", tt.wantDesc, query.Sort.Descending)
+			}
+			if tt.wantRoot && query.Root == nil {
+				t.Error("expected Root expression, got nil")
+			}
+			if !tt.wantRoot && query.Root != nil {
+				t.Errorf("expected no Root expression, got %v", query.Root)
+			}
+		})
+	}
+}
+
+func TestMultipleSortClauses(t *testing.T) {
+	// Multiple sort clauses should error
+	_, err := Parse("sort:created sort:-updated")
+	if err == nil {
+		t.Error("expected error for multiple sort clauses, got nil")
+	}
+}

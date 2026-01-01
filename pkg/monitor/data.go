@@ -143,49 +143,12 @@ func isTDQQuery(q string) bool {
 	return false
 }
 
-// extractSortFromQuery parses sort: prefix and returns remaining query + sort options
-func extractSortFromQuery(query string) (remaining string, sortBy string, sortDesc bool) {
-	trimmed := strings.TrimSpace(query)
-	lower := strings.ToLower(trimmed)
-
-	// Check for sort: prefix variants
-	sortPrefixes := []struct {
-		prefix   string
-		sortBy   string
-		sortDesc bool
-	}{
-		{"sort:-created", "created_at", true},
-		{"sort:-updated", "updated_at", true},
-		{"sort:created", "created_at", false},
-		{"sort:updated", "updated_at", false},
-		{"sort:-priority", "priority", true},
-		{"sort:priority", "priority", false},
-	}
-
-	for _, sp := range sortPrefixes {
-		if strings.HasPrefix(lower, sp.prefix) {
-			remaining = strings.TrimSpace(trimmed[len(sp.prefix):])
-			return remaining, sp.sortBy, sp.sortDesc
-		}
-	}
-	return query, "", false
-}
-
 // fetchTaskList retrieves categorized issues for the task list panel
 func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includeClosed bool, sortMode SortMode) TaskListData {
 	var data TaskListData
 
-	// Check for sort: prefix in search query
-	queryRemainder, querySortBy, querySortDesc := extractSortFromQuery(searchQuery)
-	var sortBy string
-	var sortDesc bool
-	if querySortBy != "" {
-		searchQuery = queryRemainder
-		sortBy = querySortBy
-		sortDesc = querySortDesc
-	} else {
-		sortBy, sortDesc = sortMode.ToDBOptions()
-	}
+	// Get default sort from SortMode (used for non-TDQ queries)
+	sortBy, sortDesc := sortMode.ToDBOptions()
 
 	// Helper to extract issues from ranked results
 	extractIssues := func(results []db.SearchResult) []models.Issue {

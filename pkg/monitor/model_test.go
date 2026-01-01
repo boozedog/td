@@ -1438,3 +1438,79 @@ func TestEpicAutoFocusTaskSection(t *testing.T) {
 		})
 	}
 }
+
+func TestUpdateQuerySort(t *testing.T) {
+	tests := []struct {
+		name     string
+		query    string
+		sortMode SortMode
+		expected string
+	}{
+		{
+			name:     "empty query gets sort clause",
+			query:    "",
+			sortMode: SortByCreatedDesc,
+			expected: "sort:-created",
+		},
+		{
+			name:     "query without sort gets sort appended",
+			query:    "type=epic",
+			sortMode: SortByUpdatedDesc,
+			expected: "type=epic sort:-updated",
+		},
+		{
+			name:     "query with existing sort gets replaced",
+			query:    "type=epic sort:id",
+			sortMode: SortByCreatedDesc,
+			expected: "type=epic sort:-created",
+		},
+		{
+			name:     "priority sort mode",
+			query:    "status=open",
+			sortMode: SortByPriority,
+			expected: "status=open sort:priority",
+		},
+		{
+			name:     "multiple words without sort",
+			query:    "type=bug status=open",
+			sortMode: SortByCreatedDesc,
+			expected: "type=bug status=open sort:-created",
+		},
+		{
+			name:     "descending sort replaced",
+			query:    "sort:-updated",
+			sortMode: SortByCreatedDesc,
+			expected: "sort:-created",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := updateQuerySort(tt.query, tt.sortMode)
+			if got != tt.expected {
+				t.Errorf("updateQuerySort(%q, %v) = %q, want %q",
+					tt.query, tt.sortMode, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSortModeToSortClause(t *testing.T) {
+	tests := []struct {
+		mode     SortMode
+		expected string
+	}{
+		{SortByPriority, "sort:priority"},
+		{SortByCreatedDesc, "sort:-created"},
+		{SortByUpdatedDesc, "sort:-updated"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			got := tt.mode.ToSortClause()
+			if got != tt.expected {
+				t.Errorf("ToSortClause() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}

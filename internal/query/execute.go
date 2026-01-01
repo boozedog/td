@@ -42,6 +42,14 @@ func Execute(database *db.DB, queryStr string, sessionID string, opts ExecuteOpt
 		maxResults = DefaultMaxResults
 	}
 
+	// Determine sort options: query sort clause takes precedence over opts
+	sortBy := opts.SortBy
+	sortDesc := opts.SortDesc
+	if query.Sort != nil {
+		sortBy = query.Sort.Field
+		sortDesc = query.Sort.Descending
+	}
+
 	// Create evaluation context
 	ctx := NewEvalContext(sessionID)
 	evaluator := NewEvaluator(ctx, query)
@@ -52,8 +60,8 @@ func Execute(database *db.DB, queryStr string, sessionID string, opts ExecuteOpt
 	// Fetch issues with a limit to prevent OOM
 	// We fetch more than maxResults to allow for filtering, but cap it
 	fetchOpts := db.ListIssuesOptions{
-		SortBy:   opts.SortBy,
-		SortDesc: opts.SortDesc,
+		SortBy:   sortBy,
+		SortDesc: sortDesc,
 		Limit:    maxResults, // Cap fetch to prevent loading entire DB
 	}
 	issues, err := database.ListIssues(fetchOpts)

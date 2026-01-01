@@ -44,6 +44,7 @@ func DefaultBindings() []Binding {
 		{Key: "c", Command: CmdToggleClosed, Context: ContextMain, Description: "Toggle closed tasks"},
 		{Key: "S", Command: CmdCycleSortMode, Context: ContextMain, Description: "Cycle sort mode"},
 		{Key: "r", Command: CmdMarkForReview, Context: ContextMain, Description: "Review/Refresh"},
+		{Key: "R", Command: CmdMarkForReview, Context: ContextMain, Description: "Submit for review"},
 		{Key: "a", Command: CmdApprove, Context: ContextMain, Description: "Approve issue"},
 		{Key: "x", Command: CmdDelete, Context: ContextMain, Description: "Delete issue"},
 		{Key: "C", Command: CmdCloseIssue, Context: ContextMain, Description: "Close issue"},
@@ -81,6 +82,9 @@ func DefaultBindings() []Binding {
 
 		// Refresh
 		{Key: "r", Command: CmdRefresh, Context: ContextModal, Description: "Refresh"},
+
+		// Submit for review
+		{Key: "R", Command: CmdMarkForReview, Context: ContextModal, Description: "Submit for review"},
 
 		// Copy to clipboard
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextModal, Description: "Copy to clipboard"},

@@ -45,6 +45,9 @@ const (
 	TokenAtMe   // @me
 	TokenEmpty  // EMPTY
 	TokenNull   // NULL
+
+	// Sort clause
+	TokenSort // sort:field or sort:-field
 )
 
 var tokenNames = map[TokenType]string{
@@ -72,6 +75,7 @@ var tokenNames = map[TokenType]string{
 	TokenAtMe:        "@me",
 	TokenEmpty:       "EMPTY",
 	TokenNull:        "NULL",
+	TokenSort:        "SORT",
 }
 
 func (t TokenType) String() string {
@@ -465,6 +469,11 @@ func (l *Lexer) scanIdentOrKeyword() Token {
 	value := sb.String()
 	upper := strings.ToUpper(value)
 
+	// Check for sort: prefix
+	if strings.ToLower(value) == "sort" && l.pos < len(l.input) && l.input[l.pos] == ':' {
+		return l.scanSortClause(startPos, startLine, startCol)
+	}
+
 	// Check for keywords
 	switch upper {
 	case "AND":
@@ -486,6 +495,74 @@ func (l *Lexer) scanIdentOrKeyword() Token {
 	}
 
 	return Token{Type: TokenIdent, Value: value, Pos: startPos, Line: startLine, Column: startCol}
+}
+
+// scanSortClause parses sort:field or sort:-field
+// Value format: "field" for ascending, "-field" for descending
+func (l *Lexer) scanSortClause(startPos, startLine, startCol int) Token {
+	l.advance() // skip ':'
+
+	var sb strings.Builder
+
+	// Check for descending prefix
+	if l.pos < len(l.input) && l.input[l.pos] == '-' {
+		sb.WriteByte('-')
+		l.advance()
+	}
+
+	// Scan field name
+	if l.pos >= len(l.input) || !isIdentStart(l.input[l.pos]) {
+		return Token{
+			Type:   TokenError,
+			Value:  "sort: requires a field name",
+			Pos:    startPos,
+			Line:   startLine,
+			Column: startCol,
+		}
+	}
+
+	for l.pos < len(l.input) && isIdentChar(l.input[l.pos]) {
+		sb.WriteByte(l.input[l.pos])
+		l.advance()
+	}
+
+	field := sb.String()
+
+	// Validate field name (strip - prefix for validation)
+	fieldName := field
+	if len(field) > 0 && field[0] == '-' {
+		fieldName = field[1:]
+	}
+
+	validSortFields := map[string]bool{
+		"created":  true,
+		"updated":  true,
+		"closed":   true,
+		"deleted":  true,
+		"priority": true,
+		"id":       true,
+		"title":    true,
+		"status":   true,
+		"points":   true,
+	}
+
+	if !validSortFields[fieldName] {
+		return Token{
+			Type:   TokenError,
+			Value:  fmt.Sprintf("invalid sort field: %s (valid: created, updated, closed, deleted, priority, id, title, status, points)", fieldName),
+			Pos:    startPos,
+			Line:   startLine,
+			Column: startCol,
+		}
+	}
+
+	return Token{
+		Type:   TokenSort,
+		Value:  field, // includes - prefix if descending
+		Pos:    startPos,
+		Line:   startLine,
+		Column: startCol,
+	}
 }
 
 func isIdentStart(ch byte) bool {

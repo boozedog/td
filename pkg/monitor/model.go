@@ -238,6 +238,40 @@ func (s SortMode) ToDBOptions() (sortBy string, sortDesc bool) {
 	}
 }
 
+// ToSortClause returns the TDQ sort clause string for this mode
+func (s SortMode) ToSortClause() string {
+	switch s {
+	case SortByCreatedDesc:
+		return "sort:-created"
+	case SortByUpdatedDesc:
+		return "sort:-updated"
+	default:
+		return "sort:priority"
+	}
+}
+
+// updateQuerySort updates or appends sort clause to a query string
+func updateQuerySort(query string, sortMode SortMode) string {
+	sortClause := sortMode.ToSortClause()
+	query = strings.TrimSpace(query)
+
+	// Remove existing sort clause if present
+	// Match sort:word or sort:-word patterns
+	words := strings.Fields(query)
+	var filtered []string
+	for _, word := range words {
+		if !strings.HasPrefix(strings.ToLower(word), "sort:") {
+			filtered = append(filtered, word)
+		}
+	}
+
+	// Rebuild query with new sort clause
+	if len(filtered) == 0 {
+		return sortClause
+	}
+	return strings.Join(filtered, " ") + " " + sortClause
+}
+
 // TaskListRow represents a single selectable row in the task list panel
 type TaskListRow struct {
 	Issue    models.Issue
@@ -996,11 +1030,15 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdCycleSortMode:
 		m.SortMode = (m.SortMode + 1) % 3
+		m.SearchQuery = updateQuerySort(m.SearchQuery, m.SortMode)
 		return m, m.fetchData()
 
 	case keymap.CmdMarkForReview:
-		// Mark for review if in Current Work panel, otherwise refresh
-		if m.ActivePanel == PanelCurrentWork {
+		// Mark for review works from modal, TaskList, or CurrentWork panel
+		if m.ModalOpen() {
+			return m.markForReview()
+		}
+		if m.ActivePanel == PanelCurrentWork || m.ActivePanel == PanelTaskList {
 			return m.markForReview()
 		}
 		return m, m.fetchData()
@@ -1830,20 +1868,32 @@ func (m Model) SelectedIssueID(panel Panel) string {
 	return ""
 }
 
-// markForReview marks the selected in-progress issue for review
+// markForReview marks the selected issue for review
+// Works from modal view, CurrentWork panel, or TaskList panel
+// Accepts both in_progress and open (ready) issues
 func (m Model) markForReview() (tea.Model, tea.Cmd) {
-	issueID := m.SelectedIssueID(PanelCurrentWork)
-	if issueID == "" {
-		return m, nil
+	var issueID string
+	var issue *models.Issue
+
+	// Check if a modal is open - use that issue
+	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+		issueID = modal.IssueID
+		issue = modal.Issue
+	} else {
+		// Otherwise, use the selected issue from the active panel
+		issueID = m.SelectedIssueID(m.ActivePanel)
+		if issueID == "" {
+			return m, nil
+		}
+		var err error
+		issue, err = m.DB.GetIssue(issueID)
+		if err != nil || issue == nil {
+			return m, nil
+		}
 	}
 
-	issue, err := m.DB.GetIssue(issueID)
-	if err != nil || issue == nil {
-		return m, nil
-	}
-
-	// Only allow marking in_progress issues for review
-	if issue.Status != models.StatusInProgress {
+	// Only allow marking in_progress or open issues for review
+	if issue.Status != models.StatusInProgress && issue.Status != models.StatusOpen {
 		return m, nil
 	}
 
@@ -1860,6 +1910,11 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		EntityType: "issue",
 		EntityID:   issueID,
 	})
+
+	// If we're in a modal, close it since the issue moved to review
+	if m.ModalOpen() {
+		m.closeModal()
+	}
 
 	return m, m.fetchData()
 }
