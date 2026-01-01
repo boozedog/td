@@ -30,7 +30,6 @@ func (r *Registry) GenerateHelp() string {
 	sb.WriteString("\nNAVIGATION:\n")
 	navBindings := []HelpBinding{
 		{Keys: "Tab / Shift+Tab", Description: "Switch between panels"},
-		{Keys: "1 / 2 / 3", Description: "Jump to panel"},
 		{Keys: "↑ / ↓ / j / k", Description: "Move cursor"},
 		{Keys: "Ctrl+d / Ctrl+u", Description: "Half page down/up"},
 		{Keys: "Ctrl+f / Ctrl+b", Description: "Full page down/up"},
@@ -96,6 +95,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "h", Description: "Show handoffs modal"},
 		{Keys: "S", Description: "Cycle sort (priority/created/updated)"},
 		{Keys: "/", Description: "Search tasks"},
+		{Keys: "Esc", Description: "Clear search filter"},
 		{Keys: "c", Description: "Toggle closed tasks"},
 		{Keys: "q / Ctrl+C", Description: "Quit"},
 	}
@@ -376,7 +376,7 @@ func formatKey(key string) string {
 func AllCommands() []Command {
 	cmds := []Command{
 		CmdQuit, CmdToggleHelp, CmdRefresh,
-		CmdNextPanel, CmdPrevPanel, CmdFocusPanel1, CmdFocusPanel2, CmdFocusPanel3,
+		CmdNextPanel, CmdPrevPanel,
 		CmdCursorDown, CmdCursorUp, CmdCursorTop, CmdCursorBottom,
 		CmdHalfPageDown, CmdHalfPageUp, CmdFullPageDown, CmdFullPageUp,
 		CmdScrollDown, CmdScrollUp, CmdSelect, CmdBack, CmdClose,

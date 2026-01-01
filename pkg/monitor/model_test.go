@@ -280,14 +280,80 @@ func TestHandleKey_PanelSwitchEnsuresCursorVisible(t *testing.T) {
 	m.Cursor[PanelTaskList] = 0
 	m.ScrollOffset[PanelTaskList] = 10 // invalid: cursor would be offscreen
 
-	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	// Tab cycles from PanelCurrentWork (0) to PanelTaskList (1)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyTab})
 	m2 := updated.(Model)
 
 	if m2.ActivePanel != PanelTaskList {
-		t.Fatalf("active panel after '2' = %v, want %v", m2.ActivePanel, PanelTaskList)
+		t.Fatalf("active panel after Tab = %v, want %v", m2.ActivePanel, PanelTaskList)
 	}
 	if m2.ScrollOffset[PanelTaskList] != 0 {
 		t.Fatalf("offset after panel switch = %d, want %d", m2.ScrollOffset[PanelTaskList], 0)
+	}
+}
+
+func TestEscapeClearsSearchAndExitsSearchMode(t *testing.T) {
+	m := Model{
+		Height:       30,
+		ActivePanel:  PanelTaskList,
+		SearchMode:   true,
+		SearchQuery:  "some query",
+		Cursor:       make(map[Panel]int),
+		SelectedID:   make(map[Panel]string),
+		ScrollOffset: make(map[Panel]int),
+		Keymap:       newTestKeymap(),
+	}
+
+	// Press Escape in search mode
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m2 := updated.(Model)
+
+	if m2.SearchMode {
+		t.Fatal("SearchMode should be false after Escape")
+	}
+	if m2.SearchQuery != "" {
+		t.Fatalf("SearchQuery should be empty after Escape, got %q", m2.SearchQuery)
+	}
+}
+
+func TestEscapeClearsSearchFilterFromMainView(t *testing.T) {
+	m := Model{
+		Height:       30,
+		ActivePanel:  PanelTaskList,
+		SearchMode:   false, // Not in search mode
+		SearchQuery:  "active filter", // But filter is active
+		Cursor:       make(map[Panel]int),
+		SelectedID:   make(map[Panel]string),
+		ScrollOffset: make(map[Panel]int),
+		Keymap:       newTestKeymap(),
+	}
+
+	// Press Escape in main view with active filter
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	m2 := updated.(Model)
+
+	if m2.SearchQuery != "" {
+		t.Fatalf("SearchQuery should be cleared by Escape in main view, got %q", m2.SearchQuery)
+	}
+}
+
+func TestEscapeDoesNothingWithNoFilter(t *testing.T) {
+	m := Model{
+		Height:       30,
+		ActivePanel:  PanelTaskList,
+		SearchMode:   false,
+		SearchQuery:  "", // No filter
+		Cursor:       make(map[Panel]int),
+		SelectedID:   make(map[Panel]string),
+		ScrollOffset: make(map[Panel]int),
+		Keymap:       newTestKeymap(),
+	}
+
+	// Press Escape with no filter - should return nil cmd (no fetch)
+	_, cmd := m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+
+	if cmd != nil {
+		t.Fatal("Escape with no filter should not trigger fetch")
 	}
 }
 

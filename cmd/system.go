@@ -119,6 +119,12 @@ var versionCmd = &cobra.Command{
 	Short:   "Show version and check for updates",
 	GroupID: "system",
 	Run: func(cmd *cobra.Command, args []string) {
+		short, _ := cmd.Flags().GetBool("short")
+		if short {
+			fmt.Print(versionStr)
+			return
+		}
+
 		checkUpdates, _ := cmd.Flags().GetBool("check")
 
 		fmt.Printf("td version %s\n", versionStr)
@@ -724,4 +730,5 @@ func init() {
 	sessionNameCmd.Flags().Bool("new", false, "Force create a new session")
 
 	versionCmd.Flags().Bool("check", true, "Check for updates")
+	versionCmd.Flags().Bool("short", false, "Output only version string")
 }

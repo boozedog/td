@@ -58,12 +58,9 @@ var commandMetadata = map[Command]struct {
 	CmdCopyToClipboard: {"Copy", "Copy to clipboard", 3},
 
 	// Navigation - usually palette only (P4)
-	CmdNextPanel:       {"Next", "Next panel", 4},
-	CmdPrevPanel:       {"Prev", "Previous panel", 4},
-	CmdFocusPanel1:     {"Panel 1", "Focus Current Work", 4},
-	CmdFocusPanel2:     {"Panel 2", "Focus Task List", 4},
-	CmdFocusPanel3:     {"Panel 3", "Focus Activity", 4},
-	CmdCursorDown:      {"Down", "Move cursor down", 5},
+	CmdNextPanel:  {"Next", "Next panel", 4},
+	CmdPrevPanel:  {"Prev", "Previous panel", 4},
+	CmdCursorDown: {"Down", "Move cursor down", 5},
 	CmdCursorUp:        {"Up", "Move cursor up", 5},
 	CmdCursorTop:       {"Top", "Go to top", 5},
 	CmdCursorBottom:    {"Bottom", "Go to bottom", 5},

@@ -37,12 +37,9 @@ const (
 	CmdRefresh    Command = "refresh"
 
 	// Navigation commands
-	CmdNextPanel     Command = "next-panel"
-	CmdPrevPanel     Command = "prev-panel"
-	CmdFocusPanel1   Command = "focus-panel-1"
-	CmdFocusPanel2   Command = "focus-panel-2"
-	CmdFocusPanel3   Command = "focus-panel-3"
-	CmdCursorDown    Command = "cursor-down"
+	CmdNextPanel    Command = "next-panel"
+	CmdPrevPanel    Command = "prev-panel"
+	CmdCursorDown   Command = "cursor-down"
 	CmdCursorUp      Command = "cursor-up"
 	CmdCursorTop     Command = "cursor-top"
 	CmdCursorBottom  Command = "cursor-bottom"

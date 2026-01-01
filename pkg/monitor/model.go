@@ -747,24 +747,6 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.ensureCursorVisible(m.ActivePanel)
 		return m, nil
 
-	case keymap.CmdFocusPanel1:
-		m.ActivePanel = PanelCurrentWork
-		m.clampCursor(m.ActivePanel)
-		m.ensureCursorVisible(m.ActivePanel)
-		return m, nil
-
-	case keymap.CmdFocusPanel2:
-		m.ActivePanel = PanelTaskList
-		m.clampCursor(m.ActivePanel)
-		m.ensureCursorVisible(m.ActivePanel)
-		return m, nil
-
-	case keymap.CmdFocusPanel3:
-		m.ActivePanel = PanelActivity
-		m.clampCursor(m.ActivePanel)
-		m.ensureCursorVisible(m.ActivePanel)
-		return m, nil
-
 	// Cursor movement
 	case keymap.CmdCursorDown, keymap.CmdScrollDown:
 		if modal := m.CurrentModal(); modal != nil {
@@ -1025,6 +1007,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, m.fetchData()
 
 	case keymap.CmdSearchClear:
+		if m.SearchQuery == "" {
+			return m, nil // Nothing to clear
+		}
 		m.SearchQuery = ""
 		return m, m.fetchData()
 

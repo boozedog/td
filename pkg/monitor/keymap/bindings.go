@@ -20,9 +20,7 @@ func DefaultBindings() []Binding {
 		// Panel navigation
 		{Key: "tab", Command: CmdNextPanel, Context: ContextMain, Description: "Next panel"},
 		{Key: "shift+tab", Command: CmdPrevPanel, Context: ContextMain, Description: "Previous panel"},
-		{Key: "1", Command: CmdFocusPanel1, Context: ContextMain, Description: "Focus Current Work"},
-		{Key: "2", Command: CmdFocusPanel2, Context: ContextMain, Description: "Focus Task List"},
-		{Key: "3", Command: CmdFocusPanel3, Context: ContextMain, Description: "Focus Activity"},
+		{Key: "esc", Command: CmdSearchClear, Context: ContextMain, Description: "Clear search filter"},
 
 		// Cursor movement
 		{Key: "j", Command: CmdCursorDown, Context: ContextMain, Description: "Move down"},
