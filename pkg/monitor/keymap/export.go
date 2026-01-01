@@ -49,6 +49,7 @@ var commandMetadata = map[Command]struct {
 	CmdOpenHandoffs:  {"Handoffs", "Open handoffs", 2},
 	CmdToggleClosed:  {"Closed", "Toggle closed tasks", 2},
 	CmdDelete:        {"Delete", "Delete issue", 2},
+	CmdCloseIssue:    {"Close", "Close issue", 2},
 	CmdRefresh:       {"Refresh", "Refresh data", 2},
 	CmdCycleSortMode: {"Sort", "Cycle sort mode", 2},
 

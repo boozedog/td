@@ -442,6 +442,200 @@ func TestCategoryHeaderLinesBetween(t *testing.T) {
 	}
 }
 
+func TestTaskListLinesFromOffset(t *testing.T) {
+	tests := []struct {
+		name     string
+		rows     []TaskListRow
+		offset   int
+		expected int
+	}{
+		{
+			name:     "empty list",
+			rows:     nil,
+			offset:   0,
+			expected: 0,
+		},
+		{
+			name: "single category from start",
+			rows: []TaskListRow{
+				{Category: CategoryReady},
+				{Category: CategoryReady},
+				{Category: CategoryReady},
+			},
+			offset:   0,
+			expected: 4, // 1 header + 3 rows
+		},
+		{
+			name: "single category from middle",
+			rows: []TaskListRow{
+				{Category: CategoryReady},
+				{Category: CategoryReady},
+				{Category: CategoryReady},
+			},
+			offset:   1,
+			expected: 2, // 2 rows (no header since same category as before)
+		},
+		{
+			name: "two categories from start",
+			rows: []TaskListRow{
+				{Category: CategoryReviewable},
+				{Category: CategoryReviewable},
+				{Category: CategoryBlocked},
+				{Category: CategoryBlocked},
+			},
+			offset:   0,
+			expected: 7, // 1 header + 2 rows + 1 blank + 1 header + 2 rows
+		},
+		{
+			name: "start at category transition",
+			rows: []TaskListRow{
+				{Category: CategoryReviewable},
+				{Category: CategoryBlocked},
+				{Category: CategoryBlocked},
+			},
+			offset:   1,
+			expected: 4, // 1 blank + 1 header + 2 rows (transition from Reviewable)
+		},
+		{
+			name: "offset past end",
+			rows: []TaskListRow{
+				{Category: CategoryReady},
+			},
+			offset:   5,
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{TaskListRows: tt.rows}
+			got := m.taskListLinesFromOffset(tt.offset)
+			if got != tt.expected {
+				t.Errorf("taskListLinesFromOffset(%d) = %d, want %d",
+					tt.offset, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMaxScrollOffsetTaskList(t *testing.T) {
+	tests := []struct {
+		name          string
+		rows          []TaskListRow
+		height        int
+		expectedMax   int
+		description   string
+	}{
+		{
+			name: "content fits - no scroll needed",
+			rows: []TaskListRow{
+				{Category: CategoryReady},
+				{Category: CategoryReady},
+			},
+			height:      30, // visibleHeight = (30/3) - 5 = 4
+			expectedMax: 0,
+			description: "2 rows + 1 header = 3 lines fits in 4 visible lines",
+		},
+		{
+			name: "content exceeds - limited scroll",
+			rows: []TaskListRow{
+				{Category: CategoryReviewable},
+				{Category: CategoryReviewable},
+				{Category: CategoryReviewable},
+				{Category: CategoryReady},
+				{Category: CategoryReady},
+				{Category: CategoryReady},
+				{Category: CategoryBlocked},
+				{Category: CategoryBlocked},
+			},
+			height:      30, // visibleHeight = (30/3) - 5 = 4
+			expectedMax: 6,  // At offset 6: 4 lines fit in 4 visible height (shows rows 6-7 with header)
+			description: "8 rows with 3 categories - maxOffset=6 shows last rows",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Height:       tt.height,
+				TaskListRows: tt.rows,
+			}
+			got := m.maxScrollOffset(PanelTaskList)
+			if got != tt.expectedMax {
+				t.Errorf("maxScrollOffset() = %d, want %d (%s)",
+					got, tt.expectedMax, tt.description)
+			}
+		})
+	}
+}
+
+func TestCursorClampsAtBottom(t *testing.T) {
+	m := Model{
+		Height:       30,
+		ActivePanel:  PanelTaskList,
+		Cursor:       make(map[Panel]int),
+		SelectedID:   make(map[Panel]string),
+		ScrollOffset: make(map[Panel]int),
+		Keymap:       newTestKeymap(),
+		TaskListRows: []TaskListRow{
+			{Issue: models.Issue{ID: "r1"}, Category: CategoryReviewable},
+			{Issue: models.Issue{ID: "r2"}, Category: CategoryReviewable},
+			{Issue: models.Issue{ID: "b1"}, Category: CategoryBlocked},
+		},
+	}
+
+	// Start at last item
+	m.Cursor[PanelTaskList] = 2
+
+	// Press j - should stay at 2 (clamped)
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m2 := updated.(Model)
+
+	if m2.Cursor[PanelTaskList] != 2 {
+		t.Errorf("cursor after j at bottom = %d, want 2 (should clamp)", m2.Cursor[PanelTaskList])
+	}
+
+	// Press j again - should still be 2
+	updated, _ = m2.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m3 := updated.(Model)
+
+	if m3.Cursor[PanelTaskList] != 2 {
+		t.Errorf("cursor after second j at bottom = %d, want 2", m3.Cursor[PanelTaskList])
+	}
+}
+
+func TestBlockedItemsSelectable(t *testing.T) {
+	m := Model{
+		Height:       30,
+		ActivePanel:  PanelTaskList,
+		Cursor:       make(map[Panel]int),
+		SelectedID:   make(map[Panel]string),
+		ScrollOffset: make(map[Panel]int),
+		Keymap:       newTestKeymap(),
+		TaskListRows: []TaskListRow{
+			{Issue: models.Issue{ID: "r1"}, Category: CategoryReviewable},
+			{Issue: models.Issue{ID: "b1"}, Category: CategoryBlocked},
+			{Issue: models.Issue{ID: "b2"}, Category: CategoryBlocked},
+		},
+	}
+
+	// Navigate to blocked item
+	m.Cursor[PanelTaskList] = 1
+
+	// Should be able to get the blocked issue ID
+	selectedID := m.SelectedIssueID(PanelTaskList)
+	if selectedID != "b1" {
+		t.Errorf("SelectedIssueID for blocked item = %q, want 'b1'", selectedID)
+	}
+
+	// Navigate to last blocked item
+	m.Cursor[PanelTaskList] = 2
+	selectedID = m.SelectedIssueID(PanelTaskList)
+	if selectedID != "b2" {
+		t.Errorf("SelectedIssueID for last blocked item = %q, want 'b2'", selectedID)
+	}
+}
+
 // Tests for modal stack functionality
 
 func TestModalStackEmpty(t *testing.T) {
@@ -952,6 +1146,7 @@ func TestParentEpicFocus_JKeyFocusesEpicWhenScroll0(t *testing.T) {
 func TestParentEpicFocus_JKeyUnfocusesAndScrollsPastEpicZone(t *testing.T) {
 	parentEpic := &models.Issue{ID: "td-epic", Type: models.TypeEpic}
 	m := Model{
+		Height: 30, // Needed for modal height calculation
 		Keymap: newTestKeymap(),
 		ModalStack: []ModalEntry{
 			{
@@ -960,6 +1155,7 @@ func TestParentEpicFocus_JKeyUnfocusesAndScrollsPastEpicZone(t *testing.T) {
 				ParentEpic:        parentEpic,
 				Scroll:            0,
 				ParentEpicFocused: true,
+				ContentLines:      50, // Enough content to allow scrolling
 			},
 		},
 	}
@@ -1069,6 +1265,7 @@ func TestParentEpicFocus_EscClosesModalDoesNotOpenEpic(t *testing.T) {
 
 func TestParentEpicFocus_OrphanStoryNoEpic(t *testing.T) {
 	m := Model{
+		Height: 30, // Needed for modal height calculation
 		Keymap: newTestKeymap(),
 		ModalStack: []ModalEntry{
 			{
@@ -1077,6 +1274,7 @@ func TestParentEpicFocus_OrphanStoryNoEpic(t *testing.T) {
 				ParentEpic:        nil, // No parent
 				Scroll:            0,
 				ParentEpicFocused: false,
+				ContentLines:      50, // Enough content to allow scrolling
 			},
 		},
 	}

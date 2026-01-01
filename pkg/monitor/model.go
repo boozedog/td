@@ -258,7 +258,8 @@ type ModalEntry struct {
 	SourcePanel Panel // Only meaningful for base entry (depth 1)
 
 	// Display
-	Scroll int
+	Scroll       int
+	ContentLines int // Cached content line count for scroll clamping
 
 	// Async data
 	Loading      bool
@@ -544,6 +545,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			modal.ParentEpic = msg.ParentEpic
 			modal.ParentEpicFocused = false // Reset focus on load
 
+			// Calculate content lines for scroll clamping
+			modal.ContentLines = m.estimateModalContentLines(modal)
+
 			// Auto-focus task section for epics with tasks (enables j/k navigation)
 			if msg.Issue != nil && msg.Issue.Type == models.TypeEpic && len(msg.EpicTasks) > 0 {
 				modal.TaskSectionFocused = true
@@ -566,6 +570,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if modal := m.CurrentModal(); modal != nil && msg.IssueID == modal.IssueID {
 			modal.DescRender = msg.DescRender
 			modal.AcceptRender = msg.AcceptRender
+			// Recalculate content lines after markdown rendering
+			modal.ContentLines = m.estimateModalContentLines(modal)
 		}
 		return m, nil
 
@@ -755,15 +761,27 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				modal.ParentEpicFocused = false
 				modal.Scroll = 1
 			} else if modal.TaskSectionFocused {
-				// Move epic task cursor
+				// Move epic task cursor, or transition to scroll at end
 				if modal.EpicTasksCursor < len(modal.EpicTasks)-1 {
 					modal.EpicTasksCursor++
+				} else {
+					// At last task, try to scroll. If can scroll, unfocus tasks first.
+					maxScroll := m.modalMaxScroll(modal)
+					if modal.Scroll < maxScroll {
+						modal.TaskSectionFocused = false
+						modal.Scroll++
+					}
+					// If can't scroll, stay at last task
 				}
 			} else if modal.Scroll == 0 && modal.ParentEpic != nil {
 				// At top with parent epic, focus it first before scrolling
 				modal.ParentEpicFocused = true
 			} else {
-				modal.Scroll++
+				// Scroll down, clamped to max
+				maxScroll := m.modalMaxScroll(modal)
+				if modal.Scroll < maxScroll {
+					modal.Scroll++
+				}
 			}
 		} else if m.HandoffsOpen {
 			if m.HandoffsCursor < len(m.HandoffsData)-1 {
@@ -785,6 +803,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				if modal.EpicTasksCursor > 0 {
 					modal.EpicTasksCursor--
 				}
+				// At first task, stay there (user can use Tab to unfocus)
 			} else if modal.Scroll == 0 && modal.ParentEpic != nil {
 				// At top of scroll with parent epic, focus it
 				modal.ParentEpicFocused = true
@@ -821,7 +840,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdCursorBottom:
 		if modal := m.CurrentModal(); modal != nil {
-			modal.Scroll = 9999 // Will be clamped by view
+			modal.Scroll = m.modalMaxScroll(modal)
 		} else if m.HandoffsOpen {
 			if len(m.HandoffsData) > 0 {
 				m.HandoffsCursor = len(m.HandoffsData) - 1
@@ -844,7 +863,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			pageSize = 5
 		}
 		if modal := m.CurrentModal(); modal != nil {
+			maxScroll := m.modalMaxScroll(modal)
 			modal.Scroll += pageSize
+			if modal.Scroll > maxScroll {
+				modal.Scroll = maxScroll
+			}
 		} else if m.HandoffsOpen {
 			m.HandoffsCursor += pageSize
 			if m.HandoffsCursor >= len(m.HandoffsData) {
@@ -895,7 +918,11 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			pageSize = 10
 		}
 		if modal := m.CurrentModal(); modal != nil {
+			maxScroll := m.modalMaxScroll(modal)
 			modal.Scroll += pageSize
+			if modal.Scroll > maxScroll {
+				modal.Scroll = maxScroll
+			}
 		} else if m.StatsOpen {
 			m.StatsScroll += pageSize
 		} else {
@@ -986,6 +1013,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdDelete:
 		return m.confirmDelete()
+
+	case keymap.CmdCloseIssue:
+		return m.closeIssue()
 
 	// Search commands
 	case keymap.CmdSearchConfirm:
@@ -1242,6 +1272,112 @@ func (m Model) ModalBreadcrumb() string {
 		}
 	}
 	return strings.Join(parts, " > ")
+}
+
+// estimateModalContentLines estimates the number of content lines in a modal
+// This is used to clamp scroll values and prevent over-scrolling
+func (m Model) estimateModalContentLines(modal *ModalEntry) int {
+	if modal == nil || modal.Issue == nil {
+		return 10 // Minimal default
+	}
+
+	lines := 0
+	issue := modal.Issue
+
+	// Header + status section
+	lines += 5 // ID, title, blank, status, blank
+
+	// Parent epic
+	if modal.ParentEpic != nil {
+		lines += 2
+	}
+
+	// Labels, implementer, reviewer
+	if len(issue.Labels) > 0 {
+		lines++
+	}
+	if issue.ImplementerSession != "" {
+		lines++
+	}
+	if issue.ReviewerSession != "" {
+		lines++
+	}
+	lines++ // Blank
+
+	// Epic tasks
+	if issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
+		lines += 1 + len(modal.EpicTasks) + 1 // Header + tasks + blank
+	}
+
+	// Description - use rendered version if available, otherwise estimate from raw
+	if issue.Description != "" {
+		lines++ // Header
+		if modal.DescRender != "" {
+			lines += strings.Count(modal.DescRender, "\n") + 1
+		} else {
+			lines += strings.Count(issue.Description, "\n") + 1
+		}
+		lines++ // Blank
+	}
+
+	// Acceptance criteria
+	if issue.Acceptance != "" {
+		lines++ // Header
+		if modal.AcceptRender != "" {
+			lines += strings.Count(modal.AcceptRender, "\n") + 1
+		} else {
+			lines += strings.Count(issue.Acceptance, "\n") + 1
+		}
+		lines++ // Blank
+	}
+
+	// Dependencies and blockers
+	lines += len(modal.BlockedBy) + len(modal.Blocks)
+	if len(modal.BlockedBy) > 0 {
+		lines += 2 // Header + blank
+	}
+	if len(modal.Blocks) > 0 {
+		lines += 2 // Header + blank
+	}
+
+	// Handoff
+	if modal.Handoff != nil {
+		lines += 2 // Header + blank
+		lines += len(modal.Handoff.Done)
+		lines += len(modal.Handoff.Remaining)
+		lines += len(modal.Handoff.Decisions)
+		lines += len(modal.Handoff.Uncertain)
+	}
+
+	// Logs
+	if len(modal.Logs) > 0 {
+		lines += 1 + len(modal.Logs) // Header + logs
+	}
+
+	return lines
+}
+
+// modalMaxScroll returns the maximum scroll value for a modal
+func (m Model) modalMaxScroll(modal *ModalEntry) int {
+	if modal == nil {
+		return 0
+	}
+
+	// Calculate visible height (same as view)
+	modalHeight := m.Height * 80 / 100
+	if modalHeight > 40 {
+		modalHeight = 40
+	}
+	if modalHeight < 15 {
+		modalHeight = 15
+	}
+	visibleHeight := modalHeight - 4 // Account for border and footer
+
+	maxScroll := modal.ContentLines - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	return maxScroll
 }
 
 // renderMarkdownAsync returns a command that renders markdown in background
@@ -1588,6 +1724,15 @@ func (m *Model) ensureCursorVisible(panel Panel) {
 	if cursor < offset {
 		m.ScrollOffset[panel] = cursor
 	}
+
+	// Clamp scroll offset to valid range
+	maxOffset := m.maxScrollOffset(panel)
+	if m.ScrollOffset[panel] > maxOffset {
+		m.ScrollOffset[panel] = maxOffset
+	}
+	if m.ScrollOffset[panel] < 0 {
+		m.ScrollOffset[panel] = 0
+	}
 }
 
 // categoryHeaderLinesBetween counts how many lines are consumed by category
@@ -1838,6 +1983,58 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 	return m, m.fetchData()
 }
 
+// closeIssue closes the selected issue directly (workflow shortcut)
+// Works from both main panel selection and modal view
+func (m Model) closeIssue() (tea.Model, tea.Cmd) {
+	var issueID string
+	var issue *models.Issue
+
+	// Check if a modal is open - use that issue
+	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+		issueID = modal.IssueID
+		issue = modal.Issue
+	} else {
+		// Otherwise, use the selected issue from the panel
+		issueID = m.SelectedIssueID(m.ActivePanel)
+		if issueID == "" {
+			return m, nil
+		}
+		var err error
+		issue, err = m.DB.GetIssue(issueID)
+		if err != nil || issue == nil {
+			return m, nil
+		}
+	}
+
+	// Can't close already-closed issues
+	if issue.Status == models.StatusClosed {
+		return m, nil
+	}
+
+	// Update status
+	now := time.Now()
+	issue.Status = models.StatusClosed
+	issue.ClosedAt = &now
+	if err := m.DB.UpdateIssue(issue); err != nil {
+		return m, nil
+	}
+
+	// Log action for undo
+	m.DB.LogAction(&models.ActionLog{
+		SessionID:  m.SessionID,
+		ActionType: models.ActionClose,
+		EntityType: "issue",
+		EntityID:   issueID,
+	})
+
+	// If we're in a modal, close it since the issue is now closed
+	if m.ModalOpen() {
+		m.closeModal()
+	}
+
+	return m, m.fetchData()
+}
+
 // copyCurrentIssueToClipboard copies the current modal issue to clipboard as markdown
 func (m Model) copyCurrentIssueToClipboard() (tea.Model, tea.Cmd) {
 	modal := m.CurrentModal()
@@ -1969,16 +2166,22 @@ func (m Model) maxScrollOffset(panel Panel) int {
 		// TaskList has category headers that consume extra lines
 		// Calculate total display lines including headers and separators
 		totalLines := m.taskListTotalLines()
-		maxOffset := count - 1 // Can scroll until last row is at top
-		// But also limit based on whether content fills the screen
 		if totalLines <= visibleHeight {
 			return 0 // No scrolling needed
 		}
-		// Allow scrolling until last items are visible
-		if maxOffset < 0 {
-			maxOffset = 0
+		// Find the smallest offset such that content from offset to end
+		// fits within visibleHeight. Walk backwards from the end.
+		for offset := count - 1; offset >= 0; offset-- {
+			linesFromOffset := m.taskListLinesFromOffset(offset)
+			if linesFromOffset > visibleHeight {
+				// Previous offset was the right one
+				if offset+1 < count {
+					return offset + 1
+				}
+				return offset
+			}
 		}
-		return maxOffset
+		return 0
 	}
 
 	// For other panels, simple calculation
@@ -2001,6 +2204,33 @@ func (m Model) taskListTotalLines() int {
 		if row.Category != currentCategory {
 			if i > 0 {
 				lines++ // Blank separator
+			}
+			lines++ // Category header
+			currentCategory = row.Category
+		}
+		lines++ // The row itself
+	}
+	return lines
+}
+
+// taskListLinesFromOffset calculates display lines needed from a given offset to end
+func (m Model) taskListLinesFromOffset(offset int) int {
+	if len(m.TaskListRows) == 0 || offset >= len(m.TaskListRows) {
+		return 0
+	}
+
+	lines := 0
+	var currentCategory TaskListCategory
+	// Track category from before offset
+	if offset > 0 {
+		currentCategory = m.TaskListRows[offset-1].Category
+	}
+
+	for i := offset; i < len(m.TaskListRows); i++ {
+		row := m.TaskListRows[i]
+		if row.Category != currentCategory {
+			if i > offset || offset > 0 {
+				lines++ // Blank separator (not before first visible if at offset 0)
 			}
 			lines++ // Category header
 			currentCategory = row.Category

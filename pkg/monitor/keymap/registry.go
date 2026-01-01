@@ -93,6 +93,9 @@ const (
 	CmdFormSubmit       Command = "form-submit"
 	CmdFormCancel       Command = "form-cancel"
 	CmdFormToggleExtend Command = "form-toggle-extend"
+
+	// Issue actions
+	CmdCloseIssue Command = "close-issue"
 )
 
 // Binding maps a key or key sequence to a command in a specific context
