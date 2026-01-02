@@ -180,13 +180,14 @@ func (m Model) hitTestActivityRow(relY int) int {
 
 // ActivityItem represents a unified activity item (log, action, or comment)
 type ActivityItem struct {
-	Timestamp time.Time
-	SessionID string
-	Type      string // "log", "action", "comment"
-	IssueID   string
-	Message   string
-	LogType   models.LogType    // for logs
-	Action    models.ActionType // for actions
+	Timestamp  time.Time
+	SessionID  string
+	Type       string // "log", "action", "comment"
+	IssueID    string
+	IssueTitle string // title of the associated issue
+	Message    string
+	LogType    models.LogType    // for logs
+	Action     models.ActionType // for actions
 }
 
 // TaskListData holds categorized issues for the task list panel

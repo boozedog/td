@@ -1504,8 +1504,34 @@ func (m Model) formatActivityItem(item ActivityItem) string {
 		issueID = titleStyle.Render(item.IssueID) + " "
 	}
 
-	msg := truncateString(item.Message, m.Width-40)
+	// Calculate fixed width: timestamp + session + badge + issueID + spaces + border
+	fixedWidth := lipgloss.Width(timestamp) + lipgloss.Width(session) + lipgloss.Width(badge) + lipgloss.Width(issueID) + 4 + 4 // 4 spaces + 4 border
 
+	// Calculate available space for message + title
+	availableWidth := m.Width - fixedWidth
+	msgWidth := lipgloss.Width(item.Message)
+
+	// Format title with remaining space after message
+	title := ""
+	if item.IssueTitle != "" {
+		separatorWidth := 3 // " | "
+		minTitleWidth := 10 // minimum useful title width
+		remainingWidth := availableWidth - msgWidth - separatorWidth
+
+		if remainingWidth >= minTitleWidth {
+			// Enough space - use full message, fill rest with title
+			title = " " + subtleStyle.Render("| "+truncateString(item.IssueTitle, remainingWidth))
+			return fmt.Sprintf("%s %s %s %s%s%s", timestamp, session, badge, issueID, item.Message, title)
+		}
+		// Not enough space - truncate message to make room for title
+		titleWidth := minTitleWidth + separatorWidth
+		msg := truncateString(item.Message, availableWidth-titleWidth)
+		title = " " + subtleStyle.Render("| "+truncateString(item.IssueTitle, minTitleWidth))
+		return fmt.Sprintf("%s %s %s %s%s%s", timestamp, session, badge, issueID, msg, title)
+	}
+
+	// No title - give all space to message
+	msg := truncateString(item.Message, availableWidth)
 	return fmt.Sprintf("%s %s %s %s%s", timestamp, session, badge, issueID, msg)
 }
 

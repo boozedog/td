@@ -120,6 +120,20 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 		items = items[:limit]
 	}
 
+	// Fetch issue titles for all items
+	titleCache := make(map[string]string)
+	for i := range items {
+		if items[i].IssueID == "" {
+			continue
+		}
+		if title, ok := titleCache[items[i].IssueID]; ok {
+			items[i].IssueTitle = title
+		} else if issue, err := database.GetIssue(items[i].IssueID); err == nil {
+			titleCache[items[i].IssueID] = issue.Title
+			items[i].IssueTitle = issue.Title
+		}
+	}
+
 	return items
 }
 
