@@ -151,19 +151,22 @@ Supports bulk operations:
 						}
 
 						if err := database.UpdateIssue(child); err != nil {
+							output.Warning("failed to cascade review to %s: %v", child.ID, err)
 							continue
 						}
 
 						// Log action for undo
 						childNewData, _ := json.Marshal(child)
-						database.LogAction(&models.ActionLog{
+						if err := database.LogAction(&models.ActionLog{
 							SessionID:    sess.ID,
 							ActionType:   models.ActionReview,
 							EntityType:   "issue",
 							EntityID:     child.ID,
 							PreviousData: string(childPrevData),
 							NewData:      string(childNewData),
-						})
+						}); err != nil {
+							output.Warning("failed to log undo for %s: %v", child.ID, err)
+						}
 
 						// Add log entry
 						database.AddLog(&models.Log{
