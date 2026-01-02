@@ -881,6 +881,14 @@ func (db *DB) GetLatestHandoff(issueID string) (*models.Handoff, error) {
 	return &handoff, nil
 }
 
+// DeleteHandoff removes a handoff by ID (for undo support)
+func (db *DB) DeleteHandoff(handoffID int64) error {
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`DELETE FROM handoffs WHERE id = ?`, handoffID)
+		return err
+	})
+}
+
 // GetRecentHandoffs retrieves recent handoffs across all issues
 func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, error) {
 	var handoffs []models.Handoff

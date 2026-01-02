@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -126,6 +127,69 @@ Or use flags with values, stdin (-), or file (@path):
 				if err == nil && diffStats.FilesChanged > 0 {
 					fmt.Printf("Changed: %d files (+%d -%d)\n",
 						diffStats.FilesChanged, diffStats.Additions, diffStats.Deletions)
+				}
+			}
+		}
+
+		// Cascade to descendants if this is a parent issue
+		hasChildren, _ := database.HasChildren(issueID)
+		if hasChildren {
+			descendants, err := database.GetDescendantIssues(issueID, []models.Status{
+				models.StatusOpen,
+				models.StatusInProgress,
+			})
+			if err == nil && len(descendants) > 0 {
+				cascaded := 0
+				skippedExisting := 0
+
+				for _, child := range descendants {
+					// Skip children that already have handoffs
+					existingHandoff, _ := database.GetLatestHandoff(child.ID)
+					if existingHandoff != nil {
+						skippedExisting++
+						continue
+					}
+
+					// Create lightweight cascaded handoff
+					childHandoff := &models.Handoff{
+						IssueID:   child.ID,
+						SessionID: sess.ID,
+						Done:      []string{fmt.Sprintf("Cascaded from %s", issueID)},
+					}
+
+					if err := database.AddHandoff(childHandoff); err != nil {
+						output.Warning("cascade handoff %s: %v", child.ID, err)
+						continue
+					}
+
+					// Log action for undo
+					handoffData, _ := json.Marshal(childHandoff)
+					if err := database.LogAction(&models.ActionLog{
+						SessionID:  sess.ID,
+						ActionType: models.ActionHandoff,
+						EntityType: "handoff",
+						EntityID:   fmt.Sprintf("%d", childHandoff.ID),
+						NewData:    string(handoffData),
+					}); err != nil {
+						output.Warning("log undo %s: %v", child.ID, err)
+					}
+
+					// Add log entry for visibility
+					database.AddLog(&models.Log{
+						IssueID:   child.ID,
+						SessionID: sess.ID,
+						Message:   fmt.Sprintf("Cascaded handoff from %s", issueID),
+						Type:      models.LogTypeProgress,
+					})
+
+					cascaded++
+				}
+
+				if cascaded > 0 {
+					fmt.Printf("  + %d descendant(s) also received handoffs\n", cascaded)
+				}
+				if skippedExisting > 0 {
+					fmt.Printf("  - %d descendant(s) skipped (existing handoffs)\n", skippedExisting)
 				}
 			}
 		}

@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/marcus/td/internal/db"
@@ -112,6 +113,8 @@ func performUndo(database *db.DB, action *models.ActionLog) error {
 		return undoDependencyAction(database, action)
 	case "file_link":
 		return undoFileLinkAction(database, action)
+	case "handoff":
+		return undoHandoffAction(database, action)
 	default:
 		return fmt.Errorf("unknown entity type: %s", action.EntityType)
 	}
@@ -182,6 +185,19 @@ func undoFileLinkAction(database *db.DB, action *models.ActionLog) error {
 		return database.LinkFile(linkInfo.IssueID, linkInfo.FilePath, models.FileRole(linkInfo.Role), linkInfo.SHA)
 	default:
 		return fmt.Errorf("cannot undo file link action: %s", action.ActionType)
+	}
+}
+
+func undoHandoffAction(database *db.DB, action *models.ActionLog) error {
+	switch action.ActionType {
+	case models.ActionHandoff:
+		handoffID, err := strconv.ParseInt(action.EntityID, 10, 64)
+		if err != nil {
+			return fmt.Errorf("failed to parse handoff ID: %w", err)
+		}
+		return database.DeleteHandoff(handoffID)
+	default:
+		return fmt.Errorf("cannot undo handoff action: %s", action.ActionType)
 	}
 }
 

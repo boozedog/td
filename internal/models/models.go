@@ -185,6 +185,7 @@ const (
 	ActionRemoveDep  ActionType = "remove_dependency"
 	ActionLinkFile   ActionType = "link_file"
 	ActionUnlinkFile ActionType = "unlink_file"
+	ActionHandoff    ActionType = "handoff"
 )
 
 // ActionLog represents a logged action that can be undone
