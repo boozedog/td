@@ -108,6 +108,17 @@ var (
 			Foreground(lipgloss.Color("244")).
 			Italic(true)
 
+	// Toast styles for status messages
+	toastStyle = lipgloss.NewStyle().
+			Background(successColor).
+			Foreground(lipgloss.Color("0")).
+			Bold(true)
+
+	toastErrorStyle = lipgloss.NewStyle().
+			Background(errorColor).
+			Foreground(lipgloss.Color("255")).
+			Bold(true)
+
 	// Type icon styles
 	typeIconStyles = map[models.Type]lipgloss.Style{
 		models.TypeEpic:    lipgloss.NewStyle().Foreground(lipgloss.Color("212")), // Purple/magenta

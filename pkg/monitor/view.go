@@ -1211,8 +1211,8 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	// Build footer with breadcrumb if depth > 1
 	var footerParts []string
 
-	// Add status message if present
-	if m.StatusMessage != "" {
+	// Add status message if present (not in embedded mode - sidecar handles toasts)
+	if m.StatusMessage != "" && !m.Embedded {
 		footerParts = append(footerParts, readyColor.Render(m.StatusMessage))
 	}
 
@@ -1388,15 +1388,25 @@ func (m Model) renderFooter() string {
 		updateNotif = updateAvailStyle.Render(fmt.Sprintf(" [UPDATE: %s] ", m.UpdateAvail.LatestVersion))
 	}
 
+	// Show status message toast (yank confirmation, errors, etc.)
+	statusToast := ""
+	if m.StatusMessage != "" {
+		style := toastStyle
+		if m.StatusIsError {
+			style = toastErrorStyle
+		}
+		statusToast = style.Render(fmt.Sprintf(" %s ", m.StatusMessage))
+	}
+
 	refresh := timestampStyle.Render(fmt.Sprintf("Last: %s", m.LastRefresh.Format("15:04:05")))
 
 	// Calculate spacing
-	padding := m.Width - lipgloss.Width(keys) - lipgloss.Width(sessionsIndicator) - lipgloss.Width(handoffAlert) - lipgloss.Width(reviewAlert) - lipgloss.Width(updateNotif) - lipgloss.Width(refresh) - 2
+	padding := m.Width - lipgloss.Width(keys) - lipgloss.Width(sessionsIndicator) - lipgloss.Width(handoffAlert) - lipgloss.Width(reviewAlert) - lipgloss.Width(updateNotif) - lipgloss.Width(statusToast) - lipgloss.Width(refresh) - 2
 	if padding < 0 {
 		padding = 0
 	}
 
-	return fmt.Sprintf(" %s%s%s%s%s%s%s", keys, strings.Repeat(" ", padding), sessionsIndicator, handoffAlert, reviewAlert, updateNotif, refresh)
+	return fmt.Sprintf(" %s%s%s%s%s%s%s%s", keys, strings.Repeat(" ", padding), sessionsIndicator, handoffAlert, reviewAlert, updateNotif, statusToast, refresh)
 }
 
 // renderHelp renders the help overlay

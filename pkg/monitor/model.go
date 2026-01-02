@@ -394,6 +394,7 @@ type Model struct {
 
 	// Status message (temporary feedback, e.g., "Copied to clipboard")
 	StatusMessage string
+	StatusIsError bool // true for error messages, false for success
 
 	// Version checking
 	Version     string // Current version
@@ -646,6 +647,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ClearStatusMsg:
 		m.StatusMessage = ""
+		m.StatusIsError = false
 		return m, nil
 
 	case version.UpdateAvailableMsg:
@@ -2156,8 +2158,10 @@ func (m Model) copyCurrentIssueToClipboard() (tea.Model, tea.Cmd) {
 
 	if err := copyToClipboard(markdown); err != nil {
 		m.StatusMessage = "Copy failed: " + err.Error()
+		m.StatusIsError = true
 	} else {
-		m.StatusMessage = "Copied to clipboard"
+		m.StatusMessage = "Yanked to clipboard"
+		m.StatusIsError = false
 	}
 
 	// Clear status after 2 seconds
@@ -2185,8 +2189,10 @@ func (m Model) copyIssueIDToClipboard() (tea.Model, tea.Cmd) {
 
 	if err := copyToClipboard(issueID); err != nil {
 		m.StatusMessage = "Copy failed: " + err.Error()
+		m.StatusIsError = true
 	} else {
-		m.StatusMessage = "Copied ID: " + issueID
+		m.StatusMessage = "Yanked ID: " + issueID
+		m.StatusIsError = false
 	}
 
 	// Clear status after 2 seconds
@@ -2572,6 +2578,7 @@ func (m Model) openExternalEditor() (tea.Model, tea.Cmd) {
 	tmpFile, err := os.CreateTemp("", "td-edit-*.md")
 	if err != nil {
 		m.StatusMessage = "Failed to create temp file: " + err.Error()
+		m.StatusIsError = true
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 			return ClearStatusMsg{}
 		})
@@ -2583,6 +2590,7 @@ func (m Model) openExternalEditor() (tea.Model, tea.Cmd) {
 		tmpFile.Close()
 		os.Remove(tmpFile.Name())
 		m.StatusMessage = "Failed to write temp file: " + err.Error()
+		m.StatusIsError = true
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 			return ClearStatusMsg{}
 		})
@@ -2624,6 +2632,7 @@ func (m Model) openExternalEditor() (tea.Model, tea.Cmd) {
 func (m Model) handleEditorFinished(msg EditorFinishedMsg) (tea.Model, tea.Cmd) {
 	if msg.Error != nil {
 		m.StatusMessage = "Editor error: " + msg.Error.Error()
+		m.StatusIsError = true
 		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
 			return ClearStatusMsg{}
 		})
@@ -2645,6 +2654,7 @@ func (m Model) handleEditorFinished(msg EditorFinishedMsg) (tea.Model, tea.Cmd) 
 	m.FormState.buildForm()
 
 	m.StatusMessage = "Content updated from editor"
+	m.StatusIsError = false
 	return m, tea.Batch(
 		m.FormState.Form.Init(),
 		tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
