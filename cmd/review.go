@@ -25,6 +25,9 @@ var reviewCmd = &cobra.Command{
 	Short: "Submit one or more issues for review",
 	Long: `Submits the issue(s) for review. Requires a handoff to be recorded first.
 
+For epics/parent issues, automatically cascades to all open/in_progress
+descendants. Cascaded children don't require individual handoffs.
+
 Supports bulk operations:
   td review td-abc1 td-abc2 td-abc3    # Submit multiple issues for review`,
 	GroupID: "workflow",
@@ -129,6 +132,55 @@ Supports bulk operations:
 			clearFocusIfNeeded(baseDir, issueID)
 
 			fmt.Printf("REVIEW REQUESTED %s (session: %s)\n", issueID, sess.ID)
+
+			// Cascade to descendants if this is a parent issue
+			hasChildren, _ := database.HasChildren(issueID)
+			if hasChildren {
+				descendants, err := database.GetDescendantIssues(issueID, []models.Status{
+					models.StatusOpen,
+					models.StatusInProgress,
+				})
+				if err == nil && len(descendants) > 0 {
+					cascaded := 0
+					for _, child := range descendants {
+						childPrevData, _ := json.Marshal(child)
+
+						child.Status = models.StatusInReview
+						if child.ImplementerSession == "" {
+							child.ImplementerSession = sess.ID
+						}
+
+						if err := database.UpdateIssue(child); err != nil {
+							continue
+						}
+
+						// Log action for undo
+						childNewData, _ := json.Marshal(child)
+						database.LogAction(&models.ActionLog{
+							SessionID:    sess.ID,
+							ActionType:   models.ActionReview,
+							EntityType:   "issue",
+							EntityID:     child.ID,
+							PreviousData: string(childPrevData),
+							NewData:      string(childNewData),
+						})
+
+						// Add log entry
+						database.AddLog(&models.Log{
+							IssueID:   child.ID,
+							SessionID: sess.ID,
+							Message:   fmt.Sprintf("Cascaded review from %s", issueID),
+							Type:      models.LogTypeProgress,
+						})
+
+						cascaded++
+					}
+
+					if cascaded > 0 {
+						fmt.Printf("  + %d descendant(s) also marked for review\n", cascaded)
+					}
+				}
+			}
 			reviewed++
 		}
 

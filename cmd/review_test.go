@@ -307,3 +307,284 @@ func TestReviewAddsLogEntry(t *testing.T) {
 		t.Errorf("Wrong log message: got %q", logs[0].Message)
 	}
 }
+
+func TestHasChildren(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create epic
+	epic := &models.Issue{
+		Title:  "Epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Initially has no children
+	hasChildren, err := database.HasChildren(epic.ID)
+	if err != nil {
+		t.Fatalf("HasChildren failed: %v", err)
+	}
+	if hasChildren {
+		t.Error("Epic should have no children initially")
+	}
+
+	// Create child
+	child := &models.Issue{
+		Title:    "Child",
+		Status:   models.StatusOpen,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Now has children
+	hasChildren, err = database.HasChildren(epic.ID)
+	if err != nil {
+		t.Fatalf("HasChildren failed: %v", err)
+	}
+	if !hasChildren {
+		t.Error("Epic should have children after adding child")
+	}
+}
+
+func TestGetDescendantIssues(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create epic -> sub-epic -> task hierarchy
+	epic := &models.Issue{
+		Title:  "Epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	subEpic := &models.Issue{
+		Title:    "Sub-Epic",
+		Type:     models.TypeEpic,
+		Status:   models.StatusInProgress,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(subEpic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	task := &models.Issue{
+		Title:    "Task",
+		Status:   models.StatusOpen,
+		ParentID: subEpic.ID,
+	}
+	if err := database.CreateIssue(task); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	closedTask := &models.Issue{
+		Title:    "Closed Task",
+		Status:   models.StatusClosed,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(closedTask); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Get all descendants
+	all, err := database.GetDescendantIssues(epic.ID, nil)
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+	if len(all) != 3 {
+		t.Errorf("Expected 3 descendants, got %d", len(all))
+	}
+
+	// Get only open/in_progress descendants
+	active, err := database.GetDescendantIssues(epic.ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+	if len(active) != 2 {
+		t.Errorf("Expected 2 active descendants, got %d", len(active))
+	}
+
+	// Verify closed task was filtered out
+	for _, issue := range active {
+		if issue.Status == models.StatusClosed {
+			t.Error("Should not include closed issues when filtering")
+		}
+	}
+}
+
+func TestCascadeReviewMarksDescendants(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create epic with children
+	epic := &models.Issue{
+		Title:  "Epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child1 := &models.Issue{
+		Title:    "Child 1",
+		Status:   models.StatusOpen,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child2 := &models.Issue{
+		Title:    "Child 2",
+		Status:   models.StatusInProgress,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child2); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	closedChild := &models.Issue{
+		Title:    "Closed Child",
+		Status:   models.StatusClosed,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(closedChild); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Simulate cascade review logic
+	sessionID := "ses_test"
+	descendants, err := database.GetDescendantIssues(epic.ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+
+	for _, child := range descendants {
+		child.Status = models.StatusInReview
+		if child.ImplementerSession == "" {
+			child.ImplementerSession = sessionID
+		}
+		if err := database.UpdateIssue(child); err != nil {
+			t.Fatalf("UpdateIssue failed: %v", err)
+		}
+	}
+
+	// Verify child1 and child2 are now in_review
+	c1, _ := database.GetIssue(child1.ID)
+	if c1.Status != models.StatusInReview {
+		t.Errorf("child1 status: got %q, want %q", c1.Status, models.StatusInReview)
+	}
+	if c1.ImplementerSession != sessionID {
+		t.Errorf("child1 implementer: got %q, want %q", c1.ImplementerSession, sessionID)
+	}
+
+	c2, _ := database.GetIssue(child2.ID)
+	if c2.Status != models.StatusInReview {
+		t.Errorf("child2 status: got %q, want %q", c2.Status, models.StatusInReview)
+	}
+
+	// Verify closedChild is unchanged
+	cc, _ := database.GetIssue(closedChild.ID)
+	if cc.Status != models.StatusClosed {
+		t.Errorf("closedChild status should remain closed: got %q", cc.Status)
+	}
+}
+
+func TestCascadeReviewNestedEpics(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create epic -> sub-epic -> task
+	epic := &models.Issue{
+		Title:  "Epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	subEpic := &models.Issue{
+		Title:    "Sub-Epic",
+		Type:     models.TypeEpic,
+		Status:   models.StatusInProgress,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(subEpic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	task := &models.Issue{
+		Title:    "Deeply Nested Task",
+		Status:   models.StatusOpen,
+		ParentID: subEpic.ID,
+	}
+	if err := database.CreateIssue(task); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Get descendants from top-level epic
+	descendants, err := database.GetDescendantIssues(epic.ID, []models.Status{
+		models.StatusOpen,
+		models.StatusInProgress,
+	})
+	if err != nil {
+		t.Fatalf("GetDescendantIssues failed: %v", err)
+	}
+
+	// Should include both sub-epic and deeply nested task
+	if len(descendants) != 2 {
+		t.Errorf("Expected 2 descendants (sub-epic + task), got %d", len(descendants))
+	}
+
+	// Mark all for review
+	for _, d := range descendants {
+		d.Status = models.StatusInReview
+		database.UpdateIssue(d)
+	}
+
+	// Verify all are in_review
+	se, _ := database.GetIssue(subEpic.ID)
+	if se.Status != models.StatusInReview {
+		t.Errorf("sub-epic status: got %q, want %q", se.Status, models.StatusInReview)
+	}
+
+	tk, _ := database.GetIssue(task.ID)
+	if tk.Status != models.StatusInReview {
+		t.Errorf("task status: got %q, want %q", tk.Status, models.StatusInReview)
+	}
+}

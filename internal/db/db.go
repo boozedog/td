@@ -445,6 +445,44 @@ func (db *DB) getDescendants(parentID string) ([]string, error) {
 	return descendants, nil
 }
 
+// HasChildren returns true if the issue has any child issues
+func (db *DB) HasChildren(issueID string) (bool, error) {
+	var count int
+	err := db.conn.QueryRow(
+		`SELECT COUNT(*) FROM issues WHERE parent_id = ? AND deleted_at IS NULL`,
+		issueID,
+	).Scan(&count)
+	return count > 0, err
+}
+
+// GetDescendantIssues returns all descendant issues (children, grandchildren, etc.)
+// filtered by the given statuses (empty = all statuses)
+func (db *DB) GetDescendantIssues(issueID string, statuses []models.Status) ([]*models.Issue, error) {
+	ids, err := db.getDescendants(issueID)
+	if err != nil {
+		return nil, err
+	}
+
+	var issues []*models.Issue
+	for _, id := range ids {
+		issue, err := db.GetIssue(id)
+		if err != nil {
+			continue // skip missing issues
+		}
+		if len(statuses) == 0 {
+			issues = append(issues, issue)
+		} else {
+			for _, s := range statuses {
+				if issue.Status == s {
+					issues = append(issues, issue)
+					break
+				}
+			}
+		}
+	}
+	return issues, nil
+}
+
 // ListIssuesOptions contains filter options for listing issues
 type ListIssuesOptions struct {
 	Status         []models.Status
