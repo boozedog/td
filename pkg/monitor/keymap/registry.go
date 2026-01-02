@@ -98,6 +98,9 @@ const (
 
 	// Issue actions
 	CmdCloseIssue Command = "close-issue"
+
+	// Filters
+	CmdCycleTypeFilter Command = "cycle-type-filter"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

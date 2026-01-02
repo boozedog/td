@@ -43,6 +43,7 @@ func DefaultBindings() []Binding {
 		{Key: "/", Command: CmdSearch, Context: ContextMain, Description: "Search"},
 		{Key: "c", Command: CmdToggleClosed, Context: ContextMain, Description: "Toggle closed tasks"},
 		{Key: "S", Command: CmdCycleSortMode, Context: ContextMain, Description: "Cycle sort mode"},
+		{Key: "T", Command: CmdCycleTypeFilter, Context: ContextMain, Description: "Cycle type filter"},
 		{Key: "r", Command: CmdMarkForReview, Context: ContextMain, Description: "Review/Refresh"},
 		{Key: "R", Command: CmdMarkForReview, Context: ContextMain, Description: "Submit for review"},
 		{Key: "a", Command: CmdApprove, Context: ContextMain, Description: "Approve issue"},

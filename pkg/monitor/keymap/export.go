@@ -51,7 +51,8 @@ var commandMetadata = map[Command]struct {
 	CmdDelete:        {"Delete", "Delete issue", 2},
 	CmdCloseIssue:    {"Close", "Close issue", 2},
 	CmdRefresh:       {"Refresh", "Refresh data", 2},
-	CmdCycleSortMode: {"Sort", "Cycle sort mode", 2},
+	CmdCycleSortMode:   {"Sort", "Cycle sort mode", 2},
+	CmdCycleTypeFilter: {"Type", "Cycle type filter", 2},
 
 	// Lower priority - palette only (P3+)
 	CmdToggleHelp:      {"Help", "Toggle help overlay", 3},

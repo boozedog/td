@@ -95,6 +95,7 @@ func (r *Registry) GenerateHelp() string {
 		{Keys: "s", Description: "Show statistics dashboard"},
 		{Keys: "h", Description: "Show handoffs modal"},
 		{Keys: "S", Description: "Cycle sort (priority/created/updated)"},
+		{Keys: "T", Description: "Cycle type filter (epic/task/bug/...)"},
 		{Keys: "/", Description: "Search tasks"},
 		{Keys: "Esc", Description: "Clear search filter"},
 		{Keys: "c", Description: "Toggle closed tasks"},
@@ -250,7 +251,7 @@ func (r *Registry) GenerateTDQHelp() string {
 
 // FooterHelp generates a compact help string for the footer
 func (r *Registry) FooterHelp() string {
-	return "n:new e:edit x:del a:approve r:review s:stats /:search c:closed tab:panel ?:help"
+	return "n:new e:edit x:del a:approve r:review s:stats /:search c:closed T:type tab:panel ?:help"
 }
 
 // ModalFooterHelp generates help text for the modal footer
@@ -304,6 +305,8 @@ func CommandHelp(cmd Command) string {
 		return "Show/hide closed tasks"
 	case CmdCycleSortMode:
 		return "Cycle sort: priority → created → updated"
+	case CmdCycleTypeFilter:
+		return "Cycle type filter: epic → task → bug → feature → chore → all"
 	case CmdMarkForReview:
 		return "Mark issue for review"
 	case CmdApprove:
@@ -386,7 +389,7 @@ func AllCommands() []Command {
 		CmdHalfPageDown, CmdHalfPageUp, CmdFullPageDown, CmdFullPageUp,
 		CmdScrollDown, CmdScrollUp, CmdSelect, CmdBack, CmdClose,
 		CmdNavigatePrev, CmdNavigateNext,
-		CmdOpenDetails, CmdOpenStats, CmdOpenHandoffs, CmdSearch, CmdToggleClosed, CmdCycleSortMode,
+		CmdOpenDetails, CmdOpenStats, CmdOpenHandoffs, CmdSearch, CmdToggleClosed, CmdCycleSortMode, CmdCycleTypeFilter,
 		CmdMarkForReview, CmdApprove, CmdDelete, CmdConfirm, CmdCancel,
 		CmdSearchConfirm, CmdSearchCancel, CmdSearchClear, CmdSearchBackspace, CmdSearchInput,
 		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic, CmdCopyToClipboard, CmdCopyIDToClipboard,

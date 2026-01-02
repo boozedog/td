@@ -274,6 +274,82 @@ func updateQuerySort(query string, sortMode SortMode) string {
 	return strings.Join(filtered, " ") + " " + sortClause
 }
 
+// TypeFilterMode represents type filtering for the task list
+type TypeFilterMode int
+
+const (
+	TypeFilterNone    TypeFilterMode = iota // No type filter
+	TypeFilterEpic                          // type=epic
+	TypeFilterTask                          // type=task
+	TypeFilterBug                           // type=bug
+	TypeFilterFeature                       // type=feature
+	TypeFilterChore                         // type=chore
+)
+
+// String returns display name for type filter mode
+func (t TypeFilterMode) String() string {
+	switch t {
+	case TypeFilterEpic:
+		return "epic"
+	case TypeFilterTask:
+		return "task"
+	case TypeFilterBug:
+		return "bug"
+	case TypeFilterFeature:
+		return "feature"
+	case TypeFilterChore:
+		return "chore"
+	default:
+		return ""
+	}
+}
+
+// ToTypeClause returns the TDQ type clause string for this mode
+func (t TypeFilterMode) ToTypeClause() string {
+	switch t {
+	case TypeFilterEpic:
+		return "type=epic"
+	case TypeFilterTask:
+		return "type=task"
+	case TypeFilterBug:
+		return "type=bug"
+	case TypeFilterFeature:
+		return "type=feature"
+	case TypeFilterChore:
+		return "type=chore"
+	default:
+		return ""
+	}
+}
+
+// updateQueryType updates or appends type clause to a query string
+func updateQueryType(query string, typeMode TypeFilterMode) string {
+	query = strings.TrimSpace(query)
+
+	// Remove existing type= clause if present
+	words := strings.Fields(query)
+	var filtered []string
+	for _, word := range words {
+		if !strings.HasPrefix(strings.ToLower(word), "type=") {
+			filtered = append(filtered, word)
+		}
+	}
+
+	// Rebuild query with new type clause (if any)
+	typeClause := typeMode.ToTypeClause()
+	if typeClause == "" {
+		if len(filtered) == 0 {
+			return ""
+		}
+		return strings.Join(filtered, " ")
+	}
+
+	if len(filtered) == 0 {
+		return typeClause
+	}
+	return strings.Join(filtered, " ") + " " + typeClause
+}
+
 // TaskListRow represents a single selectable row in the task list panel
 type TaskListRow struct {
 	Issue    models.Issue
@@ -356,10 +432,11 @@ type Model struct {
 	ModalStack []ModalEntry
 
 	// Search state
-	SearchMode    bool     // Whether search mode is active
-	SearchQuery   string   // Current search query
-	IncludeClosed bool     // Whether to include closed tasks
-	SortMode      SortMode // Task list sort order
+	SearchMode     bool           // Whether search mode is active
+	SearchQuery    string         // Current search query
+	IncludeClosed  bool           // Whether to include closed tasks
+	SortMode       SortMode       // Task list sort order
+	TypeFilterMode TypeFilterMode // Type filter (epic, task, bug, etc.)
 
 	// Confirmation dialog state
 	ConfirmOpen    bool
@@ -1058,6 +1135,18 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.SortMode = (m.SortMode + 1) % 3
 		m.SearchQuery = updateQuerySort(m.SearchQuery, m.SortMode)
 		return m, m.fetchData()
+
+	case keymap.CmdCycleTypeFilter:
+		m.TypeFilterMode = (m.TypeFilterMode + 1) % 6 // 6 modes: none + 5 types
+		m.SearchQuery = updateQueryType(m.SearchQuery, m.TypeFilterMode)
+		if m.TypeFilterMode == TypeFilterNone {
+			m.StatusMessage = "Type filter: all"
+		} else {
+			m.StatusMessage = "Type filter: " + m.TypeFilterMode.String()
+		}
+		return m, tea.Batch(m.fetchData(), tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return ClearStatusMsg{}
+		}))
 
 	case keymap.CmdMarkForReview:
 		// Mark for review works from modal, TaskList, or CurrentWork panel
