@@ -198,7 +198,8 @@ func DefaultBindings() []Binding {
 		// ============================================================
 		{Key: "ctrl+s", Command: CmdFormSubmit, Context: ContextForm, Description: "Submit form"},
 		{Key: "esc", Command: CmdFormCancel, Context: ContextForm, Description: "Cancel form"},
-		{Key: "ctrl+e", Command: CmdFormToggleExtend, Context: ContextForm, Description: "Toggle extended fields"},
+		{Key: "ctrl+x", Command: CmdFormToggleExtend, Context: ContextForm, Description: "Toggle extended fields"},
+		{Key: "ctrl+o", Command: CmdFormOpenEditor, Context: ContextForm, Description: "Open in external editor"},
 	}
 }
 

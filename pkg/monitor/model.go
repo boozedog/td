@@ -1,6 +1,8 @@
 package monitor
 
 import (
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -454,6 +456,21 @@ type HandoffsDataMsg struct {
 // ClearStatusMsg clears the status message
 type ClearStatusMsg struct{}
 
+// EditorField identifies which form field is being edited externally
+type EditorField int
+
+const (
+	EditorFieldDescription EditorField = iota
+	EditorFieldAcceptance
+)
+
+// EditorFinishedMsg carries the result from external editor
+type EditorFinishedMsg struct {
+	Field   EditorField
+	Content string
+	Error   error
+}
+
 // NewModel creates a new monitor model
 func NewModel(database *db.DB, sessionID string, interval time.Duration, ver string) Model {
 	// Initialize keymap with default bindings
@@ -687,9 +704,16 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.executeCommand(keymap.CmdFormSubmit)
 		case keyMsg.Type == tea.KeyEsc:
 			return m.executeCommand(keymap.CmdFormCancel)
-		case keyMsg.Type == tea.KeyCtrlE:
+		case keyMsg.Type == tea.KeyCtrlX:
 			return m.executeCommand(keymap.CmdFormToggleExtend)
+		case keyMsg.Type == tea.KeyCtrlO:
+			return m.executeCommand(keymap.CmdFormOpenEditor)
 		}
+	}
+
+	// Handle editor finished message
+	if editorMsg, ok := msg.(EditorFinishedMsg); ok {
+		return m.handleEditorFinished(editorMsg)
 	}
 
 	// Handle window resize
@@ -1157,6 +1181,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			m.FormState.ToggleExtended()
 		}
 		return m, nil
+
+	case keymap.CmdFormOpenEditor:
+		return m.openExternalEditor()
 	}
 
 	return m, nil
@@ -2523,4 +2550,105 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// openExternalEditor opens the Description field in an external editor
+// Uses $VISUAL > $EDITOR > vim fallback
+func (m Model) openExternalEditor() (tea.Model, tea.Cmd) {
+	if m.FormState == nil {
+		return m, nil
+	}
+
+	// Get editor from environment
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+	if editor == "" {
+		editor = "vim"
+	}
+
+	// Create temp file with .md extension for syntax highlighting
+	tmpFile, err := os.CreateTemp("", "td-edit-*.md")
+	if err != nil {
+		m.StatusMessage = "Failed to create temp file: " + err.Error()
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return ClearStatusMsg{}
+		})
+	}
+
+	// Write current description content to temp file
+	content := m.FormState.Description
+	if _, err := tmpFile.WriteString(content); err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		m.StatusMessage = "Failed to write temp file: " + err.Error()
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return ClearStatusMsg{}
+		})
+	}
+	tmpFile.Close()
+
+	tmpPath := tmpFile.Name()
+
+	// Create editor command
+	cmd := exec.Command(editor, tmpPath)
+
+	// Use tea.ExecProcess to suspend TUI and run editor
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg {
+		// Read content from temp file
+		data, readErr := os.ReadFile(tmpPath)
+		os.Remove(tmpPath) // Clean up temp file
+
+		if err != nil {
+			return EditorFinishedMsg{
+				Field: EditorFieldDescription,
+				Error: err,
+			}
+		}
+		if readErr != nil {
+			return EditorFinishedMsg{
+				Field: EditorFieldDescription,
+				Error: readErr,
+			}
+		}
+
+		return EditorFinishedMsg{
+			Field:   EditorFieldDescription,
+			Content: string(data),
+		}
+	})
+}
+
+// handleEditorFinished updates the form field after external editor closes
+func (m Model) handleEditorFinished(msg EditorFinishedMsg) (tea.Model, tea.Cmd) {
+	if msg.Error != nil {
+		m.StatusMessage = "Editor error: " + msg.Error.Error()
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return ClearStatusMsg{}
+		})
+	}
+
+	if m.FormState == nil {
+		return m, nil
+	}
+
+	// Update the appropriate field based on which was edited
+	switch msg.Field {
+	case EditorFieldDescription:
+		m.FormState.Description = msg.Content
+	case EditorFieldAcceptance:
+		m.FormState.Acceptance = msg.Content
+	}
+
+	// Rebuild the form to reflect the changes
+	m.FormState.buildForm()
+
+	m.StatusMessage = "Content updated from editor"
+	return m, tea.Batch(
+		m.FormState.Form.Init(),
+		tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return ClearStatusMsg{}
+		}),
+	)
 }

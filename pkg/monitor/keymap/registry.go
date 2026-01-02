@@ -94,6 +94,7 @@ const (
 	CmdFormSubmit       Command = "form-submit"
 	CmdFormCancel       Command = "form-cancel"
 	CmdFormToggleExtend Command = "form-toggle-extend"
+	CmdFormOpenEditor   Command = "form-open-editor"
 
 	// Issue actions
 	CmdCloseIssue Command = "close-issue"

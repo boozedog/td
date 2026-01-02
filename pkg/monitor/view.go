@@ -1041,9 +1041,9 @@ func (m Model) renderFormModal() string {
 	// Build footer with key hints
 	var footerParts []string
 	if m.FormState.ShowExtended {
-		footerParts = append(footerParts, subtleStyle.Render("Ctrl+E:hide extended"))
+		footerParts = append(footerParts, subtleStyle.Render("Ctrl+X:hide extended"))
 	} else {
-		footerParts = append(footerParts, subtleStyle.Render("Ctrl+E:show extended"))
+		footerParts = append(footerParts, subtleStyle.Render("Ctrl+X:show extended"))
 	}
 	footerParts = append(footerParts, subtleStyle.Render("Ctrl+S:submit  Esc:cancel"))
 	footer := strings.Join(footerParts, "  ")

@@ -81,7 +81,8 @@ func (r *Registry) GenerateHelp() string {
 	formBindings := []HelpBinding{
 		{Keys: "Ctrl+S", Description: "Save form"},
 		{Keys: "Esc", Description: "Cancel form"},
-		{Keys: "Ctrl+E", Description: "Toggle extended fields"},
+		{Keys: "Ctrl+X", Description: "Toggle extended fields"},
+		{Keys: "Ctrl+O", Description: "Edit description in $EDITOR"},
 	}
 	for _, b := range formBindings {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
@@ -319,6 +320,8 @@ func CommandHelp(cmd Command) string {
 		return "Copy issue as markdown to clipboard"
 	case CmdCopyIDToClipboard:
 		return "Copy issue ID to clipboard"
+	case CmdFormOpenEditor:
+		return "Open form field in external editor"
 	default:
 		return string(cmd)
 	}
@@ -387,6 +390,8 @@ func AllCommands() []Command {
 		CmdMarkForReview, CmdApprove, CmdDelete, CmdConfirm, CmdCancel,
 		CmdSearchConfirm, CmdSearchCancel, CmdSearchClear, CmdSearchBackspace, CmdSearchInput,
 		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic, CmdCopyToClipboard, CmdCopyIDToClipboard,
+		CmdNewIssue, CmdEditIssue, CmdFormSubmit, CmdFormCancel, CmdFormToggleExtend, CmdFormOpenEditor,
+		CmdCloseIssue,
 	}
 
 	sort.Slice(cmds, func(i, j int) bool {
