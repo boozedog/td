@@ -455,6 +455,49 @@ func (db *DB) HasChildren(issueID string) (bool, error) {
 	return count > 0, err
 }
 
+// GetDirectChildren returns the direct children of an issue (not recursive)
+func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
+	rows, err := db.conn.Query(`
+		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance,
+		       implementer_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		FROM issues WHERE parent_id = ? AND deleted_at IS NULL
+	`, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var children []*models.Issue
+	for rows.Next() {
+		var issue models.Issue
+		var labels string
+		var closedAt, deletedAt sql.NullTime
+
+		err := rows.Scan(
+			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
+			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance,
+			&issue.ImplementerSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if labels != "" {
+			issue.Labels = strings.Split(labels, ",")
+		}
+		if closedAt.Valid {
+			issue.ClosedAt = &closedAt.Time
+		}
+		if deletedAt.Valid {
+			issue.DeletedAt = &deletedAt.Time
+		}
+
+		children = append(children, &issue)
+	}
+
+	return children, nil
+}
+
 // GetDescendantIssues returns all descendant issues (children, grandchildren, etc.)
 // filtered by the given statuses (empty = all statuses)
 func (db *DB) GetDescendantIssues(issueID string, statuses []models.Status) ([]*models.Issue, error) {

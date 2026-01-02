@@ -46,12 +46,20 @@ func (m Model) renderView() string {
 		footerHeight = 0
 	}
 	availableHeight := m.Height - footerHeight - searchBarHeight
-	panelHeight := availableHeight / 3
 
-	// Render each panel
-	currentWork := m.renderCurrentWorkPanel(panelHeight)
-	activity := m.renderActivityPanel(panelHeight)
-	taskList := m.renderTaskListPanel(panelHeight)
+	// Calculate individual panel heights from ratios
+	panelHeights := [3]int{
+		int(float64(availableHeight) * m.PaneHeights[0]),
+		int(float64(availableHeight) * m.PaneHeights[1]),
+		int(float64(availableHeight) * m.PaneHeights[2]),
+	}
+	// Adjust last panel to absorb rounding errors
+	panelHeights[2] = availableHeight - panelHeights[0] - panelHeights[1]
+
+	// Render each panel with its specific height
+	currentWork := m.renderCurrentWorkPanel(panelHeights[0])
+	activity := m.renderActivityPanel(panelHeights[2])
+	taskList := m.renderTaskListPanel(panelHeights[1])
 
 	// Stack panels vertically (Current Work → Task List → Activity)
 	panels := lipgloss.JoinVertical(lipgloss.Left,
@@ -1426,6 +1434,23 @@ func (m Model) wrapPanel(title, content string, height int, panel Panel) string 
 		style = activePanelStyle
 	} else if m.HoverPanel == panel {
 		style = hoverPanelStyle
+	}
+
+	// Override style for divider drag/hover feedback
+	// Divider 0 is bottom of PanelCurrentWork, Divider 1 is bottom of PanelTaskList
+	dividerForPanel := -1
+	if panel == PanelCurrentWork {
+		dividerForPanel = 0
+	} else if panel == PanelTaskList {
+		dividerForPanel = 1
+	}
+
+	if dividerForPanel >= 0 {
+		if m.DraggingDivider == dividerForPanel {
+			style = dividerActivePanelStyle
+		} else if m.DividerHover == dividerForPanel && m.DraggingDivider < 0 {
+			style = dividerHoverPanelStyle
+		}
 	}
 
 	// Render title

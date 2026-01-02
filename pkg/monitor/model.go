@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/huh"
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
@@ -484,6 +485,15 @@ type Model struct {
 	LastClickTime  time.Time // For double-click detection
 	LastClickPanel Panel     // Panel of last click
 	LastClickRow   int       // Row of last click
+
+	// Pane resizing (drag-to-resize)
+	PaneHeights      [3]float64 // Height ratios (sum=1.0)
+	DividerBounds    [2]Rect    // Hit regions for the 2 dividers between 3 panes
+	DraggingDivider  int        // -1 = not dragging, 0 = first divider, 1 = second
+	DividerHover     int        // -1 = none, 0 or 1 = which divider is hovered
+	DragStartY       int        // Y position when drag started
+	DragStartHeights [3]float64 // Pane heights when drag started
+	BaseDir          string     // Base directory for config persistence
 }
 
 // MinWidth is the minimum terminal width for proper display
@@ -535,6 +545,11 @@ type HandoffsDataMsg struct {
 // ClearStatusMsg clears the status message
 type ClearStatusMsg struct{}
 
+// PaneHeightsSavedMsg is sent after pane heights are persisted to config
+type PaneHeightsSavedMsg struct {
+	Error error
+}
+
 // EditorField identifies which form field is being edited externally
 type EditorField int
 
@@ -551,10 +566,13 @@ type EditorFinishedMsg struct {
 }
 
 // NewModel creates a new monitor model
-func NewModel(database *db.DB, sessionID string, interval time.Duration, ver string) Model {
+func NewModel(database *db.DB, sessionID string, interval time.Duration, ver string, baseDir string) Model {
 	// Initialize keymap with default bindings
 	km := keymap.NewRegistry()
 	keymap.RegisterDefaults(km)
+
+	// Load pane heights from config (or use defaults)
+	paneHeights, _ := config.GetPaneHeights(baseDir)
 
 	return Model{
 		DB:              database,
@@ -568,12 +586,16 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 		SearchMode:      false,
 		SearchQuery:     "",
 		IncludeClosed:   false,
-		Keymap:         km,
-		Version:        ver,
-		PanelBounds:    make(map[Panel]Rect),
-		HoverPanel:     -1,
-		LastClickPanel: -1,
-		LastClickRow:   -1,
+		Keymap:          km,
+		Version:         ver,
+		PanelBounds:     make(map[Panel]Rect),
+		HoverPanel:      -1,
+		LastClickPanel:  -1,
+		LastClickRow:    -1,
+		PaneHeights:     paneHeights,
+		DraggingDivider: -1,
+		DividerHover:    -1,
+		BaseDir:         baseDir,
 	}
 }
 
@@ -592,7 +614,7 @@ func NewEmbedded(baseDir string, interval time.Duration, ver string) (*Model, er
 		return nil, err
 	}
 
-	m := NewModel(database, sess.ID, interval, ver)
+	m := NewModel(database, sess.ID, interval, ver, baseDir)
 	m.Embedded = true
 	return &m, nil
 }
@@ -730,6 +752,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case version.UpdateAvailableMsg:
 		m.UpdateAvail = &msg
+		return m, nil
+
+	case PaneHeightsSavedMsg:
+		// Pane heights saved (or failed) - just ignore errors silently
 		return m, nil
 	}
 
@@ -1944,7 +1970,19 @@ func (m Model) visibleHeightForPanel(panel Panel) int {
 		footerHeight = 0
 	}
 	availableHeight := m.Height - footerHeight - searchBarHeight
-	panelHeight := availableHeight / 3
+
+	// Get panel height based on dynamic pane ratios
+	var panelHeight int
+	switch panel {
+	case PanelCurrentWork:
+		panelHeight = int(float64(availableHeight) * m.PaneHeights[0])
+	case PanelTaskList:
+		panelHeight = int(float64(availableHeight) * m.PaneHeights[1])
+	case PanelActivity:
+		panelHeight = int(float64(availableHeight) * m.PaneHeights[2])
+	default:
+		panelHeight = availableHeight / 3
+	}
 
 	// Account for: title (1) + border (2) + scroll indicators (2)
 	// Scroll indicators: "▲ more above" and "▼ more below" each take 1 line
@@ -2308,19 +2346,34 @@ func (m *Model) updatePanelBounds() {
 		footerHeight = 0
 	}
 	availableHeight := m.Height - footerHeight - searchBarHeight
-	panelHeight := availableHeight / 3
+
+	// Calculate panel heights from ratios
+	panelHeights := [3]int{
+		int(float64(availableHeight) * m.PaneHeights[0]),
+		int(float64(availableHeight) * m.PaneHeights[1]),
+		int(float64(availableHeight) * m.PaneHeights[2]),
+	}
+	// Adjust last panel to absorb rounding errors
+	panelHeights[2] = availableHeight - panelHeights[0] - panelHeights[1]
 
 	// Calculate Y positions for each panel (stacked vertically)
 	// Order: search bar (optional) → Current Work → Task List → Activity → footer
 	y := searchBarHeight
 
-	m.PanelBounds[PanelCurrentWork] = Rect{X: 0, Y: y, W: m.Width, H: panelHeight}
-	y += panelHeight
+	m.PanelBounds[PanelCurrentWork] = Rect{X: 0, Y: y, W: m.Width, H: panelHeights[0]}
+	y += panelHeights[0]
 
-	m.PanelBounds[PanelTaskList] = Rect{X: 0, Y: y, W: m.Width, H: panelHeight}
-	y += panelHeight
+	// First divider (between Current Work and Task List)
+	// 3px hit region centered on the border
+	m.DividerBounds[0] = Rect{X: 0, Y: y - 1, W: m.Width, H: 3}
 
-	m.PanelBounds[PanelActivity] = Rect{X: 0, Y: y, W: m.Width, H: panelHeight}
+	m.PanelBounds[PanelTaskList] = Rect{X: 0, Y: y, W: m.Width, H: panelHeights[1]}
+	y += panelHeights[1]
+
+	// Second divider (between Task List and Activity)
+	m.DividerBounds[1] = Rect{X: 0, Y: y - 1, W: m.Width, H: 3}
+
+	m.PanelBounds[PanelActivity] = Rect{X: 0, Y: y, W: m.Width, H: panelHeights[2]}
 }
 
 // handleMouse processes mouse events for panel selection and row clicking
@@ -2333,6 +2386,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	switch msg.Action {
 	case tea.MouseActionPress:
 		if msg.Button == tea.MouseButtonLeft {
+			// Check divider hit first (highest priority)
+			divider := m.HitTestDivider(msg.X, msg.Y)
+			if divider >= 0 {
+				return m.startDividerDrag(divider, msg.Y)
+			}
 			return m.handleMouseClick(msg.X, msg.Y)
 		}
 		// Handle mouse wheel (reported as button press)
@@ -2343,8 +2401,24 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 			return m.handleMouseWheel(msg.X, msg.Y, 3)
 		}
 
+	case tea.MouseActionRelease:
+		if m.DraggingDivider >= 0 {
+			return m.endDividerDrag()
+		}
+
 	case tea.MouseActionMotion:
-		// Track hover for visual feedback
+		// Handle divider dragging
+		if m.DraggingDivider >= 0 {
+			return m.updateDividerDrag(msg.Y)
+		}
+
+		// Track divider hover for visual feedback
+		divider := m.HitTestDivider(msg.X, msg.Y)
+		if divider != m.DividerHover {
+			m.DividerHover = divider
+		}
+
+		// Track panel hover for visual feedback
 		panel := m.HitTestPanel(msg.X, msg.Y)
 		if panel != m.HoverPanel {
 			m.HoverPanel = panel
@@ -2353,6 +2427,116 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+// HitTestDivider returns which divider (0 or 1) contains the point, or -1 if none
+func (m Model) HitTestDivider(x, y int) int {
+	for i, bounds := range m.DividerBounds {
+		if bounds.Contains(x, y) {
+			return i
+		}
+	}
+	return -1
+}
+
+// startDividerDrag begins dragging a divider
+func (m Model) startDividerDrag(divider int, y int) (tea.Model, tea.Cmd) {
+	m.DraggingDivider = divider
+	m.DragStartY = y
+	m.DragStartHeights = m.PaneHeights
+	return m, nil
+}
+
+// updateDividerDrag updates pane heights during drag
+func (m Model) updateDividerDrag(y int) (tea.Model, tea.Cmd) {
+	if m.DraggingDivider < 0 {
+		return m, nil
+	}
+
+	// Calculate available height
+	searchBarHeight := 0
+	if m.SearchMode || m.SearchQuery != "" {
+		searchBarHeight = 2
+	}
+	footerHeight := 3
+	if m.Embedded {
+		footerHeight = 0
+	}
+	availableHeight := m.Height - footerHeight - searchBarHeight
+
+	// Calculate delta as a ratio
+	deltaY := y - m.DragStartY
+	deltaRatio := float64(deltaY) / float64(availableHeight)
+
+	// Get starting heights
+	newHeights := m.DragStartHeights
+
+	// Apply delta based on which divider is being dragged
+	// Divider 0: between pane 0 and pane 1
+	// Divider 1: between pane 1 and pane 2
+	if m.DraggingDivider == 0 {
+		// Moving divider 0 affects panes 0 and 1
+		newHeights[0] = m.DragStartHeights[0] + deltaRatio
+		newHeights[1] = m.DragStartHeights[1] - deltaRatio
+	} else {
+		// Moving divider 1 affects panes 1 and 2
+		newHeights[1] = m.DragStartHeights[1] + deltaRatio
+		newHeights[2] = m.DragStartHeights[2] - deltaRatio
+	}
+
+	// Enforce minimum 10% per pane
+	const minHeight = 0.1
+	for i := range newHeights {
+		if newHeights[i] < minHeight {
+			// Clamp and redistribute
+			deficit := minHeight - newHeights[i]
+			newHeights[i] = minHeight
+			// Take from the adjacent pane that was growing
+			if m.DraggingDivider == 0 {
+				if i == 0 {
+					newHeights[1] -= deficit
+				} else {
+					newHeights[0] -= deficit
+				}
+			} else {
+				if i == 1 {
+					newHeights[2] -= deficit
+				} else {
+					newHeights[1] -= deficit
+				}
+			}
+		}
+	}
+
+	// Re-clamp in case redistribution caused issues
+	for i := range newHeights {
+		if newHeights[i] < minHeight {
+			return m, nil // Abort if we can't satisfy constraints
+		}
+	}
+
+	m.PaneHeights = newHeights
+	m.updatePanelBounds()
+	return m, nil
+}
+
+// endDividerDrag finishes dragging and persists the new heights
+func (m Model) endDividerDrag() (tea.Model, tea.Cmd) {
+	m.DraggingDivider = -1
+	m.DividerHover = -1
+
+	// Persist to config asynchronously
+	return m, m.savePaneHeightsAsync()
+}
+
+// savePaneHeightsAsync returns a command that saves pane heights to config
+func (m Model) savePaneHeightsAsync() tea.Cmd {
+	heights := m.PaneHeights
+	baseDir := m.BaseDir
+	return func() tea.Msg {
+		err := config.SetPaneHeights(baseDir, heights)
+		return PaneHeightsSavedMsg{Error: err}
+	}
 }
 
 // handleMouseWheel scrolls the panel under the cursor

@@ -184,6 +184,10 @@ Supports bulk operations:
 					}
 				}
 			}
+
+			// Cascade up: if all siblings are in_review (or closed), update parent epic
+			cascadeUpParentStatus(database, issueID, models.StatusInReview, sess.ID)
+
 			reviewed++
 		}
 
@@ -333,6 +337,10 @@ Supports bulk operations:
 			clearFocusIfNeeded(baseDir, issueID)
 
 			fmt.Printf("APPROVED %s (reviewer: %s)\n", issueID, sess.ID)
+
+			// Cascade up: if all siblings are closed, update parent epic
+			cascadeUpParentStatus(database, issueID, models.StatusClosed, sess.ID)
+
 			approved++
 		}
 
@@ -543,6 +551,10 @@ Examples:
 			clearFocusIfNeeded(baseDir, issueID)
 
 			fmt.Printf("CLOSED %s\n", issueID)
+
+			// Cascade up: if all siblings are closed, update parent epic
+			cascadeUpParentStatus(database, issueID, models.StatusClosed, sess.ID)
+
 			closed++
 		}
 
@@ -551,6 +563,107 @@ Examples:
 		}
 		return nil
 	},
+}
+
+// cascadeUpParentStatus checks if all children of a parent epic have reached the target status,
+// and if so, updates the parent to that status. Works recursively up the parent chain.
+func cascadeUpParentStatus(database *db.DB, issueID string, targetStatus models.Status, sessionID string) int {
+	cascadedCount := 0
+
+	// Get the issue to find its parent
+	issue, err := database.GetIssue(issueID)
+	if err != nil || issue.ParentID == "" {
+		return cascadedCount
+	}
+
+	// Get the parent issue
+	parent, err := database.GetIssue(issue.ParentID)
+	if err != nil {
+		return cascadedCount
+	}
+
+	// Only cascade to epic parents
+	if parent.Type != models.TypeEpic {
+		return cascadedCount
+	}
+
+	// Parent already at or beyond target status - nothing to do
+	if parent.Status == targetStatus || parent.Status == models.StatusClosed {
+		return cascadedCount
+	}
+
+	// Get all direct children of the parent
+	children, err := database.GetDirectChildren(parent.ID)
+	if err != nil || len(children) == 0 {
+		return cascadedCount
+	}
+
+	// Check if all children have reached the target status (or beyond)
+	allAtTarget := true
+	for _, child := range children {
+		if targetStatus == models.StatusInReview {
+			// For in_review, check if child is in_review or closed
+			if child.Status != models.StatusInReview && child.Status != models.StatusClosed {
+				allAtTarget = false
+				break
+			}
+		} else if targetStatus == models.StatusClosed {
+			// For closed, child must be closed
+			if child.Status != models.StatusClosed {
+				allAtTarget = false
+				break
+			}
+		}
+	}
+
+	if !allAtTarget {
+		return cascadedCount
+	}
+
+	// All children at target - update parent
+	prevData, _ := json.Marshal(parent)
+
+	parent.Status = targetStatus
+	if targetStatus == models.StatusClosed {
+		now := parent.UpdatedAt
+		parent.ClosedAt = &now
+	}
+
+	if err := database.UpdateIssue(parent); err != nil {
+		return cascadedCount
+	}
+
+	// Log action for undo
+	newData, _ := json.Marshal(parent)
+	actionType := models.ActionReview
+	if targetStatus == models.StatusClosed {
+		actionType = models.ActionClose
+	}
+	database.LogAction(&models.ActionLog{
+		SessionID:    sessionID,
+		ActionType:   actionType,
+		EntityType:   "issue",
+		EntityID:     parent.ID,
+		PreviousData: string(prevData),
+		NewData:      string(newData),
+	})
+
+	// Add log entry
+	logMsg := fmt.Sprintf("Auto-cascaded to %s (all children complete)", targetStatus)
+	database.AddLog(&models.Log{
+		IssueID:   parent.ID,
+		SessionID: sessionID,
+		Message:   logMsg,
+		Type:      models.LogTypeProgress,
+	})
+
+	fmt.Printf("  ↑ Parent %s auto-cascaded to %s\n", parent.ID, targetStatus)
+	cascadedCount++
+
+	// Recursively check parent's parent
+	cascadedCount += cascadeUpParentStatus(database, parent.ID, targetStatus, sessionID)
+
+	return cascadedCount
 }
 
 func init() {

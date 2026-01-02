@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/pkg/monitor/keymap"
 )
@@ -13,6 +14,11 @@ func newTestKeymap() *keymap.Registry {
 	km := keymap.NewRegistry()
 	keymap.RegisterDefaults(km)
 	return km
+}
+
+// defaultPaneHeights returns the default pane height ratios for testing
+func defaultPaneHeights() [3]float64 {
+	return config.DefaultPaneHeights()
 }
 
 func TestRowCount(t *testing.T) {
@@ -238,6 +244,7 @@ func TestHandleKey_JMovesCursorAndKeepsVisible(t *testing.T) {
 		SelectedID:   make(map[Panel]string),
 		ScrollOffset: make(map[Panel]int),
 		Keymap:       newTestKeymap(),
+		PaneHeights:  defaultPaneHeights(),
 	}
 
 	// Fill task list with enough rows to require scrolling.
@@ -272,6 +279,7 @@ func TestHandleKey_PanelSwitchEnsuresCursorVisible(t *testing.T) {
 		SelectedID:   make(map[Panel]string),
 		ScrollOffset: make(map[Panel]int),
 		Keymap:       newTestKeymap(),
+		PaneHeights:  defaultPaneHeights(),
 	}
 	for i := 0; i < 5; i++ {
 		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: models.Issue{ID: "tl"}})
@@ -364,6 +372,7 @@ func TestRestoreCursorsEnsuresCursorVisible(t *testing.T) {
 		Cursor:       make(map[Panel]int),
 		SelectedID:   make(map[Panel]string),
 		ScrollOffset: make(map[Panel]int),
+		PaneHeights:  defaultPaneHeights(),
 	}
 	for i := 0; i < 5; i++ {
 		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: models.Issue{ID: "tl"}})
@@ -559,6 +568,7 @@ func TestMaxScrollOffsetTaskList(t *testing.T) {
 			m := Model{
 				Height:       tt.height,
 				TaskListRows: tt.rows,
+				PaneHeights:  defaultPaneHeights(),
 			}
 			got := m.maxScrollOffset(PanelTaskList)
 			if got != tt.expectedMax {

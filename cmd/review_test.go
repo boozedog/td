@@ -588,3 +588,358 @@ func TestCascadeReviewNestedEpics(t *testing.T) {
 		t.Errorf("task status: got %q, want %q", tk.Status, models.StatusInReview)
 	}
 }
+
+// Tests for cascade up behavior
+
+func TestCascadeUpToReviewAllChildrenReview(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create epic with two children
+	epic := &models.Issue{
+		Title:  "Epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child1 := &models.Issue{
+		Title:    "Child 1",
+		Status:   models.StatusInReview,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child2 := &models.Issue{
+		Title:    "Child 2",
+		Status:   models.StatusInProgress,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child2); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := "ses_test"
+
+	// First, cascade up should NOT update epic (child2 still in_progress)
+	cascadeUpParentStatus(database, child1.ID, models.StatusInReview, sessionID)
+
+	e, _ := database.GetIssue(epic.ID)
+	if e.Status != models.StatusOpen {
+		t.Errorf("Epic should remain open: got %q", e.Status)
+	}
+
+	// Now mark child2 as in_review
+	child2.Status = models.StatusInReview
+	database.UpdateIssue(child2)
+
+	// Cascade up should now update epic
+	cascaded := cascadeUpParentStatus(database, child2.ID, models.StatusInReview, sessionID)
+
+	if cascaded != 1 {
+		t.Errorf("Expected 1 cascaded, got %d", cascaded)
+	}
+
+	e, _ = database.GetIssue(epic.ID)
+	if e.Status != models.StatusInReview {
+		t.Errorf("Epic should be in_review: got %q", e.Status)
+	}
+}
+
+func TestCascadeUpToClosedAllChildrenClosed(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create epic with two children
+	epic := &models.Issue{
+		Title:  "Epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusInReview,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child1 := &models.Issue{
+		Title:    "Child 1",
+		Status:   models.StatusClosed,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child2 := &models.Issue{
+		Title:    "Child 2",
+		Status:   models.StatusClosed,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child2); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := "ses_test"
+
+	// All children closed, cascade up should update epic
+	cascaded := cascadeUpParentStatus(database, child2.ID, models.StatusClosed, sessionID)
+
+	if cascaded != 1 {
+		t.Errorf("Expected 1 cascaded, got %d", cascaded)
+	}
+
+	e, _ := database.GetIssue(epic.ID)
+	if e.Status != models.StatusClosed {
+		t.Errorf("Epic should be closed: got %q", e.Status)
+	}
+	if e.ClosedAt == nil {
+		t.Error("Epic ClosedAt should be set")
+	}
+}
+
+func TestCascadeUpRecursive(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create grandparent -> parent -> child hierarchy (all epics)
+	grandparent := &models.Issue{
+		Title:  "Grandparent Epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(grandparent); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	parent := &models.Issue{
+		Title:    "Parent Epic",
+		Type:     models.TypeEpic,
+		Status:   models.StatusOpen,
+		ParentID: grandparent.ID,
+	}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child := &models.Issue{
+		Title:    "Child Task",
+		Status:   models.StatusInReview,
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := "ses_test"
+
+	// Child is only child of parent, parent is only child of grandparent
+	// Cascade up from child should update both parent and grandparent
+	cascaded := cascadeUpParentStatus(database, child.ID, models.StatusInReview, sessionID)
+
+	if cascaded != 2 {
+		t.Errorf("Expected 2 cascaded (parent + grandparent), got %d", cascaded)
+	}
+
+	p, _ := database.GetIssue(parent.ID)
+	if p.Status != models.StatusInReview {
+		t.Errorf("Parent should be in_review: got %q", p.Status)
+	}
+
+	gp, _ := database.GetIssue(grandparent.ID)
+	if gp.Status != models.StatusInReview {
+		t.Errorf("Grandparent should be in_review: got %q", gp.Status)
+	}
+}
+
+func TestCascadeUpNoActionNonEpicParent(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create a task parent (not an epic)
+	parent := &models.Issue{
+		Title:  "Parent Task",
+		Type:   models.TypeTask,
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(parent); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child := &models.Issue{
+		Title:    "Child Task",
+		Status:   models.StatusInReview,
+		ParentID: parent.ID,
+	}
+	if err := database.CreateIssue(child); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := "ses_test"
+
+	// Should NOT cascade up to non-epic parent
+	cascaded := cascadeUpParentStatus(database, child.ID, models.StatusInReview, sessionID)
+
+	if cascaded != 0 {
+		t.Errorf("Expected 0 cascaded (parent not epic), got %d", cascaded)
+	}
+
+	p, _ := database.GetIssue(parent.ID)
+	if p.Status != models.StatusInProgress {
+		t.Errorf("Parent status should be unchanged: got %q", p.Status)
+	}
+}
+
+func TestCascadeUpNoActionNotAllChildrenReady(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create epic with two children, only one in_review
+	epic := &models.Issue{
+		Title:  "Epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child1 := &models.Issue{
+		Title:    "Child 1",
+		Status:   models.StatusInReview,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child2 := &models.Issue{
+		Title:    "Child 2",
+		Status:   models.StatusOpen, // Not in_review yet
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child2); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := "ses_test"
+
+	// Should NOT cascade up because child2 is still open
+	cascaded := cascadeUpParentStatus(database, child1.ID, models.StatusInReview, sessionID)
+
+	if cascaded != 0 {
+		t.Errorf("Expected 0 cascaded (not all children ready), got %d", cascaded)
+	}
+
+	e, _ := database.GetIssue(epic.ID)
+	if e.Status != models.StatusOpen {
+		t.Errorf("Epic status should be unchanged: got %q", e.Status)
+	}
+}
+
+func TestCascadeUpReviewAllowsClosedSiblings(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create epic with two children: one in_review, one closed
+	epic := &models.Issue{
+		Title:  "Epic",
+		Type:   models.TypeEpic,
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child1 := &models.Issue{
+		Title:    "Child 1",
+		Status:   models.StatusInReview,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child1); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	child2 := &models.Issue{
+		Title:    "Child 2",
+		Status:   models.StatusClosed, // Already closed
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(child2); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := "ses_test"
+
+	// For in_review target, closed siblings should count as "ready"
+	cascaded := cascadeUpParentStatus(database, child1.ID, models.StatusInReview, sessionID)
+
+	if cascaded != 1 {
+		t.Errorf("Expected 1 cascaded, got %d", cascaded)
+	}
+
+	e, _ := database.GetIssue(epic.ID)
+	if e.Status != models.StatusInReview {
+		t.Errorf("Epic should be in_review: got %q", e.Status)
+	}
+}
+
+func TestCascadeUpNoActionNoParent(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create task with no parent
+	task := &models.Issue{
+		Title:  "Orphan Task",
+		Status: models.StatusInReview,
+	}
+	if err := database.CreateIssue(task); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := "ses_test"
+
+	// Should return 0 since no parent
+	cascaded := cascadeUpParentStatus(database, task.ID, models.StatusInReview, sessionID)
+
+	if cascaded != 0 {
+		t.Errorf("Expected 0 cascaded (no parent), got %d", cascaded)
+	}
+}

@@ -136,6 +136,19 @@ var (
 		models.TypeTask:    "■", // Square - building block
 		models.TypeChore:   "○", // Empty circle - routine
 	}
+
+	// Divider styles for drag-to-resize
+	// Panel style when its bottom border is being hovered (divider hover)
+	dividerHoverPanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("45")). // Cyan
+				Padding(0, 1)
+
+	// Panel style when its bottom border is being dragged
+	dividerActivePanelStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("214")). // Orange/Yellow
+				Padding(0, 1)
 )
 
 // formatStatus renders a status with color

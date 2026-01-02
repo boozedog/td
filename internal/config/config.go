@@ -96,3 +96,45 @@ func GetActiveWorkSession(baseDir string) (string, error) {
 func ClearActiveWorkSession(baseDir string) error {
 	return SetActiveWorkSession(baseDir, "")
 }
+
+// DefaultPaneHeights returns the default pane height ratios (equal thirds)
+func DefaultPaneHeights() [3]float64 {
+	return [3]float64{1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0}
+}
+
+// GetPaneHeights returns the configured pane heights, or defaults if not set
+func GetPaneHeights(baseDir string) ([3]float64, error) {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return DefaultPaneHeights(), err
+	}
+
+	// Return defaults if not configured or invalid
+	if cfg.PaneHeights[0] == 0 && cfg.PaneHeights[1] == 0 && cfg.PaneHeights[2] == 0 {
+		return DefaultPaneHeights(), nil
+	}
+
+	// Validate: each pane must be at least 10% and sum must be ~1.0
+	sum := cfg.PaneHeights[0] + cfg.PaneHeights[1] + cfg.PaneHeights[2]
+	if sum < 0.99 || sum > 1.01 {
+		return DefaultPaneHeights(), nil
+	}
+	for _, h := range cfg.PaneHeights {
+		if h < 0.1 {
+			return DefaultPaneHeights(), nil
+		}
+	}
+
+	return cfg.PaneHeights, nil
+}
+
+// SetPaneHeights saves the pane height ratios to config
+func SetPaneHeights(baseDir string, heights [3]float64) error {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return err
+	}
+
+	cfg.PaneHeights = heights
+	return Save(baseDir, cfg)
+}
