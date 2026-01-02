@@ -132,7 +132,10 @@ Or use flags with values, stdin (-), or file (@path):
 		}
 
 		// Cascade to descendants if this is a parent issue
-		hasChildren, _ := database.HasChildren(issueID)
+		hasChildren, err := database.HasChildren(issueID)
+		if err != nil {
+			output.Warning("check children: %v", err)
+		}
 		if hasChildren {
 			descendants, err := database.GetDescendantIssues(issueID, []models.Status{
 				models.StatusOpen,
@@ -144,7 +147,11 @@ Or use flags with values, stdin (-), or file (@path):
 
 				for _, child := range descendants {
 					// Skip children that already have handoffs
-					existingHandoff, _ := database.GetLatestHandoff(child.ID)
+					existingHandoff, err := database.GetLatestHandoff(child.ID)
+					if err != nil {
+						output.Warning("check handoff %s: %v", child.ID, err)
+						continue
+					}
 					if existingHandoff != nil {
 						skippedExisting++
 						continue
@@ -163,7 +170,11 @@ Or use flags with values, stdin (-), or file (@path):
 					}
 
 					// Log action for undo
-					handoffData, _ := json.Marshal(childHandoff)
+					handoffData, err := json.Marshal(childHandoff)
+					if err != nil {
+						output.Warning("marshal handoff %s: %v", child.ID, err)
+						continue
+					}
 					if err := database.LogAction(&models.ActionLog{
 						SessionID:  sess.ID,
 						ActionType: models.ActionHandoff,
