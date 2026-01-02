@@ -1,6 +1,7 @@
 package monitor
 
 import (
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -124,7 +125,7 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 
 // isTDQQuery checks if the query uses TDQ syntax (operators, functions, etc.)
 func isTDQQuery(q string) bool {
-	// Check for TDQ operators and patterns
+	// Check for TDQ operators and patterns (with spaces)
 	tdqPatterns := []string{
 		" = ", " != ", " ~ ", " !~ ",
 		" < ", " > ", " <= ", " >= ",
@@ -140,6 +141,13 @@ func isTDQQuery(q string) bool {
 			return true
 		}
 	}
+
+	// Check for spaceless field=value patterns (e.g., type=epic, status!=open)
+	spacelessPattern := regexp.MustCompile(`\w+([=!<>~]=?|!~)\w`)
+	if spacelessPattern.MatchString(q) {
+		return true
+	}
+
 	return false
 }
 

@@ -499,3 +499,255 @@ When adding new commands, follow these conventions:
 - **Single command**: Add to existing file if related (e.g., new list shortcut goes in `list.go`)
 - **Command group**: Create new file (e.g., `ws.go` for work session commands)
 - **Naming**: Use command name as file name (e.g., `start.go`, `review.go`)
+
+---
+
+# Monitor TUI Shortcuts
+
+This section covers implementing keyboard shortcuts in the `td` monitor TUI (bubbletea-based).
+
+## Architecture Overview
+
+Key files for monitor shortcuts:
+
+| Location | Purpose |
+|----------|---------|
+| `pkg/monitor/keymap/registry.go` | Command constants and registry |
+| `pkg/monitor/keymap/bindings.go` | Key-to-command mappings by context |
+| `pkg/monitor/keymap/help.go` | Help text and descriptions |
+| `pkg/monitor/keymap/export.go` | Command metadata for UI |
+| `pkg/monitor/model.go` | Command handlers |
+
+## Context System
+
+Shortcuts are context-aware. Each binding specifies which context it applies to:
+
+| Context | When Active |
+|---------|-------------|
+| `ContextGlobal` | Always (unless overridden) |
+| `ContextMain` | Main list view, no modal open |
+| `ContextModal` | Issue detail modal open |
+| `ContextStats` | Statistics modal open |
+| `ContextSearch` | Search input focused |
+| `ContextConfirm` | Confirmation dialog shown |
+| `ContextEpicTasks` | Epic modal with task list focused |
+| `ContextParentEpicFocused` | Parent epic row focused in modal |
+| `ContextHandoffs` | Handoffs modal open |
+| `ContextForm` | Form modal (create/edit) open |
+
+## Implementing a New Shortcut
+
+### Step 1: Add Command Constant
+
+In `pkg/monitor/keymap/registry.go`:
+
+```go
+const (
+    // ... existing commands ...
+
+    // Clipboard
+    CmdCopyToClipboard   Command = "copy-to-clipboard"
+    CmdCopyIDToClipboard Command = "copy-id-to-clipboard"  // NEW
+)
+```
+
+### Step 2: Add Key Bindings
+
+In `pkg/monitor/keymap/bindings.go`, add bindings for each context:
+
+```go
+// In MAIN PANEL BINDINGS section:
+{Key: "y", Command: CmdCopyToClipboard, Context: ContextMain, Description: "Copy to clipboard"},
+{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextMain, Description: "Copy issue ID"},
+
+// In MODAL BINDINGS section:
+{Key: "y", Command: CmdCopyToClipboard, Context: ContextModal, Description: "Copy to clipboard"},
+{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextModal, Description: "Copy issue ID"},
+```
+
+### Step 3: Add Handler Method
+
+In `pkg/monitor/model.go`, add the handler method:
+
+```go
+// copyIssueIDToClipboard copies just the issue ID to clipboard.
+func (m Model) copyIssueIDToClipboard() (tea.Model, tea.Cmd) {
+    var issueID string
+
+    // Try modal first, then fall back to list selection
+    if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+        issueID = modal.Issue.ID
+    } else {
+        issueID = m.SelectedIssueID(m.ActivePanel)
+    }
+
+    if issueID == "" {
+        m.StatusMessage = "No issue selected"
+        return m, m.clearStatusAfterDelay()
+    }
+
+    if err := copyToClipboard(issueID); err != nil {
+        m.StatusMessage = "Copy failed: " + err.Error()
+    } else {
+        m.StatusMessage = "Copied ID: " + issueID
+    }
+
+    return m, m.clearStatusAfterDelay()
+}
+```
+
+### Step 4: Wire Up Command Handling
+
+In `pkg/monitor/model.go`, add cases to the appropriate handlers:
+
+```go
+// In handleMainCommand() for list view:
+case keymap.CmdCopyIDToClipboard:
+    return m.copyIssueIDToClipboard()
+
+// In handleModalCommand() for modal view:
+case keymap.CmdCopyIDToClipboard:
+    return m.copyIssueIDToClipboard()
+```
+
+### Step 5: Update Help Text
+
+In `pkg/monitor/keymap/help.go`:
+
+```go
+// In CommandDescription():
+case CmdCopyIDToClipboard:
+    return "Copy issue ID to clipboard"
+
+// In AllCommands() list:
+CmdCopyIDToClipboard,
+```
+
+In `pkg/monitor/keymap/export.go`:
+
+```go
+// In CommandMeta map:
+CmdCopyIDToClipboard: {"Copy ID", "Copy issue ID to clipboard", 3},
+```
+
+## Accessing Selected Issues
+
+### From List View (Main Context)
+
+Use cursor position to find the selected issue:
+
+```go
+// Get issue ID from any panel
+issueID := m.SelectedIssueID(m.ActivePanel)
+
+// Get full issue object (if available)
+issue := m.getSelectedIssueForPanel(m.ActivePanel)
+```
+
+Panel-specific access:
+- `PanelCurrentWork`: `m.FocusedIssue` or `m.InProgress[]` (matched by `m.CurrentWorkRows`)
+- `PanelTaskList`: `m.TaskListRows[cursor].Issue`
+- `PanelActivity`: Only has `IssueID`, not full issue
+
+### From Modal View
+
+```go
+modal := m.CurrentModal()
+if modal != nil && modal.Issue != nil {
+    issue := modal.Issue
+    // ...
+}
+```
+
+## Status Messages
+
+Use temporary status messages for user feedback:
+
+```go
+m.StatusMessage = "Copied to clipboard"
+return m, m.clearStatusAfterDelay()
+```
+
+The `clearStatusAfterDelay()` returns a command that clears the status after 2 seconds.
+
+## Clipboard Operations
+
+Use the helpers in `pkg/monitor/clipboard.go`:
+
+```go
+// Copy text to clipboard
+if err := copyToClipboard(text); err != nil {
+    m.StatusMessage = "Copy failed: " + err.Error()
+}
+
+// Format issue as markdown
+markdown := formatIssueAsMarkdown(issue)
+
+// Format epic with children
+markdown := formatEpicAsMarkdown(epic, children)
+```
+
+## Testing Shortcuts
+
+In `pkg/monitor/model_test.go`:
+
+```go
+func TestCopyIssueIDToClipboard(t *testing.T) {
+    m := newTestModel()
+    // Setup model with issues...
+
+    // Simulate key press
+    updated, _ := m.handleKey(tea.KeyMsg{
+        Type:  tea.KeyRunes,
+        Runes: []rune{'Y'},
+    })
+
+    m2 := updated.(Model)
+    if m2.StatusMessage != "Copied ID: td-abc123" {
+        t.Errorf("expected status message, got %q", m2.StatusMessage)
+    }
+}
+```
+
+## Common Pitfalls
+
+### Not Handling All Contexts
+
+If a shortcut should work in multiple contexts, add bindings for each:
+
+```go
+// Wrong: Only works in modal
+{Key: "y", Command: CmdCopy, Context: ContextModal, ...}
+
+// Right: Works in both list and modal
+{Key: "y", Command: CmdCopy, Context: ContextMain, ...},
+{Key: "y", Command: CmdCopy, Context: ContextModal, ...},
+```
+
+### Forgetting to Clear Status
+
+Always clear status messages:
+
+```go
+// Wrong: Status stays forever
+m.StatusMessage = "Done"
+return m, nil
+
+// Right: Status clears after delay
+m.StatusMessage = "Done"
+return m, m.clearStatusAfterDelay()
+```
+
+### Not Checking for nil Issue
+
+Always check if an issue exists before accessing it:
+
+```go
+// Wrong: May panic
+issueID := m.TaskListRows[cursor].Issue.ID
+
+// Right: Check bounds first
+if cursor < len(m.TaskListRows) {
+    issueID = m.TaskListRows[cursor].Issue.ID
+}
+```

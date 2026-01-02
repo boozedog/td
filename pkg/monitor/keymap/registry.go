@@ -85,7 +85,8 @@ const (
 	CmdOpenHandoffs Command = "open-handoffs"
 
 	// Clipboard
-	CmdCopyToClipboard Command = "copy-to-clipboard"
+	CmdCopyToClipboard   Command = "copy-to-clipboard"
+	CmdCopyIDToClipboard Command = "copy-id-to-clipboard"
 
 	// Form commands
 	CmdNewIssue         Command = "new-issue"

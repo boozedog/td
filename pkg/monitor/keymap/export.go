@@ -56,7 +56,8 @@ var commandMetadata = map[Command]struct {
 	// Lower priority - palette only (P3+)
 	CmdToggleHelp:      {"Help", "Toggle help overlay", 3},
 	CmdQuit:            {"Quit", "Quit application", 3},
-	CmdCopyToClipboard: {"Copy", "Copy to clipboard", 3},
+	CmdCopyToClipboard:   {"Copy", "Copy to clipboard", 3},
+	CmdCopyIDToClipboard: {"CopyID", "Copy issue ID", 3},
 
 	// Navigation - usually palette only (P4)
 	CmdNextPanel:  {"Next", "Next panel", 4},

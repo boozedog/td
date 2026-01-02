@@ -317,6 +317,8 @@ func CommandHelp(cmd Command) string {
 		return "Open parent epic from story/task"
 	case CmdCopyToClipboard:
 		return "Copy issue as markdown to clipboard"
+	case CmdCopyIDToClipboard:
+		return "Copy issue ID to clipboard"
 	default:
 		return string(cmd)
 	}
@@ -384,7 +386,7 @@ func AllCommands() []Command {
 		CmdOpenDetails, CmdOpenStats, CmdOpenHandoffs, CmdSearch, CmdToggleClosed, CmdCycleSortMode,
 		CmdMarkForReview, CmdApprove, CmdDelete, CmdConfirm, CmdCancel,
 		CmdSearchConfirm, CmdSearchCancel, CmdSearchClear, CmdSearchBackspace, CmdSearchInput,
-		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic, CmdCopyToClipboard,
+		CmdFocusTaskSection, CmdOpenEpicTask, CmdOpenParentEpic, CmdCopyToClipboard, CmdCopyIDToClipboard,
 	}
 
 	sort.Slice(cmds, func(i, j int) bool {

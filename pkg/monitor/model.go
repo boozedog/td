@@ -1135,6 +1135,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdCopyToClipboard:
 		return m.copyCurrentIssueToClipboard()
 
+	case keymap.CmdCopyIDToClipboard:
+		return m.copyIssueIDToClipboard()
+
 	// Form commands
 	case keymap.CmdNewIssue:
 		return m.openNewIssueForm()
@@ -2090,24 +2093,73 @@ func (m Model) closeIssue() (tea.Model, tea.Cmd) {
 	return m, m.fetchData()
 }
 
-// copyCurrentIssueToClipboard copies the current modal issue to clipboard as markdown
+// copyCurrentIssueToClipboard copies the current issue to clipboard as markdown
+// Works from modal view or list views (PanelCurrentWork, PanelTaskList)
 func (m Model) copyCurrentIssueToClipboard() (tea.Model, tea.Cmd) {
-	modal := m.CurrentModal()
-	if modal == nil || modal.Issue == nil {
-		return m, nil
+	var issue *models.Issue
+	var epicTasks []models.Issue
+
+	// Check if modal is open first - use that issue
+	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+		issue = modal.Issue
+		epicTasks = modal.EpicTasks
+	} else {
+		// Otherwise get the issue from the selected row in the active panel
+		issueID := m.SelectedIssueID(m.ActivePanel)
+		if issueID == "" {
+			return m, nil
+		}
+		var err error
+		issue, err = m.DB.GetIssue(issueID)
+		if err != nil || issue == nil {
+			return m, nil
+		}
+		// For epics in list view, fetch tasks
+		if issue.Type == models.TypeEpic {
+			epicTasks, _ = m.DB.ListIssues(db.ListIssuesOptions{EpicID: issue.ID})
+		}
 	}
 
 	var markdown string
-	if modal.Issue.Type == models.TypeEpic {
-		markdown = formatEpicAsMarkdown(modal.Issue, modal.EpicTasks)
+	if issue.Type == models.TypeEpic {
+		markdown = formatEpicAsMarkdown(issue, epicTasks)
 	} else {
-		markdown = formatIssueAsMarkdown(modal.Issue)
+		markdown = formatIssueAsMarkdown(issue)
 	}
 
 	if err := copyToClipboard(markdown); err != nil {
 		m.StatusMessage = "Copy failed: " + err.Error()
 	} else {
 		m.StatusMessage = "Copied to clipboard"
+	}
+
+	// Clear status after 2 seconds
+	return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+		return ClearStatusMsg{}
+	})
+}
+
+// copyIssueIDToClipboard copies just the issue ID to clipboard
+// Works from modal view or list views
+func (m Model) copyIssueIDToClipboard() (tea.Model, tea.Cmd) {
+	var issueID string
+
+	// Check if modal is open first - use that issue
+	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+		issueID = modal.Issue.ID
+	} else {
+		// Otherwise get the issue ID from the selected row in the active panel
+		issueID = m.SelectedIssueID(m.ActivePanel)
+	}
+
+	if issueID == "" {
+		return m, nil
+	}
+
+	if err := copyToClipboard(issueID); err != nil {
+		m.StatusMessage = "Copy failed: " + err.Error()
+	} else {
+		m.StatusMessage = "Copied ID: " + issueID
 	}
 
 	// Clear status after 2 seconds

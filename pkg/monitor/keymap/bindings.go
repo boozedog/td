@@ -50,6 +50,8 @@ func DefaultBindings() []Binding {
 		{Key: "C", Command: CmdCloseIssue, Context: ContextMain, Description: "Close issue"},
 		{Key: "n", Command: CmdNewIssue, Context: ContextMain, Description: "New issue"},
 		{Key: "e", Command: CmdEditIssue, Context: ContextMain, Description: "Edit issue"},
+		{Key: "y", Command: CmdCopyToClipboard, Context: ContextMain, Description: "Copy issue as markdown"},
+		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextMain, Description: "Copy issue ID"},
 
 		// ============================================================
 		// MODAL BINDINGS (Issue Details)
@@ -88,6 +90,7 @@ func DefaultBindings() []Binding {
 
 		// Copy to clipboard
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextModal, Description: "Copy to clipboard"},
+		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextModal, Description: "Copy issue ID"},
 
 		// Issue CRUD from modal
 		{Key: "n", Command: CmdNewIssue, Context: ContextModal, Description: "New issue"},
@@ -154,6 +157,7 @@ func DefaultBindings() []Binding {
 		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextEpicTasks, Description: "Exit task list"},
 		{Key: "esc", Command: CmdClose, Context: ContextEpicTasks, Description: "Close modal"},
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextEpicTasks, Description: "Copy to clipboard"},
+		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextEpicTasks, Description: "Copy issue ID"},
 
 		// Modal context: add tab to toggle task section focus
 		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextModal, Description: "Focus task list"},
@@ -169,6 +173,7 @@ func DefaultBindings() []Binding {
 		{Key: "k", Command: CmdCursorUp, Context: ContextParentEpicFocused, Description: "Stay on epic"},
 		{Key: "up", Command: CmdCursorUp, Context: ContextParentEpicFocused, Description: "Stay on epic"},
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextParentEpicFocused, Description: "Copy to clipboard"},
+		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextParentEpicFocused, Description: "Copy issue ID"},
 
 		// ============================================================
 		// HANDOFFS MODAL BINDINGS
