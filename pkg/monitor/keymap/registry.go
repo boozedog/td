@@ -97,7 +97,8 @@ const (
 	CmdFormOpenEditor   Command = "form-open-editor"
 
 	// Issue actions
-	CmdCloseIssue Command = "close-issue"
+	CmdCloseIssue  Command = "close-issue"
+	CmdReopenIssue Command = "reopen-issue"
 
 	// Filters
 	CmdCycleTypeFilter Command = "cycle-type-filter"

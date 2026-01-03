@@ -49,6 +49,7 @@ func DefaultBindings() []Binding {
 		{Key: "a", Command: CmdApprove, Context: ContextMain, Description: "Approve issue"},
 		{Key: "x", Command: CmdDelete, Context: ContextMain, Description: "Delete issue"},
 		{Key: "C", Command: CmdCloseIssue, Context: ContextMain, Description: "Close issue"},
+		{Key: "O", Command: CmdReopenIssue, Context: ContextMain, Description: "Reopen issue"},
 		{Key: "n", Command: CmdNewIssue, Context: ContextMain, Description: "New issue"},
 		{Key: "e", Command: CmdEditIssue, Context: ContextMain, Description: "Edit issue"},
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextMain, Description: "Copy issue as markdown"},
@@ -98,6 +99,7 @@ func DefaultBindings() []Binding {
 		{Key: "e", Command: CmdEditIssue, Context: ContextModal, Description: "Edit issue"},
 		{Key: "x", Command: CmdDelete, Context: ContextModal, Description: "Delete issue"},
 		{Key: "C", Command: CmdCloseIssue, Context: ContextModal, Description: "Close issue"},
+		{Key: "O", Command: CmdReopenIssue, Context: ContextModal, Description: "Reopen issue"},
 
 		// ============================================================
 		// STATS MODAL BINDINGS
