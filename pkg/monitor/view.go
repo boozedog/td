@@ -205,7 +205,7 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 		if rowIdx >= offset && linesWritten < maxLines {
 			line := titleStyle.Render("FOCUSED: ") + m.formatIssueCompact(m.FocusedIssue)
 			if isActive && cursor == rowIdx {
-				line = selectedRowStyle.Render("> " + line)
+				line = highlightRow(line, m.Width-4)
 			}
 			content.WriteString(line)
 			content.WriteString("\n")
@@ -234,7 +234,7 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 			if rowIdx >= offset && linesWritten < maxLines {
 				line := "  " + m.formatIssueCompact(&issue)
 				if isActive && cursor == rowIdx {
-					line = selectedRowStyle.Render("> " + m.formatIssueCompact(&issue))
+					line = highlightRow(line, m.Width-4)
 				}
 				content.WriteString(line)
 				content.WriteString("\n")
@@ -305,7 +305,7 @@ func (m Model) renderActivityPanel(height int) string {
 		item := m.Activity[i]
 		line := m.formatActivityItem(item)
 		if isActive && cursor == i {
-			line = selectedRowStyle.Render("> " + line)
+			line = highlightRow(line, m.Width-4)
 		}
 		content.WriteString(line)
 		content.WriteString("\n")
@@ -424,7 +424,7 @@ func (m Model) renderTaskListPanel(height int) string {
 		line := fmt.Sprintf("  %s %s", tag, issueStr)
 
 		if isActive && cursor == i {
-			line = selectedRowStyle.Render("> " + tag + " " + issueStr)
+			line = highlightRow(line, m.Width-4)
 		}
 
 		content.WriteString(line)
@@ -968,8 +968,7 @@ func (m Model) renderHandoffsModal() string {
 		line := fmt.Sprintf("  %s %s %s %s", timestamp, session, issueID, summary)
 
 		if i == m.HandoffsCursor {
-			// Highlight selected row
-			line = selectedRowStyle.Render(fmt.Sprintf("> %s %s %s %s", timestamp, session, issueID, summary))
+			line = highlightRow(line, contentWidth)
 		}
 
 		lines = append(lines, truncateString(line, contentWidth))

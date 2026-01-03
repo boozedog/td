@@ -1,6 +1,9 @@
 package monitor
 
 import (
+	"regexp"
+	"strings"
+
 	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/td/internal/models"
 )
@@ -76,6 +79,10 @@ var (
 	selectedRowStyle = lipgloss.NewStyle().
 				Background(lipgloss.Color("237")).
 				Foreground(lipgloss.Color("255"))
+
+	// Highlight row style - background only, preserves text colors
+	highlightRowStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("237"))
 
 	// Stats modal styles
 	statsBarFilled  = "█"
@@ -194,4 +201,26 @@ func formatActivityBadge(actType string) string {
 	default:
 		return subtleStyle.Render("[???]")
 	}
+}
+
+// ansiPattern matches ANSI escape sequences
+var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// highlightRow applies selection highlight to entire row width, preserving text colors
+func highlightRow(line string, width int) string {
+	bgCode := "\x1b[48;5;237m" // Background color 237
+
+	// Inject background after every ANSI escape sequence
+	line = ansiPattern.ReplaceAllString(line, "${0}"+bgCode)
+
+	// Prepend background at start
+	line = bgCode + line
+
+	// Pad to width
+	lineWidth := lipgloss.Width(line)
+	if lineWidth < width {
+		line = line + strings.Repeat(" ", width-lineWidth)
+	}
+
+	return line + "\x1b[0m" // Reset at end
 }
