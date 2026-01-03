@@ -54,8 +54,8 @@ func (m Model) HitTestRow(panel Panel, y int) int {
 		return -1
 	}
 
-	// Content starts after top border (1 line) and title (1 line)
-	contentY := bounds.Y + 2
+	// Content starts after top border (1 line), title (1 line), and title underline/gap (1 line)
+	contentY := bounds.Y + 3
 	if y < contentY {
 		return -1
 	}
@@ -130,6 +130,7 @@ func (m Model) hitTestTaskListRow(relY int) int {
 }
 
 // hitTestCurrentWorkRow maps a y position to a CurrentWorkRows index
+// Accounts for blank line + "IN PROGRESS:" header between focused and in-progress sections
 func (m Model) hitTestCurrentWorkRow(relY int) int {
 	if len(m.CurrentWorkRows) == 0 {
 		return -1
@@ -146,11 +147,59 @@ func (m Model) hitTestCurrentWorkRow(relY int) int {
 		linePos = 1
 	}
 
-	// Simple 1:1 mapping for current work (no headers)
-	rowIdx := relY - linePos + offset
-	if rowIdx >= 0 && rowIdx < len(m.CurrentWorkRows) {
-		return rowIdx
+	// Count in-progress issues (excluding focused if duplicate)
+	inProgressCount := len(m.InProgress)
+	if m.FocusedIssue != nil {
+		for _, issue := range m.InProgress {
+			if issue.ID == m.FocusedIssue.ID {
+				inProgressCount--
+				break
+			}
+		}
 	}
+
+	// Track position through the panel layout
+	rowIdx := 0
+
+	// Focused issue row (if present)
+	if m.FocusedIssue != nil {
+		if rowIdx >= offset {
+			if relY == linePos {
+				return rowIdx
+			}
+			linePos++
+		}
+		rowIdx++
+	}
+
+	// "IN PROGRESS:" section header (blank line + header = 2 lines)
+	if inProgressCount > 0 {
+		// Only show header if we're past offset or at start
+		if rowIdx >= offset || (m.FocusedIssue != nil && offset == 0) {
+			// Blank line
+			if relY == linePos {
+				return -1 // clicked on blank line
+			}
+			linePos++
+			// Header line
+			if relY == linePos {
+				return -1 // clicked on header
+			}
+			linePos++
+		}
+
+		// In-progress issue rows
+		for i := 0; i < inProgressCount; i++ {
+			if rowIdx >= offset {
+				if relY == linePos {
+					return rowIdx
+				}
+				linePos++
+			}
+			rowIdx++
+		}
+	}
+
 	return -1
 }
 
