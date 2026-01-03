@@ -1524,3 +1524,219 @@ func TestSortModeToSortClause(t *testing.T) {
 		})
 	}
 }
+
+// =============================================================================
+// Pane Resize Tests
+// =============================================================================
+
+// newResizeTestModel creates a model configured for pane resize testing
+func newResizeTestModel(width, height int) Model {
+	m := Model{
+		Width:            width,
+		Height:           height,
+		PaneHeights:      [3]float64{0.333, 0.333, 0.334},
+		PanelBounds:      make(map[Panel]Rect),
+		DividerBounds:    [2]Rect{},
+		DraggingDivider:  -1,
+		DividerHover:     -1,
+		Cursor:           make(map[Panel]int),
+		ScrollOffset:     make(map[Panel]int),
+		SelectedID:       make(map[Panel]string),
+		Keymap:           newTestKeymap(),
+	}
+	m.updatePanelBounds()
+	return m
+}
+
+func TestDividerHitTest(t *testing.T) {
+	m := newResizeTestModel(80, 30)
+
+	tests := []struct {
+		name     string
+		x, y     int
+		expected int
+	}{
+		// Divider 0: between pane 0 and 1 (at Y ~= height * 0.333)
+		{"divider 0 center", 40, m.DividerBounds[0].Y + 1, 0},
+		{"divider 0 left edge", 0, m.DividerBounds[0].Y, 0},
+		{"divider 0 right edge", 79, m.DividerBounds[0].Y, 0},
+
+		// Divider 1: between pane 1 and 2
+		{"divider 1 center", 40, m.DividerBounds[1].Y + 1, 1},
+		{"divider 1 left edge", 0, m.DividerBounds[1].Y, 1},
+
+		// Non-divider areas
+		{"middle of pane 0", 40, 3, -1},
+		{"middle of pane 1", 40, m.PanelBounds[PanelTaskList].Y + 3, -1},
+		{"bottom of pane 2", 40, m.Height - 5, -1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.HitTestDivider(tt.x, tt.y)
+			if got != tt.expected {
+				t.Errorf("HitTestDivider(%d, %d) = %d, want %d", tt.x, tt.y, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestDragDividerUpdatesHeights(t *testing.T) {
+	m := newResizeTestModel(80, 100) // 100px height for easy math
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+
+	// Start drag on divider 0 at the actual divider position
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+
+	if m.DraggingDivider != 0 {
+		t.Fatalf("DraggingDivider = %d, want 0", m.DraggingDivider)
+	}
+
+	// Drag down 10 pixels (~10% of available height)
+	result, _ = m.updateDividerDrag(startY + 10)
+	m = result.(Model)
+
+	// Pane 0 should grow, pane 1 should shrink, pane 2 unchanged
+	if m.PaneHeights[0] <= 0.333 {
+		t.Errorf("Pane 0 should have grown: got %f", m.PaneHeights[0])
+	}
+	if m.PaneHeights[1] >= 0.333 {
+		t.Errorf("Pane 1 should have shrunk: got %f", m.PaneHeights[1])
+	}
+
+	// Sum should still be 1.0
+	sum := m.PaneHeights[0] + m.PaneHeights[1] + m.PaneHeights[2]
+	if sum < 0.999 || sum > 1.001 {
+		t.Errorf("Heights don't sum to 1.0: got %f", sum)
+	}
+}
+
+func TestDragEnforcesMinimumHeights(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	m.PaneHeights = [3]float64{0.333, 0.333, 0.334}
+	m.updatePanelBounds()
+
+	startY := m.DividerBounds[0].Y + 1
+	result, _ := m.startDividerDrag(0, startY)
+	m = result.(Model)
+
+	originalHeights := m.PaneHeights
+
+	// Try to drag way down (would make pane 1 < 10%)
+	result, _ = m.updateDividerDrag(startY + 60) // Large delta - would violate min
+	m = result.(Model)
+
+	// All panes should still be >= 10%
+	const minHeight = 0.1
+	for i, h := range m.PaneHeights {
+		if h < minHeight-0.001 { // Small tolerance for float comparison
+			t.Errorf("Pane %d height %f < minimum %f", i, h, minHeight)
+		}
+	}
+
+	// If constraint couldn't be satisfied, heights should remain unchanged
+	if m.PaneHeights[1] < minHeight {
+		if m.PaneHeights != originalHeights {
+			t.Error("Heights changed despite violating constraints")
+		}
+	}
+}
+
+func TestPaneHeightsPreservedOnWindowResize(t *testing.T) {
+	m := newResizeTestModel(80, 100)
+	customHeights := [3]float64{0.5, 0.3, 0.2}
+	m.PaneHeights = customHeights
+	m.updatePanelBounds()
+
+	// Simulate window resize
+	m.Width = 120
+	m.Height = 60
+	m.updatePanelBounds()
+
+	// Ratios should be unchanged
+	for i := range customHeights {
+		if m.PaneHeights[i] != customHeights[i] {
+			t.Errorf("Pane %d height changed after resize: got %f, want %f",
+				i, m.PaneHeights[i], customHeights[i])
+		}
+	}
+}
+
+func TestVisibleHeightUsesActualPanelHeight(t *testing.T) {
+	tests := []struct {
+		name        string
+		height      int
+		paneHeights [3]float64
+		searchMode  bool
+		embedded    bool
+	}{
+		{
+			name:        "default heights",
+			height:      100,
+			paneHeights: [3]float64{0.333, 0.333, 0.334},
+			searchMode:  false,
+			embedded:    false,
+		},
+		{
+			name:        "custom heights 50/30/20",
+			height:      100,
+			paneHeights: [3]float64{0.5, 0.3, 0.2},
+			searchMode:  false,
+			embedded:    false,
+		},
+		{
+			name:        "with search bar",
+			height:      100,
+			paneHeights: [3]float64{0.333, 0.333, 0.334},
+			searchMode:  true,
+			embedded:    false,
+		},
+		{
+			name:        "embedded mode (no footer)",
+			height:      100,
+			paneHeights: [3]float64{0.333, 0.333, 0.334},
+			searchMode:  false,
+			embedded:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newResizeTestModel(80, tt.height)
+			m.PaneHeights = tt.paneHeights
+			m.SearchMode = tt.searchMode
+			m.Embedded = tt.embedded
+			m.updatePanelBounds()
+
+			// Calculate expected available height
+			searchBarHeight := 0
+			if tt.searchMode {
+				searchBarHeight = 2
+			}
+			footerHeight := 3
+			if tt.embedded {
+				footerHeight = 0
+			}
+			availableHeight := tt.height - footerHeight - searchBarHeight
+
+			// Test each panel
+			for panel := Panel(0); panel < 3; panel++ {
+				expectedPanelHeight := int(float64(availableHeight) * tt.paneHeights[panel])
+				// visibleHeight = panelHeight - 5 (title + border + indicators)
+				expectedVisible := expectedPanelHeight - 5
+
+				got := m.visibleHeightForPanel(panel)
+
+				// Allow small variance due to rounding
+				diff := got - expectedVisible
+				if diff < -1 || diff > 1 {
+					t.Errorf("visibleHeightForPanel(%d) = %d, want ~%d",
+						panel, got, expectedVisible)
+				}
+			}
+		})
+	}
+}

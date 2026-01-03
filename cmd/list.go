@@ -33,13 +33,14 @@ var listCmd = &cobra.Command{
 		showAll, _ := cmd.Flags().GetBool("all")
 
 		// Parse status filter (supports both --status open --status closed and --status open,closed)
+		// Also accepts "review" as alias for "in_review"
 		if statusStr, _ := cmd.Flags().GetStringArray("status"); len(statusStr) > 0 {
 			for _, s := range statusStr {
 				// Split on comma to support --status in_progress,in_review
 				for _, part := range strings.Split(s, ",") {
 					part = strings.TrimSpace(part)
 					if part != "" {
-						status := models.Status(part)
+						status := models.NormalizeStatus(part)
 						if !models.IsValidStatus(status) {
 							output.Error("invalid status: %s (valid: open, in_progress, blocked, in_review, closed)", part)
 							return fmt.Errorf("invalid status: %s", part)
@@ -58,10 +59,10 @@ var listCmd = &cobra.Command{
 			}
 		}
 
-		// Parse type filter
+		// Parse type filter (accepts "story" as alias for "feature")
 		if typeStr, _ := cmd.Flags().GetStringArray("type"); len(typeStr) > 0 {
 			for _, t := range typeStr {
-				typ := models.Type(t)
+				typ := models.NormalizeType(t)
 				if !models.IsValidType(typ) {
 					output.Error("invalid type: %s (valid: bug, feature, task, epic, chore)", t)
 					return fmt.Errorf("invalid type: %s", t)
@@ -157,12 +158,15 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		// Output
-		if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
+		// Output format (supports --json, --long, --short, and --format)
+		format, _ := cmd.Flags().GetString("format")
+		jsonOutput, _ := cmd.Flags().GetBool("json")
+		if format == "json" || jsonOutput {
 			return output.JSON(issues)
 		}
 
-		if long, _ := cmd.Flags().GetBool("long"); long {
+		long, _ := cmd.Flags().GetBool("long")
+		if format == "long" || long {
 			for _, issue := range issues {
 				logs, _ := database.GetLogs(issue.ID, 5)
 				handoff, _ := database.GetLatestHandoff(issue.ID)
@@ -495,4 +499,6 @@ func init() {
 	listCmd.Flags().BoolP("all", "a", false, "Include closed issues (by default, closed issues are hidden)")
 
 	deletedCmd.Flags().Bool("json", false, "JSON output")
+
+	listCmd.Flags().String("format", "", "Output format (short, long, json)")
 }

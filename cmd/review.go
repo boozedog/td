@@ -477,8 +477,9 @@ Supports bulk operations:
 }
 
 var closeCmd = &cobra.Command{
-	Use:   "close [issue-id...]",
-	Short: "Close one or more issues without review",
+	Use:     "close [issue-id...]",
+	Aliases: []string{"done", "complete"},
+	Short:   "Close one or more issues without review",
 	Long: `Closes the issue(s) directly. Useful for trivial fixes, duplicates, or won't-fix scenarios.
 
 Examples:
@@ -539,8 +540,8 @@ Examples:
 				output.Warning("log action failed: %v", err)
 			}
 
-			// Log
-			reason, _ := cmd.Flags().GetString("reason")
+			// Log (supports --reason, --comment, --message)
+			reason := approvalReason(cmd)
 			logMsg := "Closed"
 			if reason != "" {
 				logMsg = "Closed: " + reason
@@ -593,4 +594,6 @@ func init() {
 	rejectCmd.Flags().String("reason", "", "Reason for rejection")
 	rejectCmd.Flags().Bool("json", false, "JSON output")
 	closeCmd.Flags().String("reason", "", "Reason for closing")
+	closeCmd.Flags().String("comment", "", "Reason for closing (alias for --reason)")
+	closeCmd.Flags().String("message", "", "Reason for closing (alias for --reason)")
 }

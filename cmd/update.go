@@ -14,6 +14,7 @@ import (
 
 var updateCmd = &cobra.Command{
 	Use:     "update [issue-id...]",
+	Aliases: []string{"edit"},
 	Short:   "Update one or more fields on existing issues",
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
@@ -67,7 +68,7 @@ var updateCmd = &cobra.Command{
 			}
 
 			if t, _ := cmd.Flags().GetString("type"); t != "" {
-				issue.Type = models.Type(t)
+				issue.Type = models.NormalizeType(t)
 				if !models.IsValidType(issue.Type) {
 					output.Error("invalid type: %s", t)
 					continue
@@ -75,7 +76,7 @@ var updateCmd = &cobra.Command{
 			}
 
 			if p, _ := cmd.Flags().GetString("priority"); p != "" {
-				issue.Priority = models.Priority(p)
+				issue.Priority = models.NormalizePriority(p)
 				if !models.IsValidPriority(issue.Priority) {
 					output.Error("invalid priority: %s", p)
 					continue

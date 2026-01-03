@@ -45,18 +45,18 @@ var createCmd = &cobra.Command{
 			Title: title,
 		}
 
-		// Type
+		// Type (supports "story" as alias for "feature")
 		if t, _ := cmd.Flags().GetString("type"); t != "" {
-			issue.Type = models.Type(t)
+			issue.Type = models.NormalizeType(t)
 			if !models.IsValidType(issue.Type) {
 				output.Error("invalid type: %s", t)
 				return fmt.Errorf("invalid type: %s", t)
 			}
 		}
 
-		// Priority
+		// Priority (supports numeric: "1" as alias for "P1")
 		if p, _ := cmd.Flags().GetString("priority"); p != "" {
-			issue.Priority = models.Priority(p)
+			issue.Priority = models.NormalizePriority(p)
 			if !models.IsValidPriority(issue.Priority) {
 				output.Error("invalid priority: %s", p)
 				return fmt.Errorf("invalid priority: %s", p)
@@ -112,8 +112,13 @@ var createCmd = &cobra.Command{
 		// Acceptance
 		issue.Acceptance, _ = cmd.Flags().GetString("acceptance")
 
-		// Parent
+		// Parent (supports --parent and --epic)
 		issue.ParentID, _ = cmd.Flags().GetString("parent")
+		if issue.ParentID == "" {
+			if epic, _ := cmd.Flags().GetString("epic"); epic != "" {
+				issue.ParentID = epic
+			}
+		}
 
 		// Minor (allows self-review)
 		issue.Minor, _ = cmd.Flags().GetBool("minor")
@@ -183,6 +188,7 @@ func init() {
 	createCmd.Flags().String("body", "", "Alias for --description")
 	createCmd.Flags().String("acceptance", "", "Acceptance criteria")
 	createCmd.Flags().String("parent", "", "Parent issue ID")
+	createCmd.Flags().String("epic", "", "Parent issue ID (alias for --parent)")
 	createCmd.Flags().String("depends-on", "", "Issues this depends on")
 	createCmd.Flags().String("blocks", "", "Issues this blocks")
 	createCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")

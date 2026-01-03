@@ -38,6 +38,30 @@ Examples:
 
 		issueID := args[0]
 
+		// If --tree flag, redirect to tree view
+		if showTree, _ := cmd.Flags().GetBool("tree"); showTree {
+			issue, err := database.GetIssue(issueID)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+
+			// Print root
+			fmt.Printf("%s %s: %s\n", issue.Type, issue.ID, issue.Title)
+
+			// Build and print children tree
+			children := buildTreeNodes(database, issueID, 0, 0)
+			treeOutput := output.RenderTree(output.TreeNode{Children: children}, output.TreeRenderOptions{
+				MaxDepth:   0,
+				ShowStatus: true,
+				ShowType:   true,
+			})
+			if treeOutput != "" {
+				fmt.Println(treeOutput)
+			}
+			return nil
+		}
+
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
 			if jsonOutput, _ := cmd.Flags().GetBool("json"); jsonOutput {
@@ -314,4 +338,5 @@ func init() {
 	showCmd.Flags().Bool("json", false, "Machine-readable JSON")
 	showCmd.Flags().StringP("format", "f", "", "Output format (json)")
 	showCmd.Flags().Bool("children", false, "Display child issues inline (alternative to 'td tree')")
+	showCmd.Flags().Bool("tree", false, "Display issue as tree with descendants (alias for 'td tree')")
 }

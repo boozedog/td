@@ -244,6 +244,47 @@ func IsValidPriority(p Priority) bool {
 	return false
 }
 
+// NormalizePriority converts alternate priority formats to canonical form
+// Accepts: "0", "1", "2", "3", "4" as aliases for "P0", "P1", "P2", "P3", "P4"
+func NormalizePriority(p string) Priority {
+	switch p {
+	case "0":
+		return PriorityP0
+	case "1":
+		return PriorityP1
+	case "2":
+		return PriorityP2
+	case "3":
+		return PriorityP3
+	case "4":
+		return PriorityP4
+	default:
+		return Priority(p)
+	}
+}
+
+// NormalizeType converts alternate type names to canonical form
+// Accepts: "story" as alias for "feature"
+func NormalizeType(t string) Type {
+	switch t {
+	case "story":
+		return TypeFeature
+	default:
+		return Type(t)
+	}
+}
+
+// NormalizeStatus converts alternate status names to canonical form
+// Accepts: "review" as alias for "in_review"
+func NormalizeStatus(s string) Status {
+	switch s {
+	case "review":
+		return StatusInReview
+	default:
+		return Status(s)
+	}
+}
+
 // ExtendedStats holds detailed statistics for dashboard/stats displays
 type ExtendedStats struct {
 	// Counts

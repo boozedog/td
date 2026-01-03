@@ -22,6 +22,18 @@ const (
 	wsIDPrefix = "ws-"
 )
 
+// NormalizeIssueID ensures an issue ID has the td- prefix
+// Accepts bare hex IDs like "abc123" and returns "td-abc123"
+func NormalizeIssueID(id string) string {
+	if id == "" {
+		return id
+	}
+	if !strings.HasPrefix(id, idPrefix) {
+		return idPrefix + id
+	}
+	return id
+}
+
 // DB wraps the database connection
 type DB struct {
 	conn    *sql.DB
@@ -332,7 +344,9 @@ func (db *DB) CreateIssue(issue *models.Issue) error {
 }
 
 // GetIssue retrieves an issue by ID
+// Accepts bare IDs without the td- prefix (e.g., "abc123" becomes "td-abc123")
 func (db *DB) GetIssue(id string) (*models.Issue, error) {
+	id = NormalizeIssueID(id)
 	var issue models.Issue
 	var labels string
 	var closedAt, deletedAt sql.NullTime
