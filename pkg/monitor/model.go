@@ -2879,15 +2879,19 @@ func (m Model) handleMouseWheel(x, y, delta int) (tea.Model, tea.Cmd) {
 		newOffset = 0
 	}
 
-	// Calculate max offset - for TaskList, account for category headers
-	maxOffset := m.maxScrollOffset(panel)
+	// Calculate max offset to allow scrolling to show all content
+	// For TaskList, we need to account for category headers taking extra lines
+	maxOffset := count - 1 // Allow scrolling until last item is at top
 	if newOffset > maxOffset {
 		newOffset = maxOffset
 	}
+
 	m.ScrollOffset[panel] = newOffset
 
-	// Keep cursor visible within the scrolled view
-	m.ensureCursorVisible(panel)
+	// NOTE: We intentionally do NOT call ensureCursorVisible here.
+	// Mouse scrolling should scroll the view independently of the cursor.
+	// The cursor can temporarily be off-screen; the user can use keyboard
+	// or click to re-select a visible item.
 
 	return m, nil
 }

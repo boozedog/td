@@ -171,19 +171,43 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 	offset := m.ScrollOffset[PanelCurrentWork]
 	maxLines := height - 3 // Account for title + border
 
-	// Clamp offset
-	if offset > totalRows-maxLines && totalRows > maxLines {
-		offset = totalRows - maxLines
+	// Determine scroll indicators needed BEFORE clamping
+	needsScroll := totalRows > maxLines
+	showUpIndicator := needsScroll && offset > 0
+
+	// Calculate effective maxLines with indicators
+	effectiveMaxLines := maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	// Reserve space for down indicator if content exceeds visible area
+	if needsScroll && offset+effectiveMaxLines < totalRows {
+		effectiveMaxLines--
+	}
+
+	// Clamp offset using effective maxLines (accounts for indicators)
+	if offset > totalRows-effectiveMaxLines && totalRows > effectiveMaxLines {
+		offset = totalRows - effectiveMaxLines
 	}
 	if offset < 0 {
 		offset = 0
 	}
 
+	// Recalculate indicators after clamping
+	showUpIndicator = needsScroll && offset > 0
+	effectiveMaxLines = maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	hasMoreBelow := needsScroll && offset+effectiveMaxLines < totalRows
+	if hasMoreBelow {
+		effectiveMaxLines--
+	}
+
 	// Build title with position if scrollable
 	panelTitle := "CURRENT WORK"
-	needsScroll := totalRows > maxLines
 	if needsScroll {
-		endPos := offset + maxLines
+		endPos := offset + effectiveMaxLines
 		if endPos > totalRows {
 			endPos = totalRows
 		}
@@ -191,10 +215,9 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 	}
 
 	// Show up indicator if scrolled down
-	if needsScroll && offset > 0 {
+	if showUpIndicator {
 		content.WriteString(subtleStyle.Render("  ▲ more above"))
 		content.WriteString("\n")
-		maxLines-- // Reserve line for indicator
 	}
 
 	rowIdx := 0
@@ -202,7 +225,7 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 
 	// Focused issue (first row if present)
 	if m.FocusedIssue != nil {
-		if rowIdx >= offset && linesWritten < maxLines {
+		if rowIdx >= offset && linesWritten < effectiveMaxLines {
 			line := titleStyle.Render("FOCUSED: ") + m.formatIssueCompact(m.FocusedIssue)
 			if isActive && cursor == rowIdx {
 				line = highlightRow(line, m.Width-4)
@@ -215,10 +238,10 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 	}
 
 	// In-progress issues (skip focused if it's duplicated)
-	if len(m.InProgress) > 0 && linesWritten < maxLines {
+	if len(m.InProgress) > 0 && linesWritten < effectiveMaxLines {
 		// Only show header if in visible range
 		if rowIdx >= offset || (m.FocusedIssue != nil && offset == 0) {
-			if linesWritten < maxLines {
+			if linesWritten < effectiveMaxLines {
 				content.WriteString("\n")
 				content.WriteString(sectionHeader.Render("IN PROGRESS:"))
 				content.WriteString("\n")
@@ -231,7 +254,7 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 			if m.FocusedIssue != nil && issue.ID == m.FocusedIssue.ID {
 				continue
 			}
-			if rowIdx >= offset && linesWritten < maxLines {
+			if rowIdx >= offset && linesWritten < effectiveMaxLines {
 				line := "  " + m.formatIssueCompact(&issue)
 				if isActive && cursor == rowIdx {
 					line = highlightRow(line, m.Width-4)
@@ -245,7 +268,7 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 	}
 
 	// Show down indicator if more content below
-	if needsScroll && offset+maxLines < totalRows {
+	if hasMoreBelow {
 		content.WriteString(subtleStyle.Render("  ▼ more below"))
 		content.WriteString("\n")
 	}
@@ -268,19 +291,43 @@ func (m Model) renderActivityPanel(height int) string {
 	offset := m.ScrollOffset[PanelActivity]
 	maxLines := height - 3 // Account for title + border
 
-	// Clamp offset
-	if offset > totalRows-maxLines && totalRows > maxLines {
-		offset = totalRows - maxLines
+	// Determine scroll indicators needed BEFORE clamping
+	needsScroll := totalRows > maxLines
+	showUpIndicator := needsScroll && offset > 0
+
+	// Calculate effective maxLines with indicators
+	effectiveMaxLines := maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	// Reserve space for down indicator if content exceeds visible area
+	if needsScroll && offset+effectiveMaxLines < totalRows {
+		effectiveMaxLines--
+	}
+
+	// Clamp offset using effective maxLines (accounts for indicators)
+	if offset > totalRows-effectiveMaxLines && totalRows > effectiveMaxLines {
+		offset = totalRows - effectiveMaxLines
 	}
 	if offset < 0 {
 		offset = 0
 	}
 
+	// Recalculate indicators after clamping
+	showUpIndicator = needsScroll && offset > 0
+	effectiveMaxLines = maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	hasMoreBelow := needsScroll && offset+effectiveMaxLines < totalRows
+	if hasMoreBelow {
+		effectiveMaxLines--
+	}
+
 	// Build title with position if scrollable
 	panelTitle := "ACTIVITY LOG"
-	needsScroll := totalRows > maxLines
 	if needsScroll {
-		endPos := offset + maxLines
+		endPos := offset + effectiveMaxLines
 		if endPos > totalRows {
 			endPos = totalRows
 		}
@@ -288,19 +335,12 @@ func (m Model) renderActivityPanel(height int) string {
 	}
 
 	// Show up indicator if scrolled down
-	if needsScroll && offset > 0 {
+	if showUpIndicator {
 		content.WriteString(subtleStyle.Render("  ▲ more above"))
 		content.WriteString("\n")
-		maxLines-- // Reserve line for indicator
 	}
 
-	// Reserve line for down indicator if needed
-	hasMoreBelow := needsScroll && offset+maxLines < totalRows
-	if hasMoreBelow {
-		maxLines--
-	}
-
-	visible := m.visibleItems(totalRows, offset, maxLines)
+	visible := m.visibleItems(totalRows, offset, effectiveMaxLines)
 	for i := offset; i < offset+visible && i < totalRows; i++ {
 		item := m.Activity[i]
 		line := m.formatActivityItem(item)
@@ -350,19 +390,43 @@ func (m Model) renderTaskListPanel(height int) string {
 	offset := m.ScrollOffset[PanelTaskList]
 	maxLines := height - 3 // Account for title + border
 
-	// Clamp offset
-	if offset > totalRows-maxLines && totalRows > maxLines {
-		offset = totalRows - maxLines
+	// Determine scroll indicators needed BEFORE clamping
+	needsScroll := totalRows > maxLines
+	showUpIndicator := needsScroll && offset > 0
+
+	// Calculate effective maxLines with indicators
+	effectiveMaxLines := maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	// Reserve space for down indicator if content exceeds visible area
+	if needsScroll && offset+effectiveMaxLines < totalRows {
+		effectiveMaxLines--
+	}
+
+	// Clamp offset using effective maxLines (accounts for indicators)
+	if offset > totalRows-effectiveMaxLines && totalRows > effectiveMaxLines {
+		offset = totalRows - effectiveMaxLines
 	}
 	if offset < 0 {
 		offset = 0
 	}
 
+	// Recalculate indicators after clamping
+	showUpIndicator = needsScroll && offset > 0
+	effectiveMaxLines = maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	hasMoreBelow := needsScroll && offset+effectiveMaxLines < totalRows
+	if hasMoreBelow {
+		effectiveMaxLines--
+	}
+
 	// Build title with position if scrollable
 	panelTitle := "TASK LIST" + sortIndicator
-	needsScroll := totalRows > maxLines
 	if needsScroll {
-		endPos := offset + maxLines
+		endPos := offset + effectiveMaxLines
 		if endPos > totalRows {
 			endPos = totalRows
 		}
@@ -372,16 +436,9 @@ func (m Model) renderTaskListPanel(height int) string {
 	}
 
 	// Show up indicator if scrolled down
-	if needsScroll && offset > 0 {
+	if showUpIndicator {
 		content.WriteString(subtleStyle.Render("  ▲ more above"))
 		content.WriteString("\n")
-		maxLines-- // Reserve line for indicator
-	}
-
-	// Reserve line for down indicator if needed
-	hasMoreBelow := needsScroll && offset+maxLines < totalRows
-	if hasMoreBelow {
-		maxLines--
 	}
 
 	// Track current category for section headers
@@ -389,7 +446,7 @@ func (m Model) renderTaskListPanel(height int) string {
 	linesWritten := 0
 
 	for i, row := range m.TaskListRows {
-		if linesWritten >= maxLines {
+		if linesWritten >= effectiveMaxLines {
 			break
 		}
 
@@ -401,10 +458,10 @@ func (m Model) renderTaskListPanel(height int) string {
 
 		// Add category header when category changes
 		if row.Category != currentCategory {
-			if linesWritten > 0 && linesWritten < maxLines {
+			if linesWritten > 0 && linesWritten < effectiveMaxLines {
 				content.WriteString("\n")
 				linesWritten++
-				if linesWritten >= maxLines {
+				if linesWritten >= effectiveMaxLines {
 					break
 				}
 			}
@@ -413,7 +470,7 @@ func (m Model) renderTaskListPanel(height int) string {
 			content.WriteString("\n")
 			linesWritten++
 			currentCategory = row.Category
-			if linesWritten >= maxLines {
+			if linesWritten >= effectiveMaxLines {
 				break
 			}
 		}
