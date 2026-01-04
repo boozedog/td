@@ -177,6 +177,35 @@ func DefaultBindings() []Binding {
 		{Key: "up", Command: CmdCursorUp, Context: ContextParentEpicFocused, Description: "Stay on epic"},
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextParentEpicFocused, Description: "Copy to clipboard"},
 		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextParentEpicFocused, Description: "Copy issue ID"},
+		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextParentEpicFocused, Description: "Next section"},
+
+		// ============================================================
+		// BLOCKED-BY FOCUSED BINDINGS
+		// Active when blocked-by section is focused in modal
+		// ============================================================
+		{Key: "j", Command: CmdCursorDown, Context: ContextBlockedByFocused, Description: "Move down"},
+		{Key: "down", Command: CmdCursorDown, Context: ContextBlockedByFocused, Description: "Move down"},
+		{Key: "k", Command: CmdCursorUp, Context: ContextBlockedByFocused, Description: "Move up"},
+		{Key: "up", Command: CmdCursorUp, Context: ContextBlockedByFocused, Description: "Move up"},
+		{Key: "enter", Command: CmdOpenBlockedByIssue, Context: ContextBlockedByFocused, Description: "Open issue"},
+		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextBlockedByFocused, Description: "Next section"},
+		{Key: "esc", Command: CmdClose, Context: ContextBlockedByFocused, Description: "Close modal"},
+		{Key: "y", Command: CmdCopyToClipboard, Context: ContextBlockedByFocused, Description: "Copy to clipboard"},
+		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextBlockedByFocused, Description: "Copy issue ID"},
+
+		// ============================================================
+		// BLOCKS FOCUSED BINDINGS
+		// Active when blocks section is focused in modal
+		// ============================================================
+		{Key: "j", Command: CmdCursorDown, Context: ContextBlocksFocused, Description: "Move down"},
+		{Key: "down", Command: CmdCursorDown, Context: ContextBlocksFocused, Description: "Move down"},
+		{Key: "k", Command: CmdCursorUp, Context: ContextBlocksFocused, Description: "Move up"},
+		{Key: "up", Command: CmdCursorUp, Context: ContextBlocksFocused, Description: "Move up"},
+		{Key: "enter", Command: CmdOpenBlocksIssue, Context: ContextBlocksFocused, Description: "Open issue"},
+		{Key: "tab", Command: CmdFocusTaskSection, Context: ContextBlocksFocused, Description: "Next section"},
+		{Key: "esc", Command: CmdClose, Context: ContextBlocksFocused, Description: "Close modal"},
+		{Key: "y", Command: CmdCopyToClipboard, Context: ContextBlocksFocused, Description: "Copy to clipboard"},
+		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextBlocksFocused, Description: "Copy issue ID"},
 
 		// ============================================================
 		// HANDOFFS MODAL BINDINGS

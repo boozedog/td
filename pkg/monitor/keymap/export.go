@@ -78,9 +78,11 @@ var commandMetadata = map[Command]struct {
 	CmdBack:            {"Back", "Go back", 5},
 	CmdNavigatePrev:    {"Prev", "Previous issue", 5},
 	CmdNavigateNext:    {"Next", "Next issue", 5},
-	CmdFocusTaskSection: {"Tasks", "Focus task section", 4},
-	CmdOpenEpicTask:    {"Open", "Open epic task", 4},
-	CmdOpenParentEpic:  {"Parent", "Open parent epic", 4},
+	CmdFocusTaskSection:   {"Tasks", "Focus task section", 4},
+	CmdOpenEpicTask:       {"Open", "Open epic task", 4},
+	CmdOpenParentEpic:     {"Parent", "Open parent epic", 4},
+	CmdOpenBlockedByIssue: {"Open", "Open blocker issue", 4},
+	CmdOpenBlocksIssue:    {"Open", "Open blocked issue", 4},
 
 	// Search mode - context specific (P4)
 	CmdSearchConfirm:   {"Apply", "Apply search", 4},

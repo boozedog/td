@@ -22,6 +22,8 @@ const (
 	ContextConfirm           Context = "confirm"
 	ContextEpicTasks         Context = "epic-tasks"          // When task list in epic modal is focused
 	ContextParentEpicFocused Context = "parent-epic-focused" // When parent epic row is focused
+	ContextBlockedByFocused  Context = "blocked-by-focused"  // When blocked-by section is focused
+	ContextBlocksFocused     Context = "blocks-focused"      // When blocks section is focused
 	ContextHandoffs          Context = "handoffs"            // When handoffs modal is open
 	ContextForm              Context = "form"                // When form modal is open
 )
@@ -80,6 +82,10 @@ const (
 
 	// Parent epic navigation
 	CmdOpenParentEpic Command = "open-parent-epic"
+
+	// Blocked-by/blocks navigation
+	CmdOpenBlockedByIssue Command = "open-blocked-by-issue"
+	CmdOpenBlocksIssue    Command = "open-blocks-issue"
 
 	// Handoffs modal
 	CmdOpenHandoffs Command = "open-handoffs"

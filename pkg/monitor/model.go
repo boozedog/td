@@ -444,6 +444,20 @@ type ModalEntry struct {
 	// Parent epic (when issue has ParentID pointing to an epic)
 	ParentEpic        *models.Issue
 	ParentEpicFocused bool
+
+	// Blocked-by section (dependencies blocking this issue)
+	BlockedBySectionFocused bool
+	BlockedByCursor         int
+
+	// Blocks section (issues blocked by this one)
+	BlocksSectionFocused bool
+	BlocksCursor         int
+
+	// Line tracking for mouse click support (set during render)
+	BlockedByStartLine int // Line index where blocked-by section starts
+	BlockedByEndLine   int // Line index where blocked-by section ends
+	BlocksStartLine    int // Line index where blocks section starts
+	BlocksEndLine      int // Line index where blocks section ends
 }
 
 // Model is the main Bubble Tea model for the monitor TUI
@@ -848,6 +862,14 @@ func (m Model) currentContext() keymap.Context {
 			if modal.TaskSectionFocused {
 				return keymap.ContextEpicTasks
 			}
+			// Check if blocked-by section is focused
+			if modal.BlockedBySectionFocused {
+				return keymap.ContextBlockedByFocused
+			}
+			// Check if blocks section is focused
+			if modal.BlocksSectionFocused {
+				return keymap.ContextBlocksFocused
+			}
 		}
 		return keymap.ContextModal
 	}
@@ -993,6 +1015,19 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 					}
 					// If can't scroll, stay at last task
 				}
+			} else if modal.BlockedBySectionFocused {
+				// Move blocked-by cursor within bounds
+				activeBlockers := filterActiveBlockers(modal.BlockedBy)
+				if modal.BlockedByCursor < len(activeBlockers)-1 {
+					modal.BlockedByCursor++
+				}
+				// At last item, stay there
+			} else if modal.BlocksSectionFocused {
+				// Move blocks cursor within bounds
+				if modal.BlocksCursor < len(modal.Blocks)-1 {
+					modal.BlocksCursor++
+				}
+				// At last item, stay there
 			} else if modal.Scroll == 0 && modal.ParentEpic != nil {
 				// At top with parent epic, focus it first before scrolling
 				modal.ParentEpicFocused = true
@@ -1024,6 +1059,18 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 					modal.EpicTasksCursor--
 				}
 				// At first task, stay there (user can use Tab to unfocus)
+			} else if modal.BlockedBySectionFocused {
+				// Move blocked-by cursor
+				if modal.BlockedByCursor > 0 {
+					modal.BlockedByCursor--
+				}
+				// At first item, stay there
+			} else if modal.BlocksSectionFocused {
+				// Move blocks cursor
+				if modal.BlocksCursor > 0 {
+					modal.BlocksCursor--
+				}
+				// At first item, stay there
 			} else if modal.Scroll == 0 && modal.ParentEpic != nil {
 				// At top of scroll with parent epic, focus it
 				modal.ParentEpicFocused = true
@@ -1302,16 +1349,66 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	// Epic task navigation
+	// Section navigation - Tab cycles through focusable sections (top-to-bottom visual order)
 	case keymap.CmdFocusTaskSection:
 		if modal := m.CurrentModal(); modal != nil {
-			// Only toggle if this is an epic with tasks
-			if modal.Issue != nil && modal.Issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0 {
-				modal.TaskSectionFocused = !modal.TaskSectionFocused
-				if modal.TaskSectionFocused {
-					// Reset cursor when entering task section
+			// Determine available sections
+			hasParentEpic := modal.ParentEpic != nil
+			hasEpicTasks := modal.Issue != nil && modal.Issue.Type == models.TypeEpic && len(modal.EpicTasks) > 0
+			activeBlockers := filterActiveBlockers(modal.BlockedBy)
+			hasBlockedBy := len(activeBlockers) > 0
+			hasBlocks := len(modal.Blocks) > 0
+
+			// Cycle through sections in top-to-bottom order:
+			// scroll -> parent-epic -> epic-tasks -> blocked-by -> blocks -> scroll
+			if modal.ParentEpicFocused {
+				modal.ParentEpicFocused = false
+				if hasEpicTasks {
+					modal.TaskSectionFocused = true
 					modal.EpicTasksCursor = 0
+				} else if hasBlockedBy {
+					modal.BlockedBySectionFocused = true
+					modal.BlockedByCursor = 0
+				} else if hasBlocks {
+					modal.BlocksSectionFocused = true
+					modal.BlocksCursor = 0
 				}
+				// else: back to scroll mode (all false)
+			} else if modal.TaskSectionFocused {
+				modal.TaskSectionFocused = false
+				if hasBlockedBy {
+					modal.BlockedBySectionFocused = true
+					modal.BlockedByCursor = 0
+				} else if hasBlocks {
+					modal.BlocksSectionFocused = true
+					modal.BlocksCursor = 0
+				}
+				// else: back to scroll mode (all false)
+			} else if modal.BlockedBySectionFocused {
+				modal.BlockedBySectionFocused = false
+				if hasBlocks {
+					modal.BlocksSectionFocused = true
+					modal.BlocksCursor = 0
+				}
+				// else: back to scroll mode (all false)
+			} else if modal.BlocksSectionFocused {
+				modal.BlocksSectionFocused = false
+				// back to scroll mode (all false)
+			} else {
+				// Currently in scroll mode - focus first available section
+				if hasParentEpic {
+					modal.ParentEpicFocused = true
+				} else if hasEpicTasks {
+					modal.TaskSectionFocused = true
+					modal.EpicTasksCursor = 0
+				} else if hasBlockedBy {
+					modal.BlockedBySectionFocused = true
+					modal.BlockedByCursor = 0
+				} else if hasBlocks {
+					modal.BlocksSectionFocused = true
+					modal.BlocksCursor = 0
+				}
+				// else: no sections to focus, stay in scroll mode
 			}
 		}
 		return m, nil
@@ -1330,6 +1427,25 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if modal := m.CurrentModal(); modal != nil && modal.ParentEpic != nil {
 			modal.ParentEpicFocused = false // Unfocus before pushing
 			return m.pushModal(modal.ParentEpic.ID, m.ModalSourcePanel())
+		}
+		return m, nil
+
+	case keymap.CmdOpenBlockedByIssue:
+		if modal := m.CurrentModal(); modal != nil && modal.BlockedBySectionFocused {
+			activeBlockers := filterActiveBlockers(modal.BlockedBy)
+			if modal.BlockedByCursor < len(activeBlockers) {
+				modal.BlockedBySectionFocused = false // Unfocus before pushing
+				return m.pushModal(activeBlockers[modal.BlockedByCursor].ID, m.ModalSourcePanel())
+			}
+		}
+		return m, nil
+
+	case keymap.CmdOpenBlocksIssue:
+		if modal := m.CurrentModal(); modal != nil && modal.BlocksSectionFocused {
+			if modal.BlocksCursor < len(modal.Blocks) {
+				modal.BlocksSectionFocused = false // Unfocus before pushing
+				return m.pushModal(modal.Blocks[modal.BlocksCursor].ID, m.ModalSourcePanel())
+			}
 		}
 		return m, nil
 
@@ -2579,6 +2695,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle left-click in modal for section selection
+	if m.ModalOpen() && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		return m.handleModalClick(msg.X, msg.Y)
+	}
+
 	// Ignore other mouse events when modals/overlays are open
 	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.ShowHelp || m.ShowTDQHelp {
 		return m, nil
@@ -3135,4 +3256,100 @@ func (m Model) handleEditorFinished(msg EditorFinishedMsg) (tea.Model, tea.Cmd) 
 			return ClearStatusMsg{}
 		}),
 	)
+}
+
+// filterActiveBlockers returns only non-closed issues from a list of blockers
+func filterActiveBlockers(blockers []models.Issue) []models.Issue {
+	var active []models.Issue
+	for _, b := range blockers {
+		if b.Status != models.StatusClosed {
+			active = append(active, b)
+		}
+	}
+	return active
+}
+
+// handleModalClick handles left-click events within a modal
+func (m Model) handleModalClick(x, y int) (tea.Model, tea.Cmd) {
+	modal := m.CurrentModal()
+	if modal == nil {
+		return m, nil
+	}
+
+	// Calculate modal bounds (centered, 80% width, capped)
+	modalWidth := m.Width * 80 / 100
+	if modalWidth > 100 {
+		modalWidth = 100
+	}
+	if modalWidth < 40 {
+		modalWidth = 40
+	}
+	modalHeight := m.Height * 80 / 100
+	if modalHeight > 40 {
+		modalHeight = 40
+	}
+	if modalHeight < 10 {
+		modalHeight = 10
+	}
+
+	// Modal position (centered)
+	modalX := (m.Width - modalWidth) / 2
+	modalY := (m.Height - modalHeight) / 2
+
+	// Check if click is inside modal
+	if x < modalX || x >= modalX+modalWidth || y < modalY || y >= modalY+modalHeight {
+		return m, nil // Click outside modal
+	}
+
+	// Convert click Y to line index (accounting for modal borders and scroll)
+	// Modal has 1-line border, 1-line header, then content starts at line 2
+	contentStartY := modalY + 3 // Border + title + blank line
+	if y < contentStartY {
+		return m, nil // Click on header
+	}
+
+	// Calculate which line was clicked
+	clickedLine := (y - contentStartY) + modal.Scroll
+
+	// Determine which section was clicked
+	activeBlockers := filterActiveBlockers(modal.BlockedBy)
+
+	// Check if click is in blocked-by section
+	if len(activeBlockers) > 0 && clickedLine >= modal.BlockedByStartLine && clickedLine < modal.BlockedByEndLine {
+		// Calculate which row within the section (header is first line)
+		rowInSection := clickedLine - modal.BlockedByStartLine - 1 // -1 for header
+		if rowInSection >= 0 && rowInSection < len(activeBlockers) {
+			// Unfocus other sections
+			modal.ParentEpicFocused = false
+			modal.TaskSectionFocused = false
+			modal.BlocksSectionFocused = false
+			// Focus this section and set cursor
+			modal.BlockedBySectionFocused = true
+			modal.BlockedByCursor = rowInSection
+		}
+		return m, nil
+	}
+
+	// Check if click is in blocks section
+	if len(modal.Blocks) > 0 && clickedLine >= modal.BlocksStartLine && clickedLine < modal.BlocksEndLine {
+		// Calculate which row within the section (header is first line)
+		rowInSection := clickedLine - modal.BlocksStartLine - 1 // -1 for header
+		if rowInSection >= 0 && rowInSection < len(modal.Blocks) {
+			// Unfocus other sections
+			modal.ParentEpicFocused = false
+			modal.TaskSectionFocused = false
+			modal.BlockedBySectionFocused = false
+			// Focus this section and set cursor
+			modal.BlocksSectionFocused = true
+			modal.BlocksCursor = rowInSection
+		}
+		return m, nil
+	}
+
+	// Click elsewhere in modal - unfocus all sections (return to scroll mode)
+	modal.ParentEpicFocused = false
+	modal.TaskSectionFocused = false
+	modal.BlockedBySectionFocused = false
+	modal.BlocksSectionFocused = false
+	return m, nil
 }

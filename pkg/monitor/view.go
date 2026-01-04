@@ -637,15 +637,29 @@ func (m Model) renderModal() string {
 
 		// Show active blockers prominently
 		if len(activeBlockers) > 0 {
-			lines = append(lines, blockedColor.Render(fmt.Sprintf("⚠ BLOCKED BY (%d)", len(activeBlockers))))
-			for _, dep := range activeBlockers {
-				depLine := fmt.Sprintf("  %s %s %s %s",
+			modal.BlockedByStartLine = len(lines) // Track section start for mouse clicks
+			header := fmt.Sprintf("⚠ BLOCKED BY (%d)", len(activeBlockers))
+			if modal.BlockedBySectionFocused {
+				header = blockedBySectionFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:next]")
+			} else {
+				header = blockedColor.Render(header + " [Tab:focus]")
+			}
+			lines = append(lines, header)
+
+			for i, dep := range activeBlockers {
+				depLine := fmt.Sprintf("%s %s %s %s",
 					formatTypeIcon(dep.Type),
 					titleStyle.Render(dep.ID),
 					formatStatus(dep.Status),
 					truncateString(dep.Title, contentWidth-24))
+				if modal.BlockedBySectionFocused && i == modal.BlockedByCursor {
+					depLine = blockedBySelectedStyle.Render("> " + depLine)
+				} else {
+					depLine = "  " + depLine
+				}
 				lines = append(lines, depLine)
 			}
+			modal.BlockedByEndLine = len(lines) // Track section end for mouse clicks
 			lines = append(lines, "")
 		}
 
@@ -664,15 +678,29 @@ func (m Model) renderModal() string {
 
 	// Blocks (dependents)
 	if len(modal.Blocks) > 0 {
-		lines = append(lines, sectionHeader.Render(fmt.Sprintf("BLOCKS (%d)", len(modal.Blocks))))
-		for _, dep := range modal.Blocks {
-			depLine := fmt.Sprintf("  %s %s %s %s",
+		modal.BlocksStartLine = len(lines) // Track section start for mouse clicks
+		header := fmt.Sprintf("BLOCKS (%d)", len(modal.Blocks))
+		if modal.BlocksSectionFocused {
+			header = blocksSectionFocusedStyle.Render(header + " [j/k:nav Enter:open Tab:next]")
+		} else {
+			header = sectionHeader.Render(header + " [Tab:focus]")
+		}
+		lines = append(lines, header)
+
+		for i, dep := range modal.Blocks {
+			depLine := fmt.Sprintf("%s %s %s %s",
 				formatTypeIcon(dep.Type),
 				titleStyle.Render(dep.ID),
 				formatStatus(dep.Status),
 				truncateString(dep.Title, contentWidth-24))
+			if modal.BlocksSectionFocused && i == modal.BlocksCursor {
+				depLine = blocksSelectedStyle.Render("> " + depLine)
+			} else {
+				depLine = "  " + depLine
+			}
 			lines = append(lines, depLine)
 		}
+		modal.BlocksEndLine = len(lines) // Track section end for mouse clicks
 		lines = append(lines, "")
 	}
 

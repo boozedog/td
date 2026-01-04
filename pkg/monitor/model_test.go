@@ -891,6 +891,209 @@ func TestToggleTaskSectionFocus(t *testing.T) {
 	}
 }
 
+func TestBlockedByCursorNavigation(t *testing.T) {
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID: "td-001",
+				Issue:   &models.Issue{ID: "td-001"},
+				BlockedBy: []models.Issue{
+					{ID: "td-002", Status: models.StatusOpen},
+					{ID: "td-003", Status: models.StatusOpen},
+					{ID: "td-004", Status: models.StatusOpen},
+				},
+				BlockedBySectionFocused: true,
+				BlockedByCursor:         0,
+			},
+		},
+	}
+
+	// Move cursor down
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m2 := updated.(Model)
+
+	if m2.CurrentModal().BlockedByCursor != 1 {
+		t.Errorf("BlockedByCursor after j = %d, want 1", m2.CurrentModal().BlockedByCursor)
+	}
+
+	// Move cursor down again
+	updated, _ = m2.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m3 := updated.(Model)
+
+	if m3.CurrentModal().BlockedByCursor != 2 {
+		t.Errorf("BlockedByCursor after j = %d, want 2", m3.CurrentModal().BlockedByCursor)
+	}
+
+	// Move cursor down at bottom (should stay at 2)
+	updated, _ = m3.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m4 := updated.(Model)
+
+	if m4.CurrentModal().BlockedByCursor != 2 {
+		t.Errorf("BlockedByCursor at bottom after j = %d, want 2", m4.CurrentModal().BlockedByCursor)
+	}
+
+	// Move cursor up
+	updated, _ = m4.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m5 := updated.(Model)
+
+	if m5.CurrentModal().BlockedByCursor != 1 {
+		t.Errorf("BlockedByCursor after k = %d, want 1", m5.CurrentModal().BlockedByCursor)
+	}
+}
+
+func TestBlocksSectionNavigation(t *testing.T) {
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID: "td-001",
+				Issue:   &models.Issue{ID: "td-001"},
+				Blocks: []models.Issue{
+					{ID: "td-002"},
+					{ID: "td-003"},
+				},
+				BlocksSectionFocused: true,
+				BlocksCursor:         0,
+			},
+		},
+	}
+
+	// Move cursor down
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m2 := updated.(Model)
+
+	if m2.CurrentModal().BlocksCursor != 1 {
+		t.Errorf("BlocksCursor after j = %d, want 1", m2.CurrentModal().BlocksCursor)
+	}
+
+	// Move cursor down at bottom (should stay at 1)
+	updated, _ = m2.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	m3 := updated.(Model)
+
+	if m3.CurrentModal().BlocksCursor != 1 {
+		t.Errorf("BlocksCursor at bottom after j = %d, want 1", m3.CurrentModal().BlocksCursor)
+	}
+
+	// Move cursor up
+	updated, _ = m3.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}})
+	m4 := updated.(Model)
+
+	if m4.CurrentModal().BlocksCursor != 0 {
+		t.Errorf("BlocksCursor after k = %d, want 0", m4.CurrentModal().BlocksCursor)
+	}
+}
+
+func TestBlockedByContextDetection(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    Model
+		expected keymap.Context
+	}{
+		{
+			name: "blocked-by focused context",
+			model: Model{
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{
+						IssueID:                 "td-001",
+						Issue:                   &models.Issue{ID: "td-001"},
+						BlockedBySectionFocused: true,
+					},
+				},
+			},
+			expected: keymap.ContextBlockedByFocused,
+		},
+		{
+			name: "blocks focused context",
+			model: Model{
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{
+						IssueID:              "td-001",
+						Issue:                &models.Issue{ID: "td-001"},
+						BlocksSectionFocused: true,
+					},
+				},
+			},
+			expected: keymap.ContextBlocksFocused,
+		},
+		{
+			name: "modal context when not focused",
+			model: Model{
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{
+						IssueID: "td-001",
+						Issue:   &models.Issue{ID: "td-001"},
+					},
+				},
+			},
+			expected: keymap.ContextModal,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.model.currentContext()
+			if got != tt.expected {
+				t.Errorf("currentContext() = %v, want %v", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestTabCyclesThroughSections(t *testing.T) {
+	// Test cycling through: scroll -> blocked-by -> blocks -> scroll
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID: "td-001",
+				Issue:   &models.Issue{ID: "td-001"},
+				BlockedBy: []models.Issue{
+					{ID: "td-002", Status: models.StatusOpen},
+				},
+				Blocks: []models.Issue{
+					{ID: "td-003"},
+				},
+			},
+		},
+	}
+
+	// Start in scroll mode
+	if m.CurrentModal().BlockedBySectionFocused || m.CurrentModal().BlocksSectionFocused {
+		t.Error("Should start in scroll mode")
+	}
+
+	// Tab to blocked-by section
+	updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyTab})
+	m2 := updated.(Model)
+
+	if !m2.CurrentModal().BlockedBySectionFocused {
+		t.Error("Tab should focus blocked-by section first")
+	}
+
+	// Tab to blocks section
+	updated, _ = m2.handleKey(tea.KeyMsg{Type: tea.KeyTab})
+	m3 := updated.(Model)
+
+	if !m3.CurrentModal().BlocksSectionFocused {
+		t.Error("Tab should focus blocks section next")
+	}
+	if m3.CurrentModal().BlockedBySectionFocused {
+		t.Error("BlockedBySectionFocused should be false")
+	}
+
+	// Tab back to scroll mode
+	updated, _ = m3.handleKey(tea.KeyMsg{Type: tea.KeyTab})
+	m4 := updated.(Model)
+
+	if m4.CurrentModal().BlockedBySectionFocused || m4.CurrentModal().BlocksSectionFocused {
+		t.Error("Tab should return to scroll mode")
+	}
+}
+
 func TestContextEpicTasks(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -321,6 +321,10 @@ func CommandHelp(cmd Command) string {
 		return "Open selected task from epic"
 	case CmdOpenParentEpic:
 		return "Open parent epic from story/task"
+	case CmdOpenBlockedByIssue:
+		return "Open selected blocker issue"
+	case CmdOpenBlocksIssue:
+		return "Open selected blocked issue"
 	case CmdCopyToClipboard:
 		return "Copy issue as markdown to clipboard"
 	case CmdCopyIDToClipboard:

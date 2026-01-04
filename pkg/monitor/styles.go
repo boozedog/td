@@ -110,6 +110,25 @@ var (
 				Foreground(primaryColor).
 				Bold(true)
 
+	// Blocked-by/blocks section styles
+	blockedBySectionFocusedStyle = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color("196")). // Red when focused
+					MarginTop(1)
+
+	blockedBySelectedStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("237")).
+				Foreground(lipgloss.Color("255"))
+
+	blocksSectionFocusedStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("45")). // Cyan when focused
+				MarginTop(1)
+
+	blocksSelectedStyle = lipgloss.NewStyle().
+				Background(lipgloss.Color("237")).
+				Foreground(lipgloss.Color("255"))
+
 	// Breadcrumb style for stacked modals
 	breadcrumbStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("244")).
