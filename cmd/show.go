@@ -5,6 +5,7 @@ import (
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
+	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -250,14 +251,37 @@ Examples:
 			}
 		}
 
+		// Auto-show children for epics
+		showChildrenFlag, _ := cmd.Flags().GetBool("children")
+		if issue.Type == models.TypeEpic && !showChildrenFlag {
+			children, _ := database.ListIssues(db.ListIssuesOptions{
+				ParentID: issueID,
+			})
+			if len(children) > 0 {
+				fmt.Print(output.SectionHeader("Stories"))
+				nodes := make([]output.TreeNode, 0, len(children))
+				for _, child := range children {
+					nodes = append(nodes, output.TreeNode{
+						ID:     child.ID,
+						Title:  child.Title,
+						Type:   child.Type,
+						Status: child.Status,
+					})
+				}
+				lines := output.RenderChildrenList(nodes)
+				for _, line := range lines {
+					fmt.Println(line)
+				}
+			}
+		}
+
 		// Show children if --children flag is set
-		if showChildrenFlag, _ := cmd.Flags().GetBool("children"); showChildrenFlag {
+		if showChildrenFlag {
 			children, _ := database.ListIssues(db.ListIssuesOptions{
 				ParentID: issueID,
 			})
 			if len(children) > 0 {
 				fmt.Print(output.SectionHeader("Children"))
-				// Convert to TreeNodes
 				nodes := make([]output.TreeNode, 0, len(children))
 				for _, child := range children {
 					nodes = append(nodes, output.TreeNode{
