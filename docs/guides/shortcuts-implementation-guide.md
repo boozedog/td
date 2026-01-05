@@ -391,7 +391,7 @@ func handleWorkflowHint(cmd string) bool {
     switch cmd {
     case "done", "complete", "submit":
         showWorkflowHint(cmd, "review",
-            "Or use 'td close <id>' to close directly without review.")
+            "Use 'td close --self-close-exception \"reason\"' only for admin closures.")
         return true
     }
     return false

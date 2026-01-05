@@ -286,61 +286,6 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 	return m, m.fetchData()
 }
 
-// closeIssue closes the selected issue directly (workflow shortcut)
-// Works from both main panel selection and modal view
-func (m Model) closeIssue() (tea.Model, tea.Cmd) {
-	var issueID string
-	var issue *models.Issue
-
-	// Check if a modal is open - use that issue
-	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
-		issueID = modal.IssueID
-		issue = modal.Issue
-	} else {
-		// Otherwise, use the selected issue from the panel
-		issueID = m.SelectedIssueID(m.ActivePanel)
-		if issueID == "" {
-			return m, nil
-		}
-		var err error
-		issue, err = m.DB.GetIssue(issueID)
-		if err != nil || issue == nil {
-			return m, nil
-		}
-	}
-
-	// Can't close already-closed issues
-	if issue.Status == models.StatusClosed {
-		return m, nil
-	}
-
-	// Update status
-	now := time.Now()
-	issue.Status = models.StatusClosed
-	issue.ClosedAt = &now
-	if err := m.DB.UpdateIssue(issue); err != nil {
-		return m, nil
-	}
-
-	// Log action for undo
-	m.DB.LogAction(&models.ActionLog{
-		SessionID:  m.SessionID,
-		ActionType: models.ActionClose,
-		EntityType: "issue",
-		EntityID:   issueID,
-	})
-
-	// Cascade up to parent epic if all siblings are closed
-	m.DB.CascadeUpParentStatus(issueID, models.StatusClosed, m.SessionID)
-
-	// If we're in a modal, close it since the issue is now closed
-	if m.ModalOpen() {
-		m.closeModal()
-	}
-
-	return m, m.fetchData()
-}
-
 // reopenIssue reopens a closed issue
 func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 	var issueID string
