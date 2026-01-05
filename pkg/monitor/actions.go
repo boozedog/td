@@ -3,6 +3,7 @@ package monitor
 import (
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -123,6 +124,107 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 
 	// Close modal if we just deleted the issue being viewed
 	if modal := m.CurrentModal(); modal != nil && modal.IssueID == deletedID {
+		m.closeModal()
+	}
+
+	return m, m.fetchData()
+}
+
+// confirmClose opens confirmation dialog for closing selected issue
+// Works from both main panel selection and modal view
+func (m Model) confirmClose() (tea.Model, tea.Cmd) {
+	var issueID string
+	var issue *models.Issue
+
+	// Check if a modal is open - use that issue
+	if modal := m.CurrentModal(); modal != nil && modal.Issue != nil {
+		issueID = modal.IssueID
+		issue = modal.Issue
+	} else {
+		// Otherwise, use the selected issue from the panel
+		issueID = m.SelectedIssueID(m.ActivePanel)
+		if issueID == "" {
+			return m, nil
+		}
+		var err error
+		issue, err = m.DB.GetIssue(issueID)
+		if err != nil || issue == nil {
+			return m, nil
+		}
+	}
+
+	// Can't close already-closed issues
+	if issue.Status == models.StatusClosed {
+		return m, nil
+	}
+
+	m.CloseConfirmOpen = true
+	m.CloseConfirmIssueID = issueID
+	m.CloseConfirmTitle = issue.Title
+	m.CloseConfirmInput = textinput.New()
+	m.CloseConfirmInput.Placeholder = "Optional: reason for closing"
+	m.CloseConfirmInput.Width = 40
+	m.CloseConfirmInput.Focus()
+
+	return m, nil
+}
+
+// executeCloseWithReason performs the actual close after confirmation
+func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
+	if m.CloseConfirmIssueID == "" {
+		m.CloseConfirmOpen = false
+		return m, nil
+	}
+
+	issueID := m.CloseConfirmIssueID
+	reason := m.CloseConfirmInput.Value()
+
+	// Get the issue
+	issue, err := m.DB.GetIssue(issueID)
+	if err != nil || issue == nil {
+		m.CloseConfirmOpen = false
+		return m, nil
+	}
+
+	// Update status
+	now := time.Now()
+	issue.Status = models.StatusClosed
+	issue.ClosedAt = &now
+	if err := m.DB.UpdateIssue(issue); err != nil {
+		m.CloseConfirmOpen = false
+		return m, nil
+	}
+
+	// Log action for undo
+	m.DB.LogAction(&models.ActionLog{
+		SessionID:  m.SessionID,
+		ActionType: models.ActionClose,
+		EntityType: "issue",
+		EntityID:   issueID,
+	})
+
+	// Add progress log with optional reason
+	logMsg := "Closed"
+	if reason != "" {
+		logMsg = "Closed: " + reason
+	}
+	m.DB.AddLog(&models.Log{
+		IssueID:   issueID,
+		SessionID: m.SessionID,
+		Message:   logMsg,
+		Type:      models.LogTypeProgress,
+	})
+
+	// Cascade up to parent epic if all siblings are closed
+	m.DB.CascadeUpParentStatus(issueID, models.StatusClosed, m.SessionID)
+
+	// Reset confirmation state
+	m.CloseConfirmOpen = false
+	m.CloseConfirmIssueID = ""
+	m.CloseConfirmTitle = ""
+
+	// Close modal if we just closed the issue being viewed
+	if modal := m.CurrentModal(); modal != nil && modal.IssueID == issueID {
 		m.closeModal()
 	}
 

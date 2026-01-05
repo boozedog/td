@@ -985,6 +985,144 @@ func TestCloseReasonShorthand(t *testing.T) {
 	}
 }
 
+func TestCloseSelfCloseExceptionFlagExists(t *testing.T) {
+	// Test that --self-close-exception flag exists on close command
+	if closeCmd.Flags().Lookup("self-close-exception") == nil {
+		t.Error("Expected --self-close-exception flag to be defined on close command")
+	}
+}
+
+func TestCloseSelfCloseExceptionRequiresValue(t *testing.T) {
+	// Test that the flag can accept a value
+	flag := closeCmd.Flags().Lookup("self-close-exception")
+	if flag == nil {
+		t.Fatal("--self-close-exception flag not found")
+	}
+
+	// Reset flag to default before test
+	flag.Value.Set("")
+
+	// Set a test value
+	if err := flag.Value.Set("test reason"); err != nil {
+		t.Errorf("Failed to set --self-close-exception value: %v", err)
+	}
+
+	val := flag.Value.String()
+	if val != "test reason" {
+		t.Errorf("Expected 'test reason', got %q", val)
+	}
+
+	// Reset for other tests
+	flag.Value.Set("")
+}
+
+func TestCloseSelfCloseScenarios(t *testing.T) {
+	// Test the data model behavior for self-close detection scenarios
+
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sessionID := "ses_impl123"
+	otherSessionID := "ses_other456"
+
+	// Scenario 1: Issue with ImplementerSession set (would trigger self-close check)
+	issueWithImpl := &models.Issue{
+		Title:              "Implemented Issue",
+		Status:             models.StatusInProgress,
+		ImplementerSession: sessionID,
+	}
+	if err := database.CreateIssue(issueWithImpl); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	database.UpdateIssue(issueWithImpl)
+
+	retrieved, _ := database.GetIssue(issueWithImpl.ID)
+	if retrieved.ImplementerSession != sessionID {
+		t.Errorf("ImplementerSession not saved: got %q, want %q", retrieved.ImplementerSession, sessionID)
+	}
+
+	// Check self-closing detection logic
+	isSelfClosing := retrieved.ImplementerSession != "" && retrieved.ImplementerSession == sessionID
+	if !isSelfClosing {
+		t.Error("Expected isSelfClosing to be true for same session")
+	}
+
+	// Check not self-closing for different session
+	isSelfClosingOther := retrieved.ImplementerSession != "" && retrieved.ImplementerSession == otherSessionID
+	if isSelfClosingOther {
+		t.Error("Expected isSelfClosing to be false for different session")
+	}
+
+	// Scenario 2: Issue with no ImplementerSession (never worked on, should bypass check)
+	issueNoImpl := &models.Issue{
+		Title:  "Never Started Issue",
+		Status: models.StatusOpen,
+		// ImplementerSession is empty
+	}
+	if err := database.CreateIssue(issueNoImpl); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	retrievedNoImpl, _ := database.GetIssue(issueNoImpl.ID)
+	if retrievedNoImpl.ImplementerSession != "" {
+		t.Errorf("ImplementerSession should be empty: got %q", retrievedNoImpl.ImplementerSession)
+	}
+
+	// Check that self-closing is false when no implementer
+	isSelfClosingNoImpl := retrievedNoImpl.ImplementerSession != "" && retrievedNoImpl.ImplementerSession == sessionID
+	if isSelfClosingNoImpl {
+		t.Error("Expected isSelfClosing to be false when no ImplementerSession")
+	}
+}
+
+func TestCloseSelfCloseExceptionLogMessage(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sessionID := "ses_impl123"
+
+	// Create issue with implementer
+	issue := &models.Issue{
+		Title:              "Self Close Test",
+		Status:             models.StatusInProgress,
+		ImplementerSession: sessionID,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	database.UpdateIssue(issue)
+
+	// Simulate closing with exception - manually add the log entry
+	exceptionReason := "trivial typo fix"
+	logMsg := "Closed (SELF-CLOSE EXCEPTION: " + exceptionReason + ")"
+
+	database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: sessionID,
+		Message:   logMsg,
+		Type:      models.LogTypeProgress,
+	})
+
+	// Verify log contains exception
+	logs, _ := database.GetLogs(issue.ID, 0)
+	if len(logs) == 0 {
+		t.Fatal("Expected log entry")
+	}
+	if logs[0].Message != "Closed (SELF-CLOSE EXCEPTION: trivial typo fix)" {
+		t.Errorf("Log message wrong: got %q", logs[0].Message)
+	}
+}
+
 func TestCascadeUpNoActionNoParent(t *testing.T) {
 	dir := t.TempDir()
 

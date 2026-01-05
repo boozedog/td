@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -63,6 +64,12 @@ type Model struct {
 	ConfirmAction  string // "delete"
 	ConfirmIssueID string
 	ConfirmTitle   string
+
+	// Close confirmation dialog state
+	CloseConfirmOpen    bool
+	CloseConfirmIssueID string
+	CloseConfirmTitle   string
+	CloseConfirmInput   textinput.Model
 
 	// Stats modal state
 	StatsOpen    bool
@@ -197,6 +204,25 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Form mode: forward all messages to huh form first
 	if m.FormOpen && m.FormState != nil && m.FormState.Form != nil {
 		return m.handleFormUpdate(msg)
+	}
+
+	// Close confirmation mode: forward key messages to textinput
+	if m.CloseConfirmOpen {
+		if keyMsg, ok := msg.(tea.KeyMsg); ok {
+			switch keyMsg.String() {
+			case "enter":
+				return m.executeCloseWithReason()
+			case "esc":
+				m.CloseConfirmOpen = false
+				m.CloseConfirmIssueID = ""
+				m.CloseConfirmTitle = ""
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.CloseConfirmInput, cmd = m.CloseConfirmInput.Update(msg)
+				return m, cmd
+			}
+		}
 	}
 
 	switch msg := msg.(type) {

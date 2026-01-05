@@ -484,7 +484,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m.confirmDelete()
 
 	case keymap.CmdCloseIssue:
-		return m.closeIssue()
+		return m.confirmClose()
 
 	case keymap.CmdReopenIssue:
 		return m.reopenIssue()
@@ -524,12 +524,21 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	// Confirmation commands
 	case keymap.CmdConfirm:
+		if m.CloseConfirmOpen {
+			return m.executeCloseWithReason()
+		}
 		if m.ConfirmOpen && m.ConfirmAction == "delete" {
 			return m.executeDelete()
 		}
 		return m, nil
 
 	case keymap.CmdCancel:
+		if m.CloseConfirmOpen {
+			m.CloseConfirmOpen = false
+			m.CloseConfirmIssueID = ""
+			m.CloseConfirmTitle = ""
+			return m, nil
+		}
 		if m.ConfirmOpen {
 			m.ConfirmOpen = false
 		}

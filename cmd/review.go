@@ -485,11 +485,15 @@ var closeCmd = &cobra.Command{
 	Use:     "close [issue-id...]",
 	Aliases: []string{"done", "complete"},
 	Short:   "Close one or more issues without review",
-	Long: `Closes the issue(s) directly. Useful for trivial fixes, duplicates, or won't-fix scenarios.
+	Long: `Closes the issue(s) directly. For administrative use: duplicates, won't-fix, or cleanup.
+
+IMPORTANT: Agents should use 'td review' + 'td approve' for completed work.
+Self-closing issues you implemented requires --self-close-exception "reason".
 
 Examples:
-  td close td-abc1                    # Close single issue
-  td close td-abc1 td-abc2 td-abc3    # Close multiple issues`,
+  td close td-abc1                                       # Close (fails if you implemented it)
+  td close td-abc1 -m "duplicate of td-xyz"              # Close unworked issue with reason
+  td close td-abc1 --self-close-exception "trivial fix"  # Override for implemented work`,
 	GroupID: "workflow",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -508,6 +512,9 @@ Examples:
 			return err
 		}
 
+		// Get self-close-exception flag once
+		selfCloseException, _ := cmd.Flags().GetString("self-close-exception")
+
 		closed := 0
 		skipped := 0
 		for _, issueID := range args {
@@ -516,6 +523,20 @@ Examples:
 				output.Warning("issue not found: %s", issueID)
 				skipped++
 				continue
+			}
+
+			// Check if self-closing implemented work
+			isSelfClosing := issue.ImplementerSession != "" && issue.ImplementerSession == sess.ID
+			if isSelfClosing {
+				if selfCloseException == "" {
+					output.Error("cannot close own implementation: %s", issueID)
+					output.Error("  Use `td review %s` to submit for review", issueID)
+					output.Error("  Or use `td close --self-close-exception \"reason\" %s`", issueID)
+					skipped++
+					continue
+				}
+				output.Warning("SELF-CLOSE EXCEPTION: %s", issueID)
+				output.Warning("  Reason: %s", selfCloseException)
 			}
 
 			// Capture previous state for undo
@@ -545,10 +566,12 @@ Examples:
 				output.Warning("log action failed: %v", err)
 			}
 
-			// Log (supports --reason, --comment, --message)
+			// Log (supports --reason, --comment, --message, and --self-close-exception)
 			reason := approvalReason(cmd)
 			logMsg := "Closed"
-			if reason != "" {
+			if isSelfClosing && selfCloseException != "" {
+				logMsg = "Closed (SELF-CLOSE EXCEPTION: " + selfCloseException + ")"
+			} else if reason != "" {
 				logMsg = "Closed: " + reason
 			}
 
@@ -564,7 +587,11 @@ Examples:
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
 
-			fmt.Printf("CLOSED %s\n", issueID)
+			if isSelfClosing && selfCloseException != "" {
+				fmt.Printf("CLOSED %s (self-close exception)\n", issueID)
+			} else {
+				fmt.Printf("CLOSED %s\n", issueID)
+			}
 
 			// Cascade up: if all siblings are closed, update parent epic
 			if count, ids := database.CascadeUpParentStatus(issueID, models.StatusClosed, sess.ID); count > 0 {
@@ -602,4 +629,5 @@ func init() {
 	closeCmd.Flags().StringP("reason", "m", "", "Reason for closing")
 	closeCmd.Flags().String("comment", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("message", "", "Reason for closing (alias for --reason)")
+	closeCmd.Flags().String("self-close-exception", "", "Override review requirement when closing own work (requires reason)")
 }

@@ -48,6 +48,12 @@ func (m Model) renderView() string {
 		return OverlayModal(base, confirm, m.Width, m.Height)
 	}
 
+	// Overlay close confirmation dialog if open
+	if m.CloseConfirmOpen {
+		confirm := m.renderCloseConfirmation()
+		return OverlayModal(base, confirm, m.Width, m.Height)
+	}
+
 	// Overlay stats modal if open
 	if m.StatsOpen {
 		stats := m.renderStatsModal()
@@ -1370,6 +1376,47 @@ func (m Model) renderConfirmation() string {
 
 	// Options
 	content.WriteString("[Y]es  [N]o")
+
+	confirmStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(errorColor).
+		Padding(1, 2).
+		Width(width)
+
+	return confirmStyle.Render(content.String())
+}
+
+// renderCloseConfirmation renders the close confirmation dialog with optional reason input
+func (m Model) renderCloseConfirmation() string {
+	width := 50
+	if len(m.CloseConfirmTitle) > 40 {
+		width = len(m.CloseConfirmTitle) + 10
+	}
+	if width > 60 {
+		width = 60
+	}
+
+	var content strings.Builder
+
+	// Title
+	content.WriteString(titleStyle.Render(fmt.Sprintf("Close %s?", m.CloseConfirmIssueID)))
+	content.WriteString("\n")
+
+	// Issue title (truncated)
+	title := m.CloseConfirmTitle
+	if len(title) > width-4 {
+		title = title[:width-7] + "..."
+	}
+	content.WriteString(subtleStyle.Render(fmt.Sprintf("\"%s\"", title)))
+	content.WriteString("\n\n")
+
+	// Reason input
+	content.WriteString("Reason (optional):\n")
+	content.WriteString(m.CloseConfirmInput.View())
+	content.WriteString("\n\n")
+
+	// Options
+	content.WriteString("[Enter] Confirm  [Esc] Cancel")
 
 	confirmStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
