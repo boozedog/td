@@ -23,13 +23,36 @@ Check current version:
 git tag -l | sort -V | tail -1
 ```
 
-### 2. Verify Tests Pass
+### 2. Update CHANGELOG.md
+
+Add entry at the top of `CHANGELOG.md`:
+
+```markdown
+## [vX.Y.Z] - YYYY-MM-DD
+
+### Features
+- New feature description
+
+### Bug Fixes
+- Fix description
+
+### Documentation
+- Doc change description
+```
+
+Commit the changelog:
+```bash
+git add CHANGELOG.md
+git commit -m "docs: Update changelog for vX.Y.Z"
+```
+
+### 3. Verify Tests Pass
 
 ```bash
 go test ./...
 ```
 
-### 3. Create and Push Tag
+### 4. Create and Push Tag
 
 ```bash
 # Create annotated tag
@@ -40,7 +63,7 @@ git push origin main
 git push origin vX.Y.Z
 ```
 
-### 4. Create GitHub Release
+### 5. Create GitHub Release
 
 ```bash
 gh release create vX.Y.Z --title "vX.Y.Z" --notes "$(cat <<'EOF'
@@ -61,13 +84,13 @@ Or create interactively:
 gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes
 ```
 
-### 5. Install Locally with Version
+### 6. Install Locally with Version
 
 ```bash
 go install -ldflags "-X main.Version=vX.Y.Z" ./...
 ```
 
-### 6. Verify
+### 7. Verify
 
 ```bash
 # Check release exists
@@ -110,8 +133,13 @@ Replace `X.Y.Z` with actual version:
 git status
 go test ./...
 
+# Update changelog
+# (Edit CHANGELOG.md, add entry at top)
+git add CHANGELOG.md
+git commit -m "docs: Update changelog for vX.Y.Z"
+
 # Tag and push
-git tag -a vX.Y.Z -m "Release vX.Y.Z"
+git tag -a vX.Y.Z -m "Release vX.Y.Z: brief description"
 git push origin main && git push origin vX.Y.Z
 
 # Create release
@@ -128,6 +156,8 @@ td version
 
 - [ ] Tests pass (`go test ./...`)
 - [ ] Working tree clean
+- [ ] CHANGELOG.md updated with new version entry
+- [ ] Changelog committed to git
 - [ ] Version number follows semver
 - [ ] Tag created with `-a` (annotated)
 - [ ] Tag pushed to origin
