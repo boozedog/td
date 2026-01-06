@@ -64,3 +64,29 @@ func TestEpicCreateRequiresTitle(t *testing.T) {
 		t.Error("Expected 0 args to fail")
 	}
 }
+
+// TestEpicCreateHasHiddenTypeFlag tests that epicCreateCmd has a hidden type flag
+// This is critical for createCmd.RunE to correctly set the type to "epic"
+func TestEpicCreateHasHiddenTypeFlag(t *testing.T) {
+	// The type flag must exist for cmd.Flags().Set("type", "epic") to work
+	typeFlag := epicCreateCmd.Flags().Lookup("type")
+	if typeFlag == nil {
+		t.Fatal("Expected epicCreateCmd to have --type flag (hidden)")
+	}
+
+	// Verify the flag can be set to "epic"
+	if err := epicCreateCmd.Flags().Set("type", "epic"); err != nil {
+		t.Errorf("Failed to set type flag: %v", err)
+	}
+
+	typeValue, err := epicCreateCmd.Flags().GetString("type")
+	if err != nil {
+		t.Errorf("Failed to get type flag value: %v", err)
+	}
+	if typeValue != "epic" {
+		t.Errorf("Expected type 'epic', got %q", typeValue)
+	}
+
+	// Reset
+	epicCreateCmd.Flags().Set("type", "")
+}

@@ -26,8 +26,8 @@ Examples:
   td epic create "Auth system" --priority P0`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Delegate to createCmd with --type epic
-		if err := createCmd.Flags().Set("type", "epic"); err != nil {
+		// Set type=epic on this command's flags so createCmd.RunE reads it correctly
+		if err := cmd.Flags().Set("type", "epic"); err != nil {
 			return err
 		}
 		return createCmd.RunE(cmd, args)
@@ -79,4 +79,7 @@ func init() {
 	epicCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	epicCreateCmd.Flags().StringP("description", "d", "", "Description text")
 	epicCreateCmd.Flags().String("labels", "", "Comma-separated labels")
+	// Hidden type flag - set programmatically to "epic"
+	epicCreateCmd.Flags().StringP("type", "t", "", "")
+	epicCreateCmd.Flags().MarkHidden("type")
 }
