@@ -857,3 +857,173 @@ func TestSearchIssuesRanked(t *testing.T) {
 		}
 	})
 }
+
+func TestReviewableByFilter(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	sessionA := "ses_aaaaaa"
+	sessionB := "ses_bbbbbb"
+	sessionC := "ses_cccccc"
+
+	// Helper to create and update issue (CreateIssue doesn't set ImplementerSession)
+	createIssue := func(issue *models.Issue) {
+		if err := db.CreateIssue(issue); err != nil {
+			t.Fatalf("CreateIssue failed: %v", err)
+		}
+		if err := db.UpdateIssue(issue); err != nil {
+			t.Fatalf("UpdateIssue failed: %v", err)
+		}
+	}
+
+	// Issue 1: Implemented by A, created by A - A cannot review, B can
+	issue1 := &models.Issue{
+		Title:              "Implemented and created by A",
+		Status:             models.StatusInReview,
+		ImplementerSession: sessionA,
+		CreatorSession:     sessionA,
+	}
+	createIssue(issue1)
+
+	// Issue 2: Implemented by B, created by A - A cannot review (creator), C can
+	issue2 := &models.Issue{
+		Title:              "Implemented by B, created by A",
+		Status:             models.StatusInReview,
+		ImplementerSession: sessionB,
+		CreatorSession:     sessionA,
+	}
+	createIssue(issue2)
+
+	// Issue 3: Implemented by B, A in session history - A cannot review
+	issue3 := &models.Issue{
+		Title:              "Implemented by B, A in history",
+		Status:             models.StatusInReview,
+		ImplementerSession: sessionB,
+		CreatorSession:     sessionC,
+	}
+	createIssue(issue3)
+	// Record A in history (e.g., A started then unstarted)
+	if err := db.RecordSessionAction(issue3.ID, sessionA, models.ActionSessionStarted); err != nil {
+		t.Fatalf("RecordSessionAction failed: %v", err)
+	}
+
+	// Issue 4: Minor task - can be self-reviewed by implementer
+	issue4 := &models.Issue{
+		Title:              "Minor task",
+		Status:             models.StatusInReview,
+		ImplementerSession: sessionA,
+		CreatorSession:     sessionA,
+		Minor:              true,
+	}
+	createIssue(issue4)
+
+	// Issue 5: Clean issue - B implemented, C created, no history for A
+	issue5 := &models.Issue{
+		Title:              "Clean issue for A to review",
+		Status:             models.StatusInReview,
+		ImplementerSession: sessionB,
+		CreatorSession:     sessionC,
+	}
+	createIssue(issue5)
+
+	// Test: Session A can only review issue4 (minor) and issue5 (clean)
+	t.Run("session A reviewable", func(t *testing.T) {
+		reviewable, err := db.ListIssues(ListIssuesOptions{ReviewableBy: sessionA})
+		if err != nil {
+			t.Fatalf("ListIssues failed: %v", err)
+		}
+
+		ids := make(map[string]bool)
+		for _, issue := range reviewable {
+			ids[issue.ID] = true
+		}
+
+		// A should be able to review issue4 (minor) and issue5 (clean)
+		if !ids[issue4.ID] {
+			t.Errorf("Session A should be able to review minor task %s", issue4.ID)
+		}
+		if !ids[issue5.ID] {
+			t.Errorf("Session A should be able to review clean issue %s", issue5.ID)
+		}
+
+		// A should NOT be able to review issue1 (implementer+creator), issue2 (creator), issue3 (in history)
+		if ids[issue1.ID] {
+			t.Errorf("Session A should NOT be able to review %s (is implementer and creator)", issue1.ID)
+		}
+		if ids[issue2.ID] {
+			t.Errorf("Session A should NOT be able to review %s (is creator)", issue2.ID)
+		}
+		if ids[issue3.ID] {
+			t.Errorf("Session A should NOT be able to review %s (in session history)", issue3.ID)
+		}
+
+		if len(reviewable) != 2 {
+			t.Errorf("Expected 2 reviewable issues for A, got %d", len(reviewable))
+		}
+	})
+
+	// Test: Session B can review issue1 (A's work), issue3 (in history only for A)
+	t.Run("session B reviewable", func(t *testing.T) {
+		reviewable, err := db.ListIssues(ListIssuesOptions{ReviewableBy: sessionB})
+		if err != nil {
+			t.Fatalf("ListIssues failed: %v", err)
+		}
+
+		ids := make(map[string]bool)
+		for _, issue := range reviewable {
+			ids[issue.ID] = true
+		}
+
+		// B should be able to review issue1 (A implemented)
+		if !ids[issue1.ID] {
+			t.Errorf("Session B should be able to review %s", issue1.ID)
+		}
+
+		// B should NOT be able to review issue2, issue3, issue5 (is implementer)
+		if ids[issue2.ID] {
+			t.Errorf("Session B should NOT be able to review %s (is implementer)", issue2.ID)
+		}
+		if ids[issue3.ID] {
+			t.Errorf("Session B should NOT be able to review %s (is implementer)", issue3.ID)
+		}
+		if ids[issue5.ID] {
+			t.Errorf("Session B should NOT be able to review %s (is implementer)", issue5.ID)
+		}
+	})
+
+	// Test: Session C can review most things (only created issue5)
+	t.Run("session C reviewable", func(t *testing.T) {
+		reviewable, err := db.ListIssues(ListIssuesOptions{ReviewableBy: sessionC})
+		if err != nil {
+			t.Fatalf("ListIssues failed: %v", err)
+		}
+
+		ids := make(map[string]bool)
+		for _, issue := range reviewable {
+			ids[issue.ID] = true
+		}
+
+		// C should be able to review issue1, issue2, issue4
+		if !ids[issue1.ID] {
+			t.Errorf("Session C should be able to review %s", issue1.ID)
+		}
+		if !ids[issue2.ID] {
+			t.Errorf("Session C should be able to review %s", issue2.ID)
+		}
+		if !ids[issue4.ID] {
+			t.Errorf("Session C should be able to review %s (minor)", issue4.ID)
+		}
+
+		// C should NOT be able to review issue3, issue5 (is creator)
+		if ids[issue3.ID] {
+			t.Errorf("Session C should NOT be able to review %s (is creator)", issue3.ID)
+		}
+		if ids[issue5.ID] {
+			t.Errorf("Session C should NOT be able to review %s (is creator)", issue5.ID)
+		}
+	})
+}

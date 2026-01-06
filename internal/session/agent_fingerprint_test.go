@@ -31,6 +31,21 @@ func TestAgentFingerprintString(t *testing.T) {
 			fp:       AgentFingerprint{Type: AgentUnknown, PID: 0},
 			expected: "unknown",
 		},
+		{
+			name:     "explicit with ID",
+			fp:       AgentFingerprint{Type: AgentType("explicit"), PID: 0, ExplicitID: "my-session"},
+			expected: "explicit_my-session",
+		},
+		{
+			name:     "explicit with special chars sanitized",
+			fp:       AgentFingerprint{Type: AgentType("explicit"), PID: 0, ExplicitID: "session/with:special*chars"},
+			expected: "explicit_session_with_special_chars",
+		},
+		{
+			name:     "explicit with long ID truncated",
+			fp:       AgentFingerprint{Type: AgentType("explicit"), PID: 0, ExplicitID: "this-is-a-very-long-session-id-that-exceeds-limit"},
+			expected: "explicit_this-is-a-very-long-session-id-t",
+		},
 	}
 
 	for _, tt := range tests {
@@ -54,6 +69,9 @@ func TestGetAgentFingerprintWithExplicitOverride(t *testing.T) {
 	}
 	if fp.PID != 0 {
 		t.Errorf("PID = %d, want 0 for explicit override", fp.PID)
+	}
+	if fp.ExplicitID != "my-explicit-session" {
+		t.Errorf("ExplicitID = %q, want %q", fp.ExplicitID, "my-explicit-session")
 	}
 }
 

@@ -655,10 +655,22 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		args = append(args, opts.Reviewer)
 	}
 
-	// Reviewable by (issues that can be reviewed by this session - different implementer OR minor task)
+	// Reviewable by (issues that can be reviewed by this session)
+	// Must be in_review with implementer, and either:
+	// - Minor task (always self-reviewable), OR
+	// - Session is not implementer, not creator, and not in session history
 	if opts.ReviewableBy != "" {
-		query += " AND status = ? AND implementer_session != '' AND (implementer_session != ? OR minor = 1)"
-		args = append(args, models.StatusInReview, opts.ReviewableBy)
+		query += ` AND status = ? AND implementer_session != '' AND (
+			minor = 1 OR (
+				implementer_session != ?
+				AND (creator_session = '' OR creator_session != ?)
+				AND NOT EXISTS (
+					SELECT 1 FROM issue_session_history
+					WHERE issue_id = issues.id AND session_id = ?
+				)
+			)
+		)`
+		args = append(args, models.StatusInReview, opts.ReviewableBy, opts.ReviewableBy, opts.ReviewableBy)
 	}
 
 	// Parent filter

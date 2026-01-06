@@ -217,6 +217,7 @@ func GetOrCreate(baseDir string) (*Session, error) {
 	branchPath := sessionPathForBranch(baseDir, branch)
 	if branchData, branchErr := os.ReadFile(branchPath); branchErr == nil {
 		if sess, migrateErr := migrateBranchSession(branchData, branch, fp, agentPath); migrateErr == nil {
+			os.Remove(branchPath) // Clean up old file after successful migration
 			return sess, nil
 		}
 	}
@@ -225,6 +226,7 @@ func GetOrCreate(baseDir string) (*Session, error) {
 	legacyPath := filepath.Join(baseDir, sessionFile)
 	if legacyData, legacyErr := os.ReadFile(legacyPath); legacyErr == nil {
 		if sess, migrateErr := migrateLegacyToAgentSession(legacyData, branch, fp, agentPath); migrateErr == nil {
+			os.Remove(legacyPath) // Clean up legacy file after successful migration
 			return sess, nil
 		}
 	}
