@@ -292,7 +292,13 @@ Supports bulk operations:
 				output.Warning("failed to check session history for %s: %v", issueID, err)
 				wasInvolved = true // Conservative: assume involvement on error
 			}
-			if wasInvolved && !issue.Minor {
+
+			// Also check if session is creator or implementer (defensive fallback)
+			isCreator := issue.CreatorSession != "" && issue.CreatorSession == sess.ID
+			isImplementer := issue.ImplementerSession != "" && issue.ImplementerSession == sess.ID
+			wasEverInvolved := wasInvolved || isCreator || isImplementer
+
+			if wasEverInvolved && !issue.Minor {
 				if !all { // Only show error for explicit requests
 					errMsg := fmt.Sprintf("cannot approve: you were involved with %s (created, started, or previously worked on)", issueID)
 					if jsonOutput {
@@ -554,11 +560,14 @@ Examples:
 
 			// Can close if:
 			// 1. Never involved at all, OR
-			// 2. Only created it AND someone else implemented (not self)
+			// 2. Only created it AND someone else implemented (not self), OR
+			// 3. Minor task (allows self-close)
 			var canClose bool
 			if !wasEverInvolved {
 				canClose = true
 			} else if isCreator && hasOtherImplementer && !isImplementer {
+				canClose = true
+			} else if issue.Minor {
 				canClose = true
 			} else {
 				canClose = false

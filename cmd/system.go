@@ -229,9 +229,9 @@ var sessionNameCmd = &cobra.Command{
 			}
 
 			if sess.PreviousSessionID != "" {
-				fmt.Printf("NEW SESSION: %s (previous: %s)\n", sess.ID, sess.PreviousSessionID)
+				fmt.Printf("NEW SESSION: %s on branch: %s (previous: %s)\n", sess.ID, sess.Branch, sess.PreviousSessionID)
 			} else {
-				fmt.Printf("NEW SESSION: %s\n", sess.ID)
+				fmt.Printf("NEW SESSION: %s on branch: %s\n", sess.ID, sess.Branch)
 			}
 
 			// Set name if provided
@@ -254,7 +254,7 @@ var sessionNameCmd = &cobra.Command{
 				output.Error("%v", err)
 				return err
 			}
-			fmt.Printf("SESSION: %s\n", sess.Display())
+			fmt.Printf("SESSION: %s on branch: %s\n", sess.DisplayWithAgent(), sess.Branch)
 			return nil
 		}
 
@@ -266,7 +266,119 @@ var sessionNameCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("SESSION NAMED %s \"%s\"\n", sess.ID, name)
+		fmt.Printf("SESSION NAMED %s \"%s\" on branch: %s\n", sess.ID, name, sess.Branch)
+		return nil
+	},
+}
+
+var sessionListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all sessions (branch + agent scoped)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		sessions, err := session.ListSessions(baseDir)
+		if err != nil {
+			output.Error("failed to list sessions: %v", err)
+			return err
+		}
+
+		if len(sessions) == 0 {
+			fmt.Println("No sessions found.")
+			return nil
+		}
+
+		currentBranch := session.GetCurrentBranch()
+		fp := session.GetAgentFingerprint()
+
+		fmt.Printf("%-16s %-14s %-12s %-18s %s\n", "BRANCH", "AGENT", "SESSION", "LAST ACTIVITY", "AGE")
+		fmt.Println(strings.Repeat("-", 80))
+
+		for _, sess := range sessions {
+			marker := " "
+			if sess.Branch == currentBranch && sess.AgentType == string(fp.Type) && sess.AgentPID == fp.PID {
+				marker = "*"
+			}
+
+			lastActive := sess.LastActivity
+			if lastActive.IsZero() {
+				lastActive = sess.StartedAt
+			}
+			age := time.Since(lastActive).Truncate(time.Minute)
+
+			agentInfo := sess.AgentType
+			if agentInfo == "" {
+				agentInfo = "(legacy)"
+			}
+
+			fmt.Printf("%s%-15s %-14s %-12s %-18s %s\n",
+				marker,
+				sess.Branch,
+				agentInfo,
+				sess.ID,
+				lastActive.Format("2006-01-02 15:04"),
+				age.String())
+		}
+
+		return nil
+	},
+}
+
+var sessionCleanupCmd = &cobra.Command{
+	Use:   "cleanup",
+	Short: "Remove stale session files",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		baseDir := getBaseDir()
+
+		olderThan, _ := cmd.Flags().GetString("older-than")
+		force, _ := cmd.Flags().GetBool("force")
+
+		maxAge, err := session.ParseDuration(olderThan)
+		if err != nil {
+			output.Error("invalid duration: %v", err)
+			return err
+		}
+
+		// Preview what would be deleted
+		sessions, err := session.ListSessions(baseDir)
+		if err != nil {
+			output.Error("failed to list sessions: %v", err)
+			return err
+		}
+
+		now := time.Now()
+		var toDelete []session.Session
+		for _, sess := range sessions {
+			lastActive := sess.LastActivity
+			if lastActive.IsZero() {
+				lastActive = sess.StartedAt
+			}
+			if now.Sub(lastActive) > maxAge {
+				toDelete = append(toDelete, sess)
+			}
+		}
+
+		if len(toDelete) == 0 {
+			fmt.Printf("No sessions older than %s found.\n", olderThan)
+			return nil
+		}
+
+		if !force {
+			fmt.Printf("Will delete %d session(s) older than %s:\n", len(toDelete), olderThan)
+			for _, sess := range toDelete {
+				fmt.Printf("  - %s (branch: %s)\n", sess.ID, sess.Branch)
+			}
+			fmt.Println("\nRun with --force to delete.")
+			return nil
+		}
+
+		deleted, err := session.CleanupStaleSessions(baseDir, maxAge)
+		if err != nil {
+			output.Error("cleanup failed: %v", err)
+			return err
+		}
+
+		fmt.Printf("Deleted %d stale session(s).\n", deleted)
 		return nil
 	},
 }
@@ -728,6 +840,12 @@ func init() {
 	importCmd.Flags().Bool("force", false, "Overwrite existing")
 
 	sessionNameCmd.Flags().Bool("new", false, "Force create a new session")
+
+	// Session subcommands
+	sessionNameCmd.AddCommand(sessionListCmd)
+	sessionNameCmd.AddCommand(sessionCleanupCmd)
+	sessionCleanupCmd.Flags().String("older-than", "7d", "Delete sessions older than this duration")
+	sessionCleanupCmd.Flags().Bool("force", false, "Actually delete (otherwise preview)")
 
 	versionCmd.Flags().Bool("check", true, "Check for updates")
 	versionCmd.Flags().Bool("short", false, "Output only version string")

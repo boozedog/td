@@ -50,31 +50,33 @@ func TestGetOrCreateReusesSessionWhenContextStable(t *testing.T) {
 	}
 }
 
-func TestGetOrCreateRotatesOnContextChange(t *testing.T) {
+func TestGetOrCreateDifferentAgentsDifferentSessions(t *testing.T) {
+	// With agent-scoped sessions, different TD_SESSION_ID values = different agents = different sessions
+	// This is the core bypass prevention: changing agent identity creates new session
 	baseDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(baseDir, ".todos"), 0755); err != nil {
 		t.Fatalf("mkdir .todos: %v", err)
 	}
 
-	t.Setenv("TD_SESSION_ID", "ctx-1")
+	t.Setenv("TD_SESSION_ID", "agent-1")
 	s1, err := GetOrCreate(baseDir)
 	if err != nil {
 		t.Fatalf("GetOrCreate: %v", err)
 	}
 
-	t.Setenv("TD_SESSION_ID", "ctx-2")
+	// Change to different agent
+	t.Setenv("TD_SESSION_ID", "agent-2")
 	s2, err := GetOrCreate(baseDir)
 	if err != nil {
-		t.Fatalf("GetOrCreate (rotated): %v", err)
+		t.Fatalf("GetOrCreate (different agent): %v", err)
 	}
+
+	// Key assertion: different agents should get DIFFERENT sessions (bypass prevention)
 	if s1.ID == s2.ID {
-		t.Fatalf("expected new session ID on context change")
-	}
-	if s2.PreviousSessionID != s1.ID {
-		t.Fatalf("expected PreviousSessionID=%q, got %q", s1.ID, s2.PreviousSessionID)
+		t.Fatalf("expected DIFFERENT session IDs for different agents, both got %q", s1.ID)
 	}
 	if !s2.IsNew {
-		t.Fatalf("expected IsNew=true for newly created session")
+		t.Fatalf("expected IsNew=true for new agent session")
 	}
 }
 

@@ -133,15 +133,15 @@ var usageCmd = &cobra.Command{
 
 		// Show NEW SESSION notice if session just rotated
 		if sess.IsNew && sess.PreviousSessionID != "" {
-			fmt.Printf("NEW SESSION: %s (previous: %s)\n", sess.ID, sess.PreviousSessionID)
+			fmt.Printf("NEW SESSION: %s on branch: %s (previous: %s)\n", sess.ID, sess.Branch, sess.PreviousSessionID)
 			fmt.Println("  You are a new context. You can now review issues implemented by the previous session.")
 			fmt.Println()
 		} else if sess.IsNew {
-			fmt.Printf("NEW SESSION: %s\n", sess.ID)
+			fmt.Printf("NEW SESSION: %s on branch: %s\n", sess.ID, sess.Branch)
 			fmt.Println()
 		}
 
-		fmt.Printf("CURRENT SESSION: %s\n", sess.Display())
+		fmt.Printf("CURRENT SESSION: %s on branch: %s\n", sess.DisplayWithAgent(), sess.Branch)
 
 		if activeWS != nil {
 			fmt.Printf("WORK SESSION: %s \"%s\" (%d issues tagged)\n", activeWS.ID, activeWS.Name, len(wsIssues))
