@@ -34,8 +34,9 @@ type Model struct {
 	// UI state
 	ActivePanel  Panel
 	ScrollOffset map[Panel]int
-	Cursor       map[Panel]int    // Per-panel cursor position (selected row)
-	SelectedID   map[Panel]string // Per-panel selected issue ID (preserved across refresh)
+	Cursor            map[Panel]int    // Per-panel cursor position (selected row)
+	SelectedID        map[Panel]string // Per-panel selected issue ID (preserved across refresh)
+	ScrollIndependent map[Panel]bool   // True when user scrolled viewport away from cursor
 	HelpOpen       bool // Whether help modal is open
 	HelpScroll     int  // Current scroll position in help
 	HelpTotalLines int  // Cached total line count in help
@@ -134,9 +135,10 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 		DB:              database,
 		SessionID:       sessionID,
 		RefreshInterval: interval,
-		ScrollOffset:    make(map[Panel]int),
-		Cursor:          make(map[Panel]int),
-		SelectedID:      make(map[Panel]string),
+		ScrollOffset:      make(map[Panel]int),
+		Cursor:            make(map[Panel]int),
+		SelectedID:        make(map[Panel]string),
+		ScrollIndependent: make(map[Panel]bool),
 		ActivePanel:     PanelCurrentWork,
 		StartedAt:       time.Now(),
 		SearchMode:      false,

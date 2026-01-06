@@ -2126,7 +2126,8 @@ func TestHitTestTaskListRowBottomIndicator(t *testing.T) {
 	m := Model{
 		Width:  80,
 		Height: 30,
-		PaneHeights: [3]float64{0.333, 0.333, 0.334},
+		PaneHeights:   [3]float64{0.333, 0.333, 0.334},
+		PanelBounds:   make(map[Panel]Rect),
 		ScrollOffset: map[Panel]int{
 			PanelTaskList: 2, // Scrolled down, so top indicator is shown
 		},
@@ -2144,6 +2145,15 @@ func TestHitTestTaskListRowBottomIndicator(t *testing.T) {
 			{Issue: models.Issue{ID: "td-10"}, Category: CategoryReady},
 		},
 	}
+	m.updatePanelBounds()
+
+	// With this setup:
+	// - TaskList height = (30-3) * 0.333 = 9
+	// - maxLines = 9 - 3 = 6
+	// - needsScroll = 10 > 6 = true
+	// - showUpIndicator = true (offset=2 > 0)
+	// - hasBottomIndicator = true (2 + 5 < 10)
+	t.Logf("PanelBounds[TaskList].H = %d", m.PanelBounds[PanelTaskList].H)
 
 	// Click on top indicator (relY = 0) should return -1
 	if got := m.hitTestTaskListRow(0); got != -1 {
@@ -2155,11 +2165,187 @@ func TestHitTestTaskListRowBottomIndicator(t *testing.T) {
 		t.Errorf("hitTestTaskListRow(1) = %d, want 2 (first visible row)", got)
 	}
 
-	// Calculate where bottom indicator would be
-	visibleLines := m.visibleHeightForPanel(PanelTaskList) - 1 // -1 for top indicator
+	// Calculate maxLines to find bottom indicator position
+	maxLines := m.PanelBounds[PanelTaskList].H - 3
 
-	// Click at bottom indicator position should return -1
-	if got := m.hitTestTaskListRow(visibleLines); got != -1 {
-		t.Errorf("hitTestTaskListRow(%d) at bottom indicator = %d, want -1", visibleLines, got)
+	// Click at bottom indicator position (maxLines - 1) should return -1
+	if got := m.hitTestTaskListRow(maxLines - 1); got != -1 {
+		t.Errorf("hitTestTaskListRow(%d) at bottom indicator = %d, want -1", maxLines-1, got)
+	}
+}
+
+func TestHitTestTaskListRowWithCategories(t *testing.T) {
+	// Create a model with multiple categories to test header handling
+	// Use a large panel so we have plenty of visible lines for testing
+	m := Model{
+		Width:       80,
+		Height:      50, // Large height for ample visible lines
+		PaneHeights: [3]float64{0.1, 0.8, 0.1}, // TaskList gets 80%
+		ScrollOffset: map[Panel]int{
+			PanelTaskList: 0,
+		},
+		PanelBounds: make(map[Panel]Rect),
+		TaskListRows: []TaskListRow{
+			// Reviewable: indices 0-1
+			{Issue: models.Issue{ID: "rev-1"}, Category: CategoryReviewable},
+			{Issue: models.Issue{ID: "rev-2"}, Category: CategoryReviewable},
+			// Ready: indices 2-4
+			{Issue: models.Issue{ID: "ready-1"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "ready-2"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "ready-3"}, Category: CategoryReady},
+			// Blocked: indices 5-9
+			{Issue: models.Issue{ID: "block-1"}, Category: CategoryBlocked},
+			{Issue: models.Issue{ID: "block-2"}, Category: CategoryBlocked},
+			{Issue: models.Issue{ID: "block-3"}, Category: CategoryBlocked},
+			{Issue: models.Issue{ID: "block-4"}, Category: CategoryBlocked},
+			{Issue: models.Issue{ID: "block-5"}, Category: CategoryBlocked},
+		},
+	}
+	m.updatePanelBounds()
+
+	// With Height=50, PaneHeights[1]=0.8:
+	// availableHeight = 50 - 3 = 47
+	// TaskList height = 47 * 0.8 = 37
+	// maxLines = 37 - 3 = 34
+	// totalRows = 10, so needsScroll = false (no indicators needed)
+
+	// Test cases for different scroll offsets
+	// Since needsScroll is false, there are no scroll indicators
+	tests := []struct {
+		name   string
+		offset int
+		// Map of relY -> expected row index (-1 for non-row clicks)
+		expectations map[int]int
+	}{
+		{
+			name:   "no scroll - start of list",
+			offset: 0,
+			// Layout: header(reviewable), rev-1, rev-2, blank, header(ready), ready-1...
+			expectations: map[int]int{
+				0: -1, // Reviewable header
+				1: 0,  // rev-1
+				2: 1,  // rev-2
+				3: -1, // blank line before Ready
+				4: -1, // Ready header
+				5: 2,  // ready-1
+				6: 3,  // ready-2
+				7: 4,  // ready-3
+				8: -1, // blank line before Blocked
+				9: -1, // Blocked header
+				10: 5, // block-1
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m.ScrollOffset[PanelTaskList] = tt.offset
+			for relY, expectedIdx := range tt.expectations {
+				got := m.hitTestTaskListRow(relY)
+				if got != expectedIdx {
+					t.Errorf("offset=%d, relY=%d: got index %d, want %d",
+						tt.offset, relY, got, expectedIdx)
+				}
+			}
+		})
+	}
+}
+
+func TestHitTestTaskListRowWithScrolling(t *testing.T) {
+	// Test hit testing with scroll indicators
+	// Use small panel to force scrolling
+	m := Model{
+		Width:       80,
+		Height:      20, // Small height to force scrolling
+		PaneHeights: [3]float64{0.2, 0.6, 0.2}, // TaskList gets 60%
+		ScrollOffset: map[Panel]int{
+			PanelTaskList: 0,
+		},
+		PanelBounds: make(map[Panel]Rect),
+		TaskListRows: []TaskListRow{
+			// All same category to simplify (no headers between items)
+			{Issue: models.Issue{ID: "item-0"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-1"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-2"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-3"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-4"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-5"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-6"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-7"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-8"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-9"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-10"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-11"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-12"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-13"}, Category: CategoryReady},
+			{Issue: models.Issue{ID: "item-14"}, Category: CategoryReady},
+		},
+	}
+	m.updatePanelBounds()
+
+	// Height=20, PaneHeights[1]=0.6:
+	// availableHeight = 20 - 3 = 17
+	// TaskList height = 17 * 0.6 = 10
+	// maxLines = 10 - 3 = 7
+	// totalRows = 15, so needsScroll = true
+	maxLines := m.PanelBounds[PanelTaskList].H - 3
+	t.Logf("maxLines = %d", maxLines)
+
+	tests := []struct {
+		name         string
+		offset       int
+		expectations map[int]int
+	}{
+		{
+			name:   "at start - bottom indicator only",
+			offset: 0,
+			// Layout: header(ready), item-0, item-1, ..., bottom indicator
+			expectations: map[int]int{
+				0: -1, // Ready header
+				1: 0,  // item-0
+				2: 1,  // item-1
+				3: 2,  // item-2
+				4: 3,  // item-3
+				5: 4,  // item-4
+			},
+		},
+		{
+			name:   "scrolled - both indicators",
+			offset: 3,
+			// Layout: top indicator, item-3, item-4, ..., bottom indicator
+			// No header since same category as prev item
+			expectations: map[int]int{
+				0: -1, // top indicator
+				1: 3,  // item-3
+				2: 4,  // item-4
+				3: 5,  // item-5
+				4: 6,  // item-6
+			},
+		},
+		{
+			name:   "scrolled more - both indicators",
+			offset: 7,
+			// Layout: top indicator, item-7, item-8, ..., bottom indicator
+			expectations: map[int]int{
+				0: -1, // top indicator
+				1: 7,  // item-7
+				2: 8,  // item-8
+				3: 9,  // item-9
+				4: 10, // item-10
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m.ScrollOffset[PanelTaskList] = tt.offset
+			for relY, expectedIdx := range tt.expectations {
+				got := m.hitTestTaskListRow(relY)
+				if got != expectedIdx {
+					t.Errorf("offset=%d, relY=%d: got index %d, want %d",
+						tt.offset, relY, got, expectedIdx)
+				}
+			}
+		})
 	}
 }

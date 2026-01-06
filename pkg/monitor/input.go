@@ -53,29 +53,56 @@ func (m Model) hitTestTaskListRow(relY int) int {
 	}
 
 	offset := m.ScrollOffset[PanelTaskList]
-	height := m.visibleHeightForPanel(PanelTaskList)
+	totalRows := len(m.TaskListRows)
+
+	// Calculate maxLines the same way as renderTaskListPanel
+	bounds := m.PanelBounds[PanelTaskList]
+	maxLines := bounds.H - 3 // Account for title + border (matches view)
+
+	// Determine scroll indicators needed BEFORE clamping (matches view logic)
+	needsScroll := totalRows > maxLines
+	showUpIndicator := needsScroll && offset > 0
+
+	// Calculate effective maxLines with indicators
+	effectiveMaxLines := maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	// Reserve space for down indicator if content exceeds visible area
+	if needsScroll && offset+effectiveMaxLines < totalRows {
+		effectiveMaxLines--
+	}
+
+	// Clamp offset (matches view logic)
+	if offset > totalRows-effectiveMaxLines && totalRows > effectiveMaxLines {
+		offset = totalRows - effectiveMaxLines
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Recalculate indicators after clamping (matches view logic)
+	showUpIndicator = needsScroll && offset > 0
+	effectiveMaxLines = maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	hasBottomIndicator := needsScroll && offset+effectiveMaxLines < totalRows
+	if hasBottomIndicator {
+		effectiveMaxLines--
+	}
 
 	// Account for "▲ more above" indicator
 	linePos := 0
-	hasTopIndicator := offset > 0
-	if hasTopIndicator {
+	if showUpIndicator {
 		if relY == 0 {
 			return -1 // Clicked on scroll indicator
 		}
 		linePos = 1
 	}
 
-	// Check for "▼ more below" indicator
-	// Calculate visible content lines and check if there's more content below
-	visibleLines := height
-	if hasTopIndicator {
-		visibleLines--
-	}
-	totalLinesFromOffset := m.taskListLinesFromOffset(offset)
-	hasBottomIndicator := totalLinesFromOffset > visibleLines
-
 	// If clicking on the bottom indicator line, return -1
-	if hasBottomIndicator && relY >= visibleLines {
+	if hasBottomIndicator && relY >= maxLines-1 {
 		return -1 // Clicked on bottom scroll indicator
 	}
 
@@ -107,7 +134,7 @@ func (m Model) hitTestTaskListRow(relY int) int {
 		linePos++
 
 		// Stop if we've gone past visible area
-		if linePos > height {
+		if linePos >= maxLines {
 			break
 		}
 	}
@@ -297,9 +324,16 @@ func (m *Model) restoreCursors() {
 	m.clampCursor(PanelActivity)
 
 	// Ensure scroll offsets keep the cursor visible after refresh
-	m.ensureCursorVisible(PanelCurrentWork)
-	m.ensureCursorVisible(PanelTaskList)
-	m.ensureCursorVisible(PanelActivity)
+	// UNLESS user has independently scrolled the viewport with mouse wheel
+	if !m.ScrollIndependent[PanelCurrentWork] {
+		m.ensureCursorVisible(PanelCurrentWork)
+	}
+	if !m.ScrollIndependent[PanelTaskList] {
+		m.ensureCursorVisible(PanelTaskList)
+	}
+	if !m.ScrollIndependent[PanelActivity] {
+		m.ensureCursorVisible(PanelActivity)
+	}
 }
 
 // clampCursor ensures cursor is within valid bounds for a panel
@@ -307,13 +341,22 @@ func (m *Model) clampCursor(panel Panel) {
 	count := m.rowCount(panel)
 	if count == 0 {
 		m.Cursor[panel] = 0
+		if m.ScrollIndependent != nil {
+			m.ScrollIndependent[panel] = false
+		}
 		return
 	}
 	if m.Cursor[panel] >= count {
 		m.Cursor[panel] = count - 1
+		if m.ScrollIndependent != nil {
+			m.ScrollIndependent[panel] = false
+		}
 	}
 	if m.Cursor[panel] < 0 {
 		m.Cursor[panel] = 0
+		if m.ScrollIndependent != nil {
+			m.ScrollIndependent[panel] = false
+		}
 	}
 }
 
@@ -346,6 +389,9 @@ func (m *Model) moveCursor(delta int) {
 		newPos = count - 1
 	}
 	m.Cursor[panel] = newPos
+	if m.ScrollIndependent != nil {
+		m.ScrollIndependent[panel] = false
+	}
 
 	// Save the selected issue ID for persistence across refresh
 	m.saveSelectedID(panel)
@@ -772,14 +818,14 @@ func (m Model) handleMouseWheel(x, y, delta int) (tea.Model, tea.Cmd) {
 		newOffset = 0
 	}
 
-	// Calculate max offset to allow scrolling to show all content
-	// For TaskList, we need to account for category headers taking extra lines
-	maxOffset := count - 1 // Allow scrolling until last item is at top
+	// Clamp to max valid offset (accounts for visible height and category headers)
+	maxOffset := m.maxScrollOffset(panel)
 	if newOffset > maxOffset {
 		newOffset = maxOffset
 	}
 
 	m.ScrollOffset[panel] = newOffset
+	m.ScrollIndependent[panel] = true
 
 	// NOTE: We intentionally do NOT call ensureCursorVisible here.
 	// Mouse scrolling should scroll the view independently of the cursor.
@@ -897,12 +943,14 @@ func (m Model) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 	if m.ActivePanel != panel {
 		m.ActivePanel = panel
 		m.clampCursor(panel)
+		m.ScrollIndependent[panel] = false
 		m.ensureCursorVisible(panel)
 	}
 
 	// Select the clicked row
 	if row >= 0 && row != m.Cursor[panel] {
 		m.Cursor[panel] = row
+		m.ScrollIndependent[panel] = false
 		m.saveSelectedID(panel)
 		m.ensureCursorVisible(panel)
 	}
