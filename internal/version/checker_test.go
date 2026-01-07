@@ -3,6 +3,7 @@ package version
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -271,5 +272,126 @@ func TestCheckAsyncUpToDate(t *testing.T) {
 
 	if msg != nil {
 		t.Errorf("Expected nil for up-to-date version, got: %T", msg)
+	}
+}
+
+// TestCheckResultTypes verifies CheckResult structure and field types
+func TestCheckResultTypes(t *testing.T) {
+	tests := []struct {
+		name           string
+		currentVersion string
+	}{
+		{"standard-version", "v1.0.0"},
+		{"prerelease-version", "v1.0.0-beta"},
+		{"zero-version", "v0.0.0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := Check(tt.currentVersion)
+
+			// Verify CurrentVersion is always set
+			if result.CurrentVersion != tt.currentVersion {
+				t.Errorf("CurrentVersion mismatch: got %q, want %q", result.CurrentVersion, tt.currentVersion)
+			}
+
+			// LatestVersion should be a string (may be empty for dev versions)
+			_ = result.LatestVersion
+
+			// UpdateURL should be a valid URL format or empty
+			if result.UpdateURL != "" && !strings.Contains(result.UpdateURL, "://") {
+				t.Errorf("UpdateURL invalid format: %q", result.UpdateURL)
+			}
+
+			// HasUpdate is a boolean
+			_ = result.HasUpdate
+
+			// Error can be nil or an error
+			_ = result.Error
+		})
+	}
+}
+
+// TestCheckWithDevelopmentVersion verifies development versions skip network checks
+func TestCheckWithDevelopmentVersion(t *testing.T) {
+	devVersions := []string{
+		"",
+		"unknown",
+		"dev",
+		"devel",
+		"devel+abc123",
+	}
+
+	for _, version := range devVersions {
+		t.Run("dev_"+version, func(t *testing.T) {
+			result := Check(version)
+
+			// Development versions should not have an error set
+			if result.Error != nil {
+				t.Errorf("Development version %q should not check: got error %v", version, result.Error)
+			}
+
+			// LatestVersion should be empty for dev versions
+			if result.LatestVersion != "" {
+				t.Errorf("Development version should have empty LatestVersion, got %q", result.LatestVersion)
+			}
+
+			// HasUpdate should be false
+			if result.HasUpdate {
+				t.Errorf("Development version should never have updates")
+			}
+		})
+	}
+}
+
+// TestCheckResultStructure verifies CheckResult fields are properly populated
+func TestCheckResultStructure(t *testing.T) {
+	// Test with a development version that skips network check
+	result := Check("devel")
+
+	// CurrentVersion should always be set
+	if result.CurrentVersion != "devel" {
+		t.Errorf("CurrentVersion = %q, want %q", result.CurrentVersion, "devel")
+	}
+
+	// For development versions, other fields should be empty
+	if result.LatestVersion != "" {
+		t.Errorf("LatestVersion should be empty for dev version, got %q", result.LatestVersion)
+	}
+
+	// Should not have an error
+	if result.Error != nil {
+		t.Errorf("Dev version check should not error: %v", result.Error)
+	}
+}
+
+// TestIsNewerPrereleaseComparison handles prerelease comparison edge cases
+func TestIsNewerPrereleaseComparison(t *testing.T) {
+	tests := []struct {
+		name     string
+		latest   string
+		current  string
+		expected bool
+	}{
+		// Prerelease vs final same core version
+		{"v1-vs-beta", "v1.0.0", "v1.0.0-beta", false},
+		{"rc1-vs-beta", "v1.0.0-rc1", "v1.0.0-beta", false},
+		{"alpha-vs-alpha", "v1.0.0-alpha", "v1.0.0-alpha", false},
+		// Major version jump with prerelease
+		{"v2-beta-vs-v1.9.9", "v2.0.0-beta", "v1.9.9", true},
+		{"v2-rc1-vs-v1.99.99", "v2.0.0-rc1", "v1.99.99", true},
+		// Same prerelease versions
+		{"beta-vs-beta", "v1.0.0-beta", "v1.0.0-beta", false},
+		// Complex prerelease identifiers
+		{"rc.1.test-vs-rc.1", "v1.0.0-rc.1.test", "v1.0.0-rc.1", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isNewer(tt.latest, tt.current)
+			if result != tt.expected {
+				t.Errorf("isNewer(%q, %q) = %v, want %v", tt.latest, tt.current, result, tt.expected)
+			}
+		})
 	}
 }

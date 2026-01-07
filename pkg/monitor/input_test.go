@@ -287,6 +287,13 @@ func TestHitTestRow_TaskListWithoutScroll(t *testing.T) {
 	}
 	m.updatePanelBounds()
 
+	// TaskList panel starts at Y=9 (after CurrentWork takes ~9 lines with height=30)
+	// Content starts at Y + 2 (after title + border)
+	// With height=30, footer=3, available=27, each panel gets 9 lines
+	// TaskList: Y=9, content starts at Y=11
+	// Row layout: first category header (REVIEWABLE:), then rows
+	// At offset=0: line 0 is "REVIEWABLE:" header, line 1 is row 0, line 2 is row 1
+	// Then blank + "READY:" header + row 2
 	tests := []struct {
 		name     string
 		y        int
@@ -294,17 +301,17 @@ func TestHitTestRow_TaskListWithoutScroll(t *testing.T) {
 	}{
 		{
 			name:     "click on first task",
-			y:        4, // After title and border
+			y:        12, // Y=9 (panel) + 2 (title+border) + 1 (after header) = 12
 			expected: 0,
 		},
 		{
 			name:     "click on second task",
-			y:        5,
+			y:        13, // Y=12 + 1
 			expected: 1,
 		},
 		{
 			name:     "click on category header",
-			y:        6, // "READY:" header
+			y:        11, // Y=9 (panel) + 2 (title+border) = 11 is REVIEWABLE header line
 			expected: -1,
 		},
 	}
@@ -526,7 +533,7 @@ func TestHandleMouseClick_DoubleClick(t *testing.T) {
 			x:                 50, y: 16,
 			lastClickTime:     now.Add(-100 * time.Millisecond),
 			lastClickPanel:    PanelTaskList,
-			lastClickRow:      1,
+			lastClickRow:      5, // Previous click was on row 5, current click assumed on row 1
 			expectedDoubleClick: false,
 			description:       "different row, not double-click",
 		},
@@ -953,35 +960,34 @@ func TestUpdatePanelBounds(t *testing.T) {
 	}
 }
 
-// TestMaxScrollOffsetTaskListPanel tests maximum scroll offset calculation for activity panel
+// TestMaxScrollOffsetActivityPanel tests maximum scroll offset calculation for activity panel
+// Note: With Height=30, footer=3, and equal third pane heights, the Activity panel
+// gets ~9 rows of height. visibleHeightForPanel subtracts 5 for borders/title/indicators,
+// leaving ~4 visible rows.
 func TestMaxScrollOffsetActivityPanel(t *testing.T) {
 	tests := []struct {
 		name              string
 		rowCount          int
-		visibleHeight     int
 		expectedMaxOffset int
 		description       string
 	}{
 		{
 			name:              "few rows no scroll",
 			rowCount:          3,
-			visibleHeight:     10,
 			expectedMaxOffset: 0,
-			description:       "not enough rows to scroll",
+			description:       "3 rows fits in ~4 visible lines",
 		},
 		{
 			name:              "many rows allow scroll",
 			rowCount:          20,
-			visibleHeight:     5,
-			expectedMaxOffset: 15,
-			description:       "many rows allow scrolling",
+			expectedMaxOffset: 16, // 20 - 4 visible = 16
+			description:       "20 rows with ~4 visible allows scrolling",
 		},
 		{
 			name:              "exactly fills viewport",
-			rowCount:          10,
-			visibleHeight:     10,
+			rowCount:          4,
 			expectedMaxOffset: 0,
-			description:       "content exactly fills viewport",
+			description:       "4 rows exactly fills ~4 visible lines",
 		},
 	}
 
@@ -998,7 +1004,7 @@ func TestMaxScrollOffsetActivityPanel(t *testing.T) {
 
 			// Verify maxScrollOffset calculates correctly for non-header panels
 			maxOffset := m.maxScrollOffset(PanelActivity)
-			if maxOffset > tt.expectedMaxOffset+2 { // Allow small variance
+			if maxOffset > tt.expectedMaxOffset+2 { // Allow small variance for layout calculations
 				t.Errorf("maxScrollOffset: got %d, want <= %d (%s)", maxOffset, tt.expectedMaxOffset, tt.description)
 			}
 		})

@@ -278,3 +278,228 @@ func TestCacheEntryJSON(t *testing.T) {
 		t.Errorf("JSON round-trip failed: original=%+v, loaded=%+v", entry, loaded)
 	}
 }
+
+// TestCachePathEmptyHome tests cachePath behavior with empty HOME directory
+func TestCachePathEmptyHome(t *testing.T) {
+	oldHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", oldHome)
+
+	// Unset HOME to simulate environment without it
+	os.Setenv("HOME", "")
+
+	path := cachePath()
+	if path != "" {
+		t.Errorf("cachePath() should return empty string when HOME is not set, got %q", path)
+	}
+}
+
+// TestIsCacheValidBoundaryConditions tests cache validity at boundary times
+func TestIsCacheValidBoundaryConditions(t *testing.T) {
+	now := time.Now()
+	cacheTTL := 6 * time.Hour
+
+	tests := []struct {
+		name          string
+		checkedAt     time.Time
+		expectedValid bool
+	}{
+		{"just created", now, true},
+		{"1 second old", now.Add(-1 * time.Second), true},
+		{"almost expired", now.Add(-cacheTTL + time.Second), true},
+		{"exactly at TTL", now.Add(-cacheTTL), false},
+		{"just past TTL", now.Add(-cacheTTL - time.Millisecond), false},
+		{"way past TTL", now.Add(-24 * time.Hour), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry := &CacheEntry{
+				LatestVersion:  "v1.1.0",
+				CurrentVersion: "v1.0.0",
+				CheckedAt:      tt.checkedAt,
+				HasUpdate:      true,
+			}
+
+			valid := IsCacheValid(entry, "v1.0.0")
+			if valid != tt.expectedValid {
+				t.Errorf("IsCacheValid() = %v, want %v", valid, tt.expectedValid)
+			}
+		})
+	}
+}
+
+// TestSaveCacheCreatesDirs tests that SaveCache creates necessary directories
+func TestSaveCacheCreatesDirs(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", oldHome)
+
+	// Set HOME to temp directory to control cache location
+	os.Setenv("HOME", tmpDir)
+
+	entry := &CacheEntry{
+		LatestVersion:  "v1.0.0",
+		CurrentVersion: "v0.9.0",
+		CheckedAt:      time.Now(),
+		HasUpdate:      true,
+	}
+
+	err := SaveCache(entry)
+	if err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+
+	// Verify config directory was created
+	configDir := filepath.Join(tmpDir, ".config", "td")
+	if _, err := os.Stat(configDir); os.IsNotExist(err) {
+		t.Errorf("SaveCache() should create config directory")
+	}
+
+	// Verify cache file exists
+	cacheFile := filepath.Join(configDir, "version_cache.json")
+	if _, err := os.Stat(cacheFile); os.IsNotExist(err) {
+		t.Errorf("SaveCache() should create cache file")
+	}
+}
+
+// TestLoadCachePermissions tests that loaded cache data is accessible
+func TestLoadCachePermissions(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", oldHome)
+
+	os.Setenv("HOME", tmpDir)
+
+	originalEntry := &CacheEntry{
+		LatestVersion:  "v2.0.0",
+		CurrentVersion: "v1.5.0",
+		CheckedAt:      time.Now().Round(time.Second),
+		HasUpdate:      true,
+	}
+
+	// Save cache
+	if err := SaveCache(originalEntry); err != nil {
+		t.Fatalf("SaveCache() error = %v", err)
+	}
+
+	// Load cache
+	loaded, err := LoadCache()
+	if err != nil {
+		t.Fatalf("LoadCache() error = %v", err)
+	}
+
+	// Verify all fields are accessible
+	if loaded == nil {
+		t.Fatal("LoadCache() returned nil")
+	}
+
+	if loaded.LatestVersion == "" {
+		t.Error("LatestVersion not loaded")
+	}
+	if loaded.CurrentVersion == "" {
+		t.Error("CurrentVersion not loaded")
+	}
+	if loaded.CheckedAt.IsZero() {
+		t.Error("CheckedAt not loaded properly")
+	}
+}
+
+// TestCacheVsVersionCheck tests that cache invalidation on version change works correctly
+func TestCacheVersionChange(t *testing.T) {
+	now := time.Now()
+
+	tests := []struct {
+		name           string
+		cachedVersion  string
+		currentVersion string
+		shouldBeValid  bool
+	}{
+		{"same version", "v1.0.0", "v1.0.0", true},
+		{"upgraded", "v1.0.0", "v1.1.0", false},
+		{"downgraded", "v1.1.0", "v1.0.0", false},
+		{"patch upgrade", "v1.0.0", "v1.0.1", false},
+		{"major upgrade", "v1.0.0", "v2.0.0", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entry := &CacheEntry{
+				LatestVersion:  "v1.5.0",
+				CurrentVersion: tt.cachedVersion,
+				CheckedAt:      now,
+				HasUpdate:      true,
+			}
+
+			valid := IsCacheValid(entry, tt.currentVersion)
+			if valid != tt.shouldBeValid {
+				t.Errorf("IsCacheValid() = %v, want %v for cache %q vs current %q",
+					valid, tt.shouldBeValid, tt.cachedVersion, tt.currentVersion)
+			}
+		})
+	}
+}
+
+// TestCacheEntryEdgeCases tests various edge case CacheEntry values
+func TestCacheEntryEdgeCases(t *testing.T) {
+	tmpDir := t.TempDir()
+	oldHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", oldHome)
+
+	os.Setenv("HOME", tmpDir)
+
+	tests := []struct {
+		name  string
+		entry *CacheEntry
+	}{
+		{
+			name: "with prerelease versions",
+			entry: &CacheEntry{
+				LatestVersion:  "v1.0.0-beta",
+				CurrentVersion: "v1.0.0-alpha",
+				CheckedAt:      time.Now().Round(time.Second),
+				HasUpdate:      true,
+			},
+		},
+		{
+			name: "with zero time",
+			entry: &CacheEntry{
+				LatestVersion:  "v1.0.0",
+				CurrentVersion: "v0.9.0",
+				CheckedAt:      time.Time{},
+				HasUpdate:      false,
+			},
+		},
+		{
+			name: "very old timestamp",
+			entry: &CacheEntry{
+				LatestVersion:  "v1.0.0",
+				CurrentVersion: "v1.0.0",
+				CheckedAt:      time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC),
+				HasUpdate:      false,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save
+			if err := SaveCache(tt.entry); err != nil {
+				t.Fatalf("SaveCache() error = %v", err)
+			}
+
+			// Load
+			loaded, err := LoadCache()
+			if err != nil {
+				t.Fatalf("LoadCache() error = %v", err)
+			}
+
+			// Verify structure is preserved
+			if loaded == nil {
+				t.Fatal("Loaded entry is nil")
+			}
+
+			// Clean up for next test
+			os.Remove(cachePath())
+		})
+	}
+}

@@ -4,7 +4,13 @@
       "Bash(./td usage:*)",
       "Bash(./td help:*)",
       "Bash(./td add:*)",
-      "Bash(./td deps:*)"
+      "Bash(./td deps:*)",
+      "Bash(td usage:*)",
+      "Bash(td query:*)",
+      "Bash(find:*)",
+      "Bash(sqlite3:*)",
+      "Bash(ls:*)",
+      "Bash(go test:*)"
     ]
   }
 }

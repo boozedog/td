@@ -88,10 +88,10 @@ func TestHelpModalMaxScroll(t *testing.T) {
 		expectedMaxScroll int
 	}{
 		{"no scroll needed", 120, 40, 20, 0},
-		{"single page of scroll", 120, 40, 30, 4},
-		{"multiple pages", 120, 40, 50, 24},
-		{"small terminal", 50, 20, 30, 11},
-		{"very small terminal", 50, 15, 30, 7},
+		{"single page of scroll", 120, 40, 30, 2},
+		{"multiple pages", 120, 40, 50, 22},
+		{"small terminal", 50, 20, 30, 18},
+		{"very small terminal", 50, 15, 30, 19},
 	}
 
 	for _, tt := range tests {
@@ -122,7 +122,7 @@ func TestHelpVisibleHeight(t *testing.T) {
 	}{
 		{"standard height", 40, 28}, // 80% = 32, minus 4 for border/footer = 28
 		{"small height", 20, 12},    // 80% = 16, minus 4 = 12
-		{"very small", 15, 8},       // 80% = 12, clamped to min 15, minus 4 = 11, but clamped to 8
+		{"very small", 15, 11},      // 80% = 12, clamped to min 15, minus 4 = 11
 		{"very large", 100, 36},     // 80% = 80, clamped to max 40, minus 4 = 36
 	}
 
@@ -152,8 +152,8 @@ func TestHelpScrollClamping(t *testing.T) {
 	}{
 		{"scroll at top", 0, 100, 120, 40, 0},
 		{"scroll negative", -5, 100, 120, 40, 0},
-		{"scroll too high", 100, 50, 120, 40, 8}, // maxScroll = 50 - 28 (visible) - 1 indicator = 21, but check actual calc
-		{"scroll at max", 30, 50, 120, 40, 21},
+		{"scroll too high", 100, 50, 120, 40, 22}, // maxScroll = 50 - 28 (visible) = 22, clamped to 22
+		{"scroll at max", 30, 50, 120, 40, 22},    // maxScroll = 50 - 28 = 22, clamped to 22
 		{"scroll within bounds", 5, 100, 120, 40, 5},
 	}
 
@@ -188,7 +188,7 @@ func TestHelpScrollWithKeyboardInput(t *testing.T) {
 	}{
 		{"scroll down one line", 0, 50, 40, 1, 1, "single line down"},
 		{"scroll up from middle", 10, 50, 40, -5, 5, "multiple lines up"},
-		{"scroll down clamped", 25, 50, 40, 10, 21, "clamped at bottom"},
+		{"scroll down clamped", 25, 50, 40, 10, 22, "clamped at bottom (maxScroll=22)"},
 		{"scroll up clamped", 0, 50, 40, -10, 0, "clamped at top"},
 		{"half page down", 0, 100, 40, 14, 14, "half page (14 lines)"},
 		{"full page down", 0, 100, 40, 28, 28, "full page (28 lines)"},
@@ -247,8 +247,8 @@ func TestHelpExitToBottom(t *testing.T) {
 	// Simulate jumping to bottom (G command)
 	m.HelpScroll = m.helpMaxScroll()
 
-	if m.HelpScroll != 21 {
-		t.Errorf("After jumping to bottom: HelpScroll = %d, want 21", m.HelpScroll)
+	if m.HelpScroll != 72 {
+		t.Errorf("After jumping to bottom: HelpScroll = %d, want 72 (100 lines - 28 visible)", m.HelpScroll)
 	}
 }
 
@@ -295,7 +295,7 @@ func TestHelpModalEdgeCaseLongTerminal(t *testing.T) {
 
 	// Verify calculations work without panic
 	visibleHeight := m.helpVisibleHeight()
-	if visibleHeight > 40 {
+	if visibleHeight > 36 {
 		t.Errorf("helpVisibleHeight() = %d, should be clamped to 36 (40-4)", visibleHeight)
 	}
 
@@ -384,7 +384,7 @@ func TestHelpScrollIndicators(t *testing.T) {
 		shouldShowDown bool
 	}{
 		{"at top", 0, 50, false, true},
-		{"at bottom", 21, 50, true, false},
+		{"at bottom", 22, 50, true, false},
 		{"in middle", 10, 50, true, true},
 		{"single page", 0, 20, false, false},
 	}

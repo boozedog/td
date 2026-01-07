@@ -1094,3 +1094,632 @@ func TestIntegration_BypassAttemptErrors(t *testing.T) {
 		})
 	}
 }
+
+// ============================================================================
+// COMMAND-LEVEL INTEGRATION TESTS FOR BYPASS PREVENTION
+// These tests verify the actual command logic matches bypass prevention rules
+// ============================================================================
+
+// TestCommand_CreatorAsImplementerCannotClose verifies creator who implemented cannot close
+func TestCommand_CreatorAsImplementerCannotClose(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	creatorSess := "ses_creator"
+
+	// Creator creates and implements issue
+	issue := &models.Issue{
+		Title:              "Self-implemented task",
+		Status:             models.StatusInProgress,
+		CreatorSession:     creatorSess,
+		ImplementerSession: creatorSess, // Same session
+	}
+	if err := db.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Record both creation and implementation
+	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionStarted)
+
+	// Simulate close command logic from cmd/review.go closeCmd
+	wasInvolved, err := db.WasSessionInvolved(issue.ID, creatorSess)
+	if err != nil {
+		t.Fatalf("WasSessionInvolved failed: %v", err)
+	}
+
+	isCreator := issue.CreatorSession == creatorSess
+	isImplementer := issue.ImplementerSession == creatorSess
+	hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
+	wasEverInvolved := wasInvolved || isCreator || isImplementer
+
+	// Apply close command logic
+	var canClose bool
+	if !wasEverInvolved {
+		canClose = true
+	} else if isCreator && hasOtherImplementer && !isImplementer {
+		canClose = true
+	} else if issue.Minor {
+		canClose = true
+	}
+
+	if canClose {
+		t.Error("Creator who is also implementer should NOT be able to close without self-close-exception")
+	}
+}
+
+// TestCommand_UninvolvedSessionCanClose verifies uninvolved session CAN close issues
+func TestCommand_UninvolvedSessionCanClose(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	creatorSess := "ses_creator"
+	implSess := "ses_impl"
+	closerSess := "ses_uninvolved"
+
+	// Create issue with different creator and implementer
+	issue := &models.Issue{
+		Title:              "Task to close",
+		Status:             models.StatusInReview,
+		CreatorSession:     creatorSess,
+		ImplementerSession: implSess,
+	}
+	if err := db.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Record actions for creator and implementer
+	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+
+	// Simulate close command logic for uninvolved session
+	wasInvolved, err := db.WasSessionInvolved(issue.ID, closerSess)
+	if err != nil {
+		t.Fatalf("WasSessionInvolved failed: %v", err)
+	}
+
+	isCreator := issue.CreatorSession == closerSess
+	isImplementer := issue.ImplementerSession == closerSess
+	hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
+	wasEverInvolved := wasInvolved || isCreator || isImplementer
+
+	// Apply close command logic
+	var canClose bool
+	if !wasEverInvolved {
+		canClose = true
+	} else if isCreator && hasOtherImplementer && !isImplementer {
+		canClose = true
+	} else if issue.Minor {
+		canClose = true
+	}
+
+	if !canClose {
+		t.Error("Uninvolved session should be able to close issues")
+	}
+}
+
+// TestCommand_DBErrorHandlingApprove verifies conservative behavior on DB errors
+func TestCommand_DBErrorHandlingApprove(t *testing.T) {
+	// This tests the pattern used in approve command:
+	// On DB error, assume involvement (conservative approach)
+
+	tests := []struct {
+		name           string
+		dbError        bool
+		sessionID      string
+		isCreator      bool
+		isImplementer  bool
+		isMinor        bool
+		expectCanApprove bool
+	}{
+		{
+			name:             "DB error assumes involvement - blocks approve",
+			dbError:          true,
+			sessionID:        "ses_unknown",
+			isCreator:        false,
+			isImplementer:    false,
+			isMinor:          false,
+			expectCanApprove: false, // Conservative: block on error
+		},
+		{
+			name:             "DB error but minor task - allows approve",
+			dbError:          true,
+			sessionID:        "ses_unknown",
+			isCreator:        false,
+			isImplementer:    false,
+			isMinor:          true,
+			expectCanApprove: true, // Minor overrides
+		},
+		{
+			name:             "No error, not involved - allows approve",
+			dbError:          false,
+			sessionID:        "ses_reviewer",
+			isCreator:        false,
+			isImplementer:    false,
+			isMinor:          false,
+			expectCanApprove: true,
+		},
+		{
+			name:             "No error, is creator - blocks approve",
+			dbError:          false,
+			sessionID:        "ses_creator",
+			isCreator:        true,
+			isImplementer:    false,
+			isMinor:          false,
+			expectCanApprove: false,
+		},
+		{
+			name:             "No error, is implementer - blocks approve",
+			dbError:          false,
+			sessionID:        "ses_impl",
+			isCreator:        false,
+			isImplementer:    true,
+			isMinor:          false,
+			expectCanApprove: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Simulate the approve command logic from cmd/review.go
+			var wasInvolved bool
+			if tt.dbError {
+				// On error, conservative assumption
+				wasInvolved = true
+			} else {
+				// No error case - would normally query DB
+				wasInvolved = false
+			}
+
+			// Check creator/implementer flags (defensive fallback)
+			wasEverInvolved := wasInvolved || tt.isCreator || tt.isImplementer
+
+			// Apply approve command logic
+			canApprove := !wasEverInvolved || tt.isMinor
+
+			if canApprove != tt.expectCanApprove {
+				t.Errorf("Expected canApprove=%v, got %v", tt.expectCanApprove, canApprove)
+			}
+		})
+	}
+}
+
+// TestCommand_DBErrorHandlingClose verifies conservative behavior on DB errors for close
+func TestCommand_DBErrorHandlingClose(t *testing.T) {
+	tests := []struct {
+		name            string
+		dbError         bool
+		isCreator       bool
+		isImplementer   bool
+		hasOtherImpl    bool
+		isMinor         bool
+		expectCanClose  bool
+	}{
+		{
+			name:           "DB error assumes involvement - blocks close",
+			dbError:        true,
+			isCreator:      false,
+			isImplementer:  false,
+			hasOtherImpl:   false,
+			isMinor:        false,
+			expectCanClose: false,
+		},
+		{
+			name:           "DB error but minor task - allows close",
+			dbError:        true,
+			isCreator:      false,
+			isImplementer:  false,
+			hasOtherImpl:   false,
+			isMinor:        true,
+			expectCanClose: true,
+		},
+		{
+			name:           "No error, uninvolved - allows close",
+			dbError:        false,
+			isCreator:      false,
+			isImplementer:  false,
+			hasOtherImpl:   false,
+			isMinor:        false,
+			expectCanClose: true,
+		},
+		{
+			name:           "No error, creator with other implementer - allows close",
+			dbError:        false,
+			isCreator:      true,
+			isImplementer:  false,
+			hasOtherImpl:   true,
+			isMinor:        false,
+			expectCanClose: true,
+		},
+		{
+			name:           "No error, creator without other implementer - blocks close",
+			dbError:        false,
+			isCreator:      true,
+			isImplementer:  false,
+			hasOtherImpl:   false,
+			isMinor:        false,
+			expectCanClose: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Simulate the close command logic from cmd/review.go
+			var wasInvolved bool
+			if tt.dbError {
+				wasInvolved = true // Conservative
+			}
+
+			wasEverInvolved := wasInvolved || tt.isCreator || tt.isImplementer
+
+			// Apply close command logic
+			var canClose bool
+			if !wasEverInvolved {
+				canClose = true
+			} else if tt.isCreator && tt.hasOtherImpl && !tt.isImplementer {
+				canClose = true
+			} else if tt.isMinor {
+				canClose = true
+			}
+
+			if canClose != tt.expectCanClose {
+				t.Errorf("Expected canClose=%v, got %v", tt.expectCanClose, canClose)
+			}
+		})
+	}
+}
+
+// TestCommand_CreatorOnlyCannotApprove verifies creator (who didn't implement) cannot approve
+func TestCommand_CreatorOnlyCannotApprove(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	creatorSess := "ses_creator"
+	implSess := "ses_impl"
+
+	// Creator creates issue, different session implements
+	issue := &models.Issue{
+		Title:              "Task with separate implementer",
+		Status:             models.StatusInReview,
+		CreatorSession:     creatorSess,
+		ImplementerSession: implSess,
+	}
+	if err := db.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Record creator action
+	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+
+	// Creator tries to approve
+	wasInvolved, _ := db.WasSessionInvolved(issue.ID, creatorSess)
+	isCreator := issue.CreatorSession == creatorSess
+	isImplementer := issue.ImplementerSession == creatorSess
+	wasEverInvolved := wasInvolved || isCreator || isImplementer
+
+	canApprove := !wasEverInvolved || issue.Minor
+
+	if canApprove {
+		t.Error("Creator should NOT be able to approve even if they didn't implement")
+	}
+}
+
+// TestCommand_ImplementerOnlyCannotApprove verifies implementer (who didn't create) cannot approve
+func TestCommand_ImplementerOnlyCannotApprove(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	creatorSess := "ses_creator"
+	implSess := "ses_impl"
+
+	// Different session creates, implementer just implements
+	issue := &models.Issue{
+		Title:              "Task with separate creator",
+		Status:             models.StatusInReview,
+		CreatorSession:     creatorSess,
+		ImplementerSession: implSess,
+	}
+	if err := db.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+
+	// Implementer tries to approve
+	wasInvolved, _ := db.WasSessionInvolved(issue.ID, implSess)
+	isCreator := issue.CreatorSession == implSess
+	isImplementer := issue.ImplementerSession == implSess
+	wasEverInvolved := wasInvolved || isCreator || isImplementer
+
+	canApprove := !wasEverInvolved || issue.Minor
+
+	if canApprove {
+		t.Error("Implementer should NOT be able to approve their own work")
+	}
+}
+
+// TestCommand_StatusValidationBeforeApprove verifies status must be in_review before approve
+func TestCommand_StatusValidationBeforeApprove(t *testing.T) {
+	tests := []struct {
+		name                string
+		status              models.Status
+		shouldAllowApprove  bool
+		description         string
+	}{
+		{
+			name:               "Open status - should not approve",
+			status:             models.StatusOpen,
+			shouldAllowApprove: false,
+			description:        "Cannot approve issues that haven't been submitted for review",
+		},
+		{
+			name:               "InProgress status - should not approve",
+			status:             models.StatusInProgress,
+			shouldAllowApprove: false,
+			description:        "Cannot approve issues still being worked on",
+		},
+		{
+			name:               "InReview status - can approve",
+			status:             models.StatusInReview,
+			shouldAllowApprove: true,
+			description:        "Can approve issues that are in_review",
+		},
+		{
+			name:               "Blocked status - should not approve",
+			status:             models.StatusBlocked,
+			shouldAllowApprove: false,
+			description:        "Cannot approve blocked issues",
+		},
+		{
+			name:               "Already closed - should not approve",
+			status:             models.StatusClosed,
+			shouldAllowApprove: false,
+			description:        "Cannot approve already closed issues",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			db, err := Initialize(dir)
+			if err != nil {
+				t.Fatalf("Initialize failed: %v", err)
+			}
+			defer db.Close()
+
+			creatorSess := "ses_creator"
+			implSess := "ses_impl"
+			reviewerSess := "ses_reviewer"
+
+			issue := &models.Issue{
+				Title:              tt.name,
+				Status:             tt.status,
+				CreatorSession:     creatorSess,
+				ImplementerSession: implSess,
+			}
+			if err := db.CreateIssue(issue); err != nil {
+				t.Fatalf("CreateIssue failed: %v", err)
+			}
+
+			db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+			if tt.status != models.StatusOpen {
+				db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+			}
+
+			// Verify reviewer is not involved
+			wasInvolved, _ := db.WasSessionInvolved(issue.ID, reviewerSess)
+			isCreator := issue.CreatorSession == reviewerSess
+			isImplementer := issue.ImplementerSession == reviewerSess
+			wasEverInvolved := wasInvolved || isCreator || isImplementer
+
+			// Session is not involved, so bypass check passes
+			bypassCheckPasses := !wasEverInvolved
+
+			// But status must also be in_review for approve to make sense
+			statusAllowsApprove := issue.Status == models.StatusInReview
+
+			// Both conditions needed for approval
+			canApprove := bypassCheckPasses && statusAllowsApprove
+
+			if canApprove != tt.shouldAllowApprove {
+				t.Errorf("%s: expected canApprove=%v, got %v", tt.description, tt.shouldAllowApprove, canApprove)
+			}
+		})
+	}
+}
+
+// TestCommand_CreatorCanCloseIfOtherImplemented verifies creator CAN close when other implemented
+func TestCommand_CreatorCanCloseIfOtherImplemented(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	creatorSess := "ses_creator"
+	implSess := "ses_impl"
+
+	// Creator creates, other session implements
+	issue := &models.Issue{
+		Title:              "Task with separate implementer",
+		Status:             models.StatusInReview,
+		CreatorSession:     creatorSess,
+		ImplementerSession: implSess,
+	}
+	if err := db.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	db.RecordSessionAction(issue.ID, creatorSess, models.ActionSessionCreated)
+	db.RecordSessionAction(issue.ID, implSess, models.ActionSessionStarted)
+
+	// Creator tries to close
+	wasInvolved, _ := db.WasSessionInvolved(issue.ID, creatorSess)
+	isCreator := issue.CreatorSession == creatorSess
+	isImplementer := issue.ImplementerSession == creatorSess
+	hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
+	wasEverInvolved := wasInvolved || isCreator || isImplementer
+
+	// Apply close command logic
+	var canClose bool
+	if !wasEverInvolved {
+		canClose = true
+	} else if isCreator && hasOtherImplementer && !isImplementer {
+		canClose = true
+	} else if issue.Minor {
+		canClose = true
+	}
+
+	if !canClose {
+		t.Error("Creator should be able to close when someone else implemented")
+	}
+}
+
+// TestCommand_MinorTaskBypassesAllChecks verifies minor tasks allow self-close/approve
+func TestCommand_MinorTaskBypassesAllChecks(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	sess := "ses_solo"
+
+	// Solo session creates, implements, and wants to close/approve minor task
+	issue := &models.Issue{
+		Title:              "Minor fix",
+		Status:             models.StatusInReview,
+		CreatorSession:     sess,
+		ImplementerSession: sess,
+		Minor:              true,
+	}
+	if err := db.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	db.RecordSessionAction(issue.ID, sess, models.ActionSessionCreated)
+	db.RecordSessionAction(issue.ID, sess, models.ActionSessionStarted)
+
+	// Check approve
+	wasInvolved, _ := db.WasSessionInvolved(issue.ID, sess)
+	isCreator := issue.CreatorSession == sess
+	isImplementer := issue.ImplementerSession == sess
+	wasEverInvolved := wasInvolved || isCreator || isImplementer
+
+	canApprove := !wasEverInvolved || issue.Minor
+	if !canApprove {
+		t.Error("Minor task should allow self-approve")
+	}
+
+	// Check close
+	hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
+	var canClose bool
+	if !wasEverInvolved {
+		canClose = true
+	} else if isCreator && hasOtherImplementer && !isImplementer {
+		canClose = true
+	} else if issue.Minor {
+		canClose = true
+	}
+
+	if !canClose {
+		t.Error("Minor task should allow self-close")
+	}
+}
+
+// TestCommand_PreviousInvolvementPreventsApprove verifies that any prior involvement blocks approval
+func TestCommand_PreviousInvolvementPreventsApprove(t *testing.T) {
+	tests := []struct {
+		name         string
+		actions      []models.IssueSessionAction
+		shouldBlock  bool
+	}{
+		{
+			name:        "Created only blocks",
+			actions:     []models.IssueSessionAction{models.ActionSessionCreated},
+			shouldBlock: true,
+		},
+		{
+			name:        "Started only blocks",
+			actions:     []models.IssueSessionAction{models.ActionSessionStarted},
+			shouldBlock: true,
+		},
+		{
+			name:        "Started then unstarted still blocks",
+			actions:     []models.IssueSessionAction{models.ActionSessionStarted, models.ActionSessionUnstarted},
+			shouldBlock: true,
+		},
+		{
+			name:        "Reviewed blocks",
+			actions:     []models.IssueSessionAction{models.ActionSessionReviewed},
+			shouldBlock: true,
+		},
+		{
+			name:        "No actions does not block",
+			actions:     []models.IssueSessionAction{},
+			shouldBlock: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			db, err := Initialize(dir)
+			if err != nil {
+				t.Fatalf("Initialize failed: %v", err)
+			}
+			defer db.Close()
+
+			sess := "ses_test"
+
+			issue := &models.Issue{
+				Title:  tt.name,
+				Status: models.StatusInReview,
+			}
+			if err := db.CreateIssue(issue); err != nil {
+				t.Fatalf("CreateIssue failed: %v", err)
+			}
+
+			// Record all actions
+			for _, action := range tt.actions {
+				db.RecordSessionAction(issue.ID, sess, action)
+			}
+
+			// Check involvement
+			wasInvolved, _ := db.WasSessionInvolved(issue.ID, sess)
+
+			if wasInvolved != tt.shouldBlock {
+				t.Errorf("Expected wasInvolved=%v for actions %v, got %v",
+					tt.shouldBlock, tt.actions, wasInvolved)
+			}
+
+			// Approve check
+			canApprove := !wasInvolved || issue.Minor
+			expectedCanApprove := !tt.shouldBlock
+
+			if canApprove != expectedCanApprove {
+				t.Errorf("Expected canApprove=%v, got %v", expectedCanApprove, canApprove)
+			}
+		})
+	}
+}

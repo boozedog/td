@@ -3,6 +3,7 @@ package monitor
 import (
 	"testing"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/models"
@@ -3310,4 +3311,633 @@ func TestModalMaxScrollCalculation(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Tests for close confirmation modal
+
+func TestCloseConfirm_OpensModalFromOpenModal(t *testing.T) {
+	issue := &models.Issue{
+		ID:     "td-test-001",
+		Title:  "Test Issue",
+		Status: models.StatusOpen,
+	}
+
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID: issue.ID,
+				Issue:   issue,
+			},
+		},
+	}
+
+	result, _ := m.confirmClose()
+	m2 := result.(Model)
+
+	if !m2.CloseConfirmOpen {
+		t.Error("CloseConfirmOpen should be true after confirmClose")
+	}
+	if m2.CloseConfirmIssueID != issue.ID {
+		t.Errorf("CloseConfirmIssueID = %q, want %q", m2.CloseConfirmIssueID, issue.ID)
+	}
+	if m2.CloseConfirmTitle != issue.Title {
+		t.Errorf("CloseConfirmTitle = %q, want %q", m2.CloseConfirmTitle, issue.Title)
+	}
+}
+
+func TestCloseConfirm_InitializesTextInput(t *testing.T) {
+	issue := &models.Issue{
+		ID:     "td-test-001",
+		Title:  "Test Issue",
+		Status: models.StatusOpen,
+	}
+
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID: issue.ID,
+				Issue:   issue,
+			},
+		},
+	}
+
+	result, _ := m.confirmClose()
+	m2 := result.(Model)
+
+	// Check textinput is initialized
+	if m2.CloseConfirmInput.Placeholder != "Optional: reason for closing" {
+		t.Errorf("Placeholder = %q, want 'Optional: reason for closing'", m2.CloseConfirmInput.Placeholder)
+	}
+	if m2.CloseConfirmInput.Width != 40 {
+		t.Errorf("Width = %d, want 40", m2.CloseConfirmInput.Width)
+	}
+	// Textinput should be focused
+	if !m2.CloseConfirmInput.Focused() {
+		t.Error("CloseConfirmInput should be focused")
+	}
+}
+
+func TestCloseConfirm_RejectsClosedIssue(t *testing.T) {
+	issue := &models.Issue{
+		ID:     "td-test-001",
+		Title:  "Test Issue",
+		Status: models.StatusClosed, // Already closed
+	}
+
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID: issue.ID,
+				Issue:   issue,
+			},
+		},
+	}
+
+	result, _ := m.confirmClose()
+	m2 := result.(Model)
+
+	// Should not open confirmation for already-closed issue
+	if m2.CloseConfirmOpen {
+		t.Error("CloseConfirmOpen should be false for already-closed issue")
+	}
+}
+
+func TestCloseConfirm_DoesNothingWithNoSelection(t *testing.T) {
+	m := Model{
+		Keymap:          newTestKeymap(),
+		ModalStack:      []ModalEntry{}, // No modal
+		Cursor:          make(map[Panel]int),
+		CurrentWorkRows: []string{}, // Empty - no selection
+		ActivePanel:     PanelCurrentWork,
+	}
+
+	result, cmd := m.confirmClose()
+	m2 := result.(Model)
+
+	if m2.CloseConfirmOpen {
+		t.Error("CloseConfirmOpen should be false when no issue selected")
+	}
+	if cmd != nil {
+		t.Error("Should return nil cmd when no issue selected")
+	}
+}
+
+func TestCloseConfirm_CancelWithEscapeKey(t *testing.T) {
+	m := Model{
+		Keymap:              newTestKeymap(),
+		CloseConfirmOpen:    true,
+		CloseConfirmIssueID: "td-test-001",
+		CloseConfirmTitle:   "Test Issue",
+	}
+	m.CloseConfirmInput = textinput.New()
+	m.CloseConfirmInput.Focus()
+
+	// Simulate Escape key press via Update
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m2 := result.(Model)
+
+	if m2.CloseConfirmOpen {
+		t.Error("CloseConfirmOpen should be false after Escape")
+	}
+	if m2.CloseConfirmIssueID != "" {
+		t.Errorf("CloseConfirmIssueID should be empty after Escape, got %q", m2.CloseConfirmIssueID)
+	}
+	if m2.CloseConfirmTitle != "" {
+		t.Errorf("CloseConfirmTitle should be empty after Escape, got %q", m2.CloseConfirmTitle)
+	}
+}
+
+func TestCloseConfirm_TextInputCapturesUserInput(t *testing.T) {
+	m := Model{
+		Keymap:           newTestKeymap(),
+		CloseConfirmOpen: true,
+	}
+	m.CloseConfirmInput = textinput.New()
+	m.CloseConfirmInput.Focus()
+
+	// Type characters via Update
+	testChars := []rune{'D', 'u', 'p', 'l', 'i', 'c', 'a', 't', 'e'}
+	for _, r := range testChars {
+		result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = result.(Model)
+	}
+
+	if m.CloseConfirmInput.Value() != "Duplicate" {
+		t.Errorf("Input value = %q, want 'Duplicate'", m.CloseConfirmInput.Value())
+	}
+}
+
+func TestCloseConfirm_ExecuteWithEmptyIssueIDClearsState(t *testing.T) {
+	m := Model{
+		Keymap:              newTestKeymap(),
+		CloseConfirmOpen:    true,
+		CloseConfirmIssueID: "", // Empty ID
+	}
+
+	result, _ := m.executeCloseWithReason()
+	m2 := result.(Model)
+
+	if m2.CloseConfirmOpen {
+		t.Error("CloseConfirmOpen should be false after execute with empty ID")
+	}
+}
+
+func TestCloseConfirm_StateFields(t *testing.T) {
+	tests := []struct {
+		name        string
+		issueID     string
+		issueTitle  string
+		issueStatus models.Status
+		wantOpen    bool
+		wantIssueID string
+		wantTitle   string
+	}{
+		{
+			name:        "open issue sets all fields",
+			issueID:     "td-abc123",
+			issueTitle:  "My Task",
+			issueStatus: models.StatusOpen,
+			wantOpen:    true,
+			wantIssueID: "td-abc123",
+			wantTitle:   "My Task",
+		},
+		{
+			name:        "in_progress issue sets all fields",
+			issueID:     "td-def456",
+			issueTitle:  "In Progress Task",
+			issueStatus: models.StatusInProgress,
+			wantOpen:    true,
+			wantIssueID: "td-def456",
+			wantTitle:   "In Progress Task",
+		},
+		{
+			name:        "in_review issue sets all fields",
+			issueID:     "td-ghi789",
+			issueTitle:  "Review Task",
+			issueStatus: models.StatusInReview,
+			wantOpen:    true,
+			wantIssueID: "td-ghi789",
+			wantTitle:   "Review Task",
+		},
+		{
+			name:        "blocked issue sets all fields",
+			issueID:     "td-jkl012",
+			issueTitle:  "Blocked Task",
+			issueStatus: models.StatusBlocked,
+			wantOpen:    true,
+			wantIssueID: "td-jkl012",
+			wantTitle:   "Blocked Task",
+		},
+		{
+			name:        "closed issue does not open modal",
+			issueID:     "td-mno345",
+			issueTitle:  "Closed Task",
+			issueStatus: models.StatusClosed,
+			wantOpen:    false,
+			wantIssueID: "",
+			wantTitle:   "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			issue := &models.Issue{
+				ID:     tt.issueID,
+				Title:  tt.issueTitle,
+				Status: tt.issueStatus,
+			}
+
+			m := Model{
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{
+						IssueID: issue.ID,
+						Issue:   issue,
+					},
+				},
+			}
+
+			result, _ := m.confirmClose()
+			m2 := result.(Model)
+
+			if m2.CloseConfirmOpen != tt.wantOpen {
+				t.Errorf("CloseConfirmOpen = %v, want %v", m2.CloseConfirmOpen, tt.wantOpen)
+			}
+			if m2.CloseConfirmIssueID != tt.wantIssueID {
+				t.Errorf("CloseConfirmIssueID = %q, want %q", m2.CloseConfirmIssueID, tt.wantIssueID)
+			}
+			if m2.CloseConfirmTitle != tt.wantTitle {
+				t.Errorf("CloseConfirmTitle = %q, want %q", m2.CloseConfirmTitle, tt.wantTitle)
+			}
+		})
+	}
+}
+
+func TestCloseConfirm_EnterKeyTriggersExecute(t *testing.T) {
+	// Test that Enter with empty IssueID clears state (safe path without DB)
+	m := Model{
+		Keymap:              newTestKeymap(),
+		CloseConfirmOpen:    true,
+		CloseConfirmIssueID: "", // Empty so execute exits early without DB access
+		CloseConfirmTitle:   "Test Issue",
+	}
+	m.CloseConfirmInput = textinput.New()
+	m.CloseConfirmInput.SetValue("duplicate")
+	m.CloseConfirmInput.Focus()
+
+	// Simulate Enter key press - this should trigger executeCloseWithReason
+	// With empty IssueID, it will exit early and clear state
+	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2 := result.(Model)
+
+	// Execute with empty IssueID clears state
+	if m2.CloseConfirmOpen {
+		t.Error("Enter key should trigger execute and clear CloseConfirmOpen")
+	}
+}
+
+func TestCloseConfirm_EnterKeyRoutesToExecute(t *testing.T) {
+	// Verify that the Enter key in close confirmation mode routes to executeCloseWithReason
+	// by checking state initialization (we can't test full execute without a DB)
+	m := Model{
+		Keymap:              newTestKeymap(),
+		CloseConfirmOpen:    true,
+		CloseConfirmIssueID: "td-test-001",
+		CloseConfirmTitle:   "Test Issue",
+	}
+	m.CloseConfirmInput = textinput.New()
+	m.CloseConfirmInput.SetValue("reason text")
+	m.CloseConfirmInput.Focus()
+
+	// Verify the input value is set before any processing
+	if m.CloseConfirmInput.Value() != "reason text" {
+		t.Errorf("Input value before enter = %q, want 'reason text'", m.CloseConfirmInput.Value())
+	}
+
+	// Verify the confirmation state is correctly set up
+	if !m.CloseConfirmOpen {
+		t.Error("CloseConfirmOpen should be true before enter")
+	}
+	if m.CloseConfirmIssueID != "td-test-001" {
+		t.Errorf("CloseConfirmIssueID = %q, want 'td-test-001'", m.CloseConfirmIssueID)
+	}
+}
+
+func TestCloseConfirm_ModalTakesIssueFromModalStack(t *testing.T) {
+	// When modal is open, confirmClose should use the modal's issue
+	// not try to get from panel selection
+	modalIssue := &models.Issue{
+		ID:     "td-modal-issue",
+		Title:  "Modal Issue",
+		Status: models.StatusInProgress,
+	}
+
+	m := Model{
+		Keymap:      newTestKeymap(),
+		ActivePanel: PanelTaskList,
+		Cursor:      map[Panel]int{PanelTaskList: 0},
+		TaskListRows: []TaskListRow{
+			{Issue: models.Issue{ID: "td-panel-issue", Title: "Panel Issue", Status: models.StatusOpen}},
+		},
+		ModalStack: []ModalEntry{
+			{
+				IssueID: modalIssue.ID,
+				Issue:   modalIssue,
+			},
+		},
+	}
+
+	result, _ := m.confirmClose()
+	m2 := result.(Model)
+
+	// Should use modal issue, not panel issue
+	if m2.CloseConfirmIssueID != modalIssue.ID {
+		t.Errorf("CloseConfirmIssueID = %q, want %q (from modal)", m2.CloseConfirmIssueID, modalIssue.ID)
+	}
+	if m2.CloseConfirmTitle != modalIssue.Title {
+		t.Errorf("CloseConfirmTitle = %q, want %q (from modal)", m2.CloseConfirmTitle, modalIssue.Title)
+	}
+}
+
+// TestScrollIndependent tests the ScrollIndependent feature which tracks
+// whether scroll position should be preserved independently when switching panels.
+func TestScrollIndependent(t *testing.T) {
+	// Helper to create a model with test data
+	createTestModel := func() Model {
+		m := Model{
+			Width:             100,
+			Height:            30,
+			ActivePanel:       PanelTaskList,
+			Cursor:            make(map[Panel]int),
+			SelectedID:        make(map[Panel]string),
+			ScrollOffset:      make(map[Panel]int),
+			ScrollIndependent: make(map[Panel]bool),
+			PanelBounds:       make(map[Panel]Rect),
+			PaneHeights:       defaultPaneHeights(),
+			Keymap:            newTestKeymap(),
+		}
+		// Add test data for all panels
+		for i := 0; i < 20; i++ {
+			m.TaskListRows = append(m.TaskListRows, TaskListRow{
+				Issue:    models.Issue{ID: "td-" + string(rune('a'+i))},
+				Category: CategoryReady,
+			})
+			m.CurrentWorkRows = append(m.CurrentWorkRows, "cw-"+string(rune('a'+i)))
+			m.Activity = append(m.Activity, ActivityItem{})
+		}
+		// Set up panel bounds so hit testing works
+		m.PanelBounds[PanelCurrentWork] = Rect{X: 0, Y: 0, W: 50, H: 8}
+		m.PanelBounds[PanelTaskList] = Rect{X: 0, Y: 8, W: 50, H: 12}
+		m.PanelBounds[PanelActivity] = Rect{X: 50, Y: 0, W: 50, H: 20}
+		return m
+	}
+
+	t.Run("mouse wheel sets ScrollIndependent true", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			panel Panel
+			x, y  int
+		}{
+			{"TaskList panel", PanelTaskList, 25, 10},
+			{"CurrentWork panel", PanelCurrentWork, 25, 2},
+			{"Activity panel", PanelActivity, 75, 10},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				m := createTestModel()
+				m.ScrollIndependent[tt.panel] = false
+
+				// Simulate mouse wheel scroll
+				updated, _ := m.handleMouseWheel(tt.x, tt.y, 1)
+				m2 := updated.(Model)
+
+				if !m2.ScrollIndependent[tt.panel] {
+					t.Errorf("ScrollIndependent[%d] = false, want true after mouse wheel", tt.panel)
+				}
+			})
+		}
+	})
+
+	t.Run("moveCursor clears ScrollIndependent flag", func(t *testing.T) {
+		tests := []struct {
+			name  string
+			panel Panel
+			delta int
+		}{
+			{"move down clears flag", PanelTaskList, 1},
+			{"move up clears flag", PanelTaskList, -1},
+			{"move multiple down clears flag", PanelTaskList, 3},
+			{"move multiple up clears flag", PanelTaskList, -3},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				m := createTestModel()
+				m.ActivePanel = tt.panel
+				m.Cursor[tt.panel] = 5
+				m.ScrollIndependent[tt.panel] = true
+
+				m.moveCursor(tt.delta)
+
+				if m.ScrollIndependent[tt.panel] {
+					t.Errorf("ScrollIndependent[%d] = true, want false after moveCursor(%d)", tt.panel, tt.delta)
+				}
+			})
+		}
+	})
+
+	t.Run("clampCursor clears ScrollIndependent flag when clamping occurs", func(t *testing.T) {
+		tests := []struct {
+			name          string
+			panel         Panel
+			cursor        int
+			rowCount      int
+			expectCleared bool
+			description   string
+		}{
+			{"cursor beyond end", PanelTaskList, 25, 20, true, "clamp from beyond end clears flag"},
+			{"cursor at valid position", PanelTaskList, 5, 20, false, "no clamp, flag preserved"},
+			{"negative cursor", PanelTaskList, -5, 20, true, "clamp from negative clears flag"},
+			{"empty list", PanelTaskList, 5, 0, true, "clamp on empty list clears flag"},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				m := Model{
+					Cursor:            make(map[Panel]int),
+					ScrollIndependent: make(map[Panel]bool),
+					TaskListRows:      make([]TaskListRow, tt.rowCount),
+				}
+				m.Cursor[tt.panel] = tt.cursor
+				m.ScrollIndependent[tt.panel] = true
+
+				m.clampCursor(tt.panel)
+
+				flagCleared := !m.ScrollIndependent[tt.panel]
+				if flagCleared != tt.expectCleared {
+					t.Errorf("ScrollIndependent cleared = %v, want %v (%s)",
+						flagCleared, tt.expectCleared, tt.description)
+				}
+			})
+		}
+	})
+
+	t.Run("click clears ScrollIndependent flag when switching panels", func(t *testing.T) {
+		m := createTestModel()
+		m.ActivePanel = PanelCurrentWork
+		m.ScrollIndependent[PanelTaskList] = true
+
+		// Click on TaskList panel (y=10 is within TaskList bounds)
+		msg := tea.MouseMsg{
+			X:      25,
+			Y:      10,
+			Button: tea.MouseButtonLeft,
+			Action: tea.MouseActionPress,
+		}
+
+		updated, _ := m.handleMouse(msg)
+		m2 := updated.(Model)
+
+		if m2.ScrollIndependent[PanelTaskList] {
+			t.Error("ScrollIndependent[PanelTaskList] = true, want false after click switches panel")
+		}
+	})
+
+	t.Run("click clears ScrollIndependent flag when selecting row", func(t *testing.T) {
+		m := createTestModel()
+		m.ActivePanel = PanelTaskList
+		m.Cursor[PanelTaskList] = 0
+		m.ScrollIndependent[PanelTaskList] = true
+
+		// Click on a different row in TaskList panel
+		msg := tea.MouseMsg{
+			X:      25,
+			Y:      12, // Different row
+			Button: tea.MouseButtonLeft,
+			Action: tea.MouseActionPress,
+		}
+
+		updated, _ := m.handleMouse(msg)
+		m2 := updated.(Model)
+
+		if m2.ScrollIndependent[PanelTaskList] {
+			t.Error("ScrollIndependent[PanelTaskList] = true, want false after click selects row")
+		}
+	})
+
+	t.Run("restoreCursors respects ScrollIndependent flag", func(t *testing.T) {
+		tests := []struct {
+			name                   string
+			scrollIndependent      bool
+			initialScrollOffset    int
+			expectScrollAdjustment bool
+			description            string
+		}{
+			{
+				name:                   "flag false allows scroll adjustment",
+				scrollIndependent:      false,
+				initialScrollOffset:    10,
+				expectScrollAdjustment: true,
+				description:            "ensureCursorVisible should be called",
+			},
+			{
+				name:                   "flag true preserves scroll position",
+				scrollIndependent:      true,
+				initialScrollOffset:    10,
+				expectScrollAdjustment: false,
+				description:            "ensureCursorVisible should NOT be called",
+			},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				m := createTestModel()
+				m.Cursor[PanelTaskList] = 0
+				m.ScrollOffset[PanelTaskList] = tt.initialScrollOffset
+				m.ScrollIndependent[PanelTaskList] = tt.scrollIndependent
+
+				m.restoreCursors()
+
+				scrollChanged := m.ScrollOffset[PanelTaskList] != tt.initialScrollOffset
+				if tt.expectScrollAdjustment && !scrollChanged {
+					t.Errorf("Expected scroll adjustment but offset unchanged (%s)", tt.description)
+				}
+				if !tt.expectScrollAdjustment && scrollChanged {
+					t.Errorf("Expected scroll preserved but offset changed from %d to %d (%s)",
+						tt.initialScrollOffset, m.ScrollOffset[PanelTaskList], tt.description)
+				}
+			})
+		}
+	})
+
+	t.Run("ScrollIndependent persists through multiple wheel events", func(t *testing.T) {
+		m := createTestModel()
+		m.ScrollIndependent[PanelTaskList] = false
+
+		// Multiple wheel scrolls
+		for i := 0; i < 5; i++ {
+			updated, _ := m.handleMouseWheel(25, 10, 1)
+			m = updated.(Model)
+		}
+
+		if !m.ScrollIndependent[PanelTaskList] {
+			t.Error("ScrollIndependent should remain true through multiple wheel events")
+		}
+	})
+
+	t.Run("keyboard navigation after wheel scroll clears flag", func(t *testing.T) {
+		m := createTestModel()
+		m.ActivePanel = PanelTaskList
+		m.Cursor[PanelTaskList] = 5
+
+		// First, wheel scroll to set flag
+		updated, _ := m.handleMouseWheel(25, 10, 1)
+		m = updated.(Model)
+
+		if !m.ScrollIndependent[PanelTaskList] {
+			t.Fatal("ScrollIndependent should be true after wheel scroll")
+		}
+
+		// Then keyboard navigate to clear it
+		m.moveCursor(1)
+
+		if m.ScrollIndependent[PanelTaskList] {
+			t.Error("ScrollIndependent should be false after keyboard navigation")
+		}
+	})
+
+	t.Run("different panels have independent flags", func(t *testing.T) {
+		m := createTestModel()
+
+		// Scroll TaskList panel
+		updated, _ := m.handleMouseWheel(25, 10, 1)
+		m = updated.(Model)
+
+		// Only TaskList should have flag set
+		if !m.ScrollIndependent[PanelTaskList] {
+			t.Error("PanelTaskList ScrollIndependent should be true")
+		}
+		if m.ScrollIndependent[PanelCurrentWork] {
+			t.Error("PanelCurrentWork ScrollIndependent should be false")
+		}
+		if m.ScrollIndependent[PanelActivity] {
+			t.Error("PanelActivity ScrollIndependent should be false")
+		}
+
+		// Scroll Activity panel
+		updated, _ = m.handleMouseWheel(75, 10, 1)
+		m = updated.(Model)
+
+		// Both should now have flag set
+		if !m.ScrollIndependent[PanelTaskList] {
+			t.Error("PanelTaskList ScrollIndependent should still be true")
+		}
+		if !m.ScrollIndependent[PanelActivity] {
+			t.Error("PanelActivity ScrollIndependent should now be true")
+		}
+	})
 }
