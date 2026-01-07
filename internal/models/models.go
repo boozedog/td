@@ -42,6 +42,7 @@ type LogType string
 
 const (
 	LogTypeProgress   LogType = "progress"
+	LogTypeSecurity   LogType = "security"
 	LogTypeBlocker    LogType = "blocker"
 	LogTypeDecision   LogType = "decision"
 	LogTypeHypothesis LogType = "hypothesis"

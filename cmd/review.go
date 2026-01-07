@@ -621,8 +621,23 @@ Examples:
 			// Log (supports --reason, --comment, --message, and --self-close-exception)
 			reason := approvalReason(cmd)
 			logMsg := "Closed"
+			logType := models.LogTypeProgress
+
 			if !canClose && selfCloseException != "" {
-				logMsg = "Closed (SELF-CLOSE EXCEPTION: " + selfCloseException + ")"
+				agentInfo := sess.AgentType
+				if agentInfo == "" {
+					agentInfo = "Unknown Agent"
+				}
+				logMsg = fmt.Sprintf("[%s] Closed (SELF-CLOSE EXCEPTION: %s)", agentInfo, selfCloseException)
+				logType = models.LogTypeSecurity
+
+				// Also log to the separate security audit file
+				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+					IssueID:   issueID,
+					SessionID: sess.ID,
+					AgentType: sess.AgentType,
+					Reason:    selfCloseException,
+				})
 			} else if reason != "" {
 				logMsg = "Closed: " + reason
 			}
@@ -631,7 +646,7 @@ Examples:
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
-				Type:      models.LogTypeProgress,
+				Type:      logType,
 			}); err != nil {
 				output.Warning("add log failed: %v", err)
 			}

@@ -1104,13 +1104,13 @@ func TestCloseSelfCloseExceptionLogMessage(t *testing.T) {
 
 	// Simulate closing with exception - manually add the log entry
 	exceptionReason := "trivial typo fix"
-	logMsg := "Closed (SELF-CLOSE EXCEPTION: " + exceptionReason + ")"
+	logMsg := "[test-agent] Closed (SELF-CLOSE EXCEPTION: " + exceptionReason + ")"
 
 	database.AddLog(&models.Log{
 		IssueID:   issue.ID,
 		SessionID: sessionID,
 		Message:   logMsg,
-		Type:      models.LogTypeProgress,
+		Type:      models.LogTypeSecurity,
 	})
 
 	// Verify log contains exception
@@ -1118,8 +1118,11 @@ func TestCloseSelfCloseExceptionLogMessage(t *testing.T) {
 	if len(logs) == 0 {
 		t.Fatal("Expected log entry")
 	}
-	if logs[0].Message != "Closed (SELF-CLOSE EXCEPTION: trivial typo fix)" {
+	if logs[0].Message != "[test-agent] Closed (SELF-CLOSE EXCEPTION: trivial typo fix)" {
 		t.Errorf("Log message wrong: got %q", logs[0].Message)
+	}
+	if logs[0].Type != models.LogTypeSecurity {
+		t.Errorf("Log type wrong: got %q, want %q", logs[0].Type, models.LogTypeSecurity)
 	}
 }
 
