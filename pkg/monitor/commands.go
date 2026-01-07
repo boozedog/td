@@ -97,21 +97,29 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ctx := m.currentContext()
 
-	// Search mode handles printable characters specially
+	// Search mode: forward most keys to textinput for cursor support
 	if ctx == keymap.ContextSearch {
 		// Special case: ? triggers help even in search mode
 		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 && msg.Runes[0] == '?' {
 			return m.executeCommand(keymap.CmdToggleHelp)
 		}
-		if keymap.IsPrintable(msg) {
-			m.SearchQuery += string(msg.Runes)
-			return m, m.fetchData()
+
+		// Check if this key is bound to a search command (escape, enter, ctrl+u)
+		if cmd, found := m.Keymap.Lookup(msg, ctx); found {
+			return m.executeCommand(cmd)
 		}
-		// Handle space specially in search mode
-		if msg.Type == tea.KeySpace {
-			m.SearchQuery += " "
-			return m, m.fetchData()
+
+		// Forward all other keys to the textinput (handles cursor, typing, etc.)
+		var inputCmd tea.Cmd
+		m.SearchInput, inputCmd = m.SearchInput.Update(msg)
+
+		// Sync SearchQuery with input value
+		newQuery := m.SearchInput.Value()
+		if newQuery != m.SearchQuery {
+			m.SearchQuery = newQuery
+			return m, tea.Batch(inputCmd, m.fetchData())
 		}
+		return m, inputCmd
 	}
 
 	// Look up command from keymap
@@ -440,8 +448,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdSearch:
 		m.SearchMode = true
 		m.SearchQuery = ""
+		m.SearchInput.SetValue("")
+		m.SearchInput.Focus()
 		m.updatePanelBounds() // Recalc bounds for search bar
-		return m, nil
+		return m, m.SearchInput.Cursor.BlinkCmd()
 
 	case keymap.CmdToggleClosed:
 		m.IncludeClosed = !m.IncludeClosed
@@ -493,6 +503,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 	case keymap.CmdSearchConfirm:
 		m.SearchMode = false
 		m.ShowTDQHelp = false
+		m.SearchInput.Blur()
 		m.updatePanelBounds() // Recalc bounds after search bar closes
 		return m, nil
 
@@ -505,6 +516,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		// Otherwise exit search mode entirely
 		m.SearchMode = false
 		m.SearchQuery = ""
+		m.SearchInput.SetValue("")
+		m.SearchInput.Blur()
 		m.updatePanelBounds() // Recalc bounds after search bar closes
 		return m, m.fetchData()
 
@@ -513,14 +526,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			return m, nil // Nothing to clear
 		}
 		m.SearchQuery = ""
+		m.SearchInput.SetValue("")
 		return m, m.fetchData()
-
-	case keymap.CmdSearchBackspace:
-		if len(m.SearchQuery) > 0 {
-			m.SearchQuery = m.SearchQuery[:len(m.SearchQuery)-1]
-			return m, m.fetchData()
-		}
-		return m, nil
 
 	// Confirmation commands
 	case keymap.CmdConfirm:

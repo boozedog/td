@@ -54,8 +54,9 @@ type Model struct {
 	ModalStack []ModalEntry
 
 	// Search state
-	SearchMode     bool           // Whether search mode is active
-	SearchQuery    string         // Current search query
+	SearchMode     bool              // Whether search mode is active
+	SearchQuery    string            // Current search query
+	SearchInput    textinput.Model   // Text input for search (cursor support)
 	IncludeClosed  bool           // Whether to include closed tasks
 	SortMode       SortMode       // Task list sort order
 	TypeFilterMode TypeFilterMode // Type filter (epic, task, bug, etc.)
@@ -131,6 +132,13 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 	// Load pane heights from config (or use defaults)
 	paneHeights, _ := config.GetPaneHeights(baseDir)
 
+	// Initialize search input
+	searchInput := textinput.New()
+	searchInput.Placeholder = "search"
+	searchInput.Prompt = ""  // No prompt, we show triangle icon separately
+	searchInput.Width = 50   // Reasonable width for search queries
+	searchInput.CharLimit = 200
+
 	return Model{
 		DB:              database,
 		SessionID:       sessionID,
@@ -143,6 +151,7 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 		StartedAt:       time.Now(),
 		SearchMode:      false,
 		SearchQuery:     "",
+		SearchInput:     searchInput,
 		IncludeClosed:   false,
 		Keymap:          km,
 		Version:         ver,
@@ -223,6 +232,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				var cmd tea.Cmd
 				m.CloseConfirmInput, cmd = m.CloseConfirmInput.Update(msg)
 				return m, cmd
+			}
+		}
+	}
+
+	// Search mode: forward non-key messages to textinput (cursor blink, etc.)
+	// Key messages are handled in handleKey() to avoid double-processing
+	if m.SearchMode {
+		if _, isKey := msg.(tea.KeyMsg); !isKey {
+			var inputCmd tea.Cmd
+			m.SearchInput, inputCmd = m.SearchInput.Update(msg)
+			if inputCmd != nil {
+				return m, inputCmd
 			}
 		}
 	}

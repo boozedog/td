@@ -136,13 +136,12 @@ func DefaultBindings() []Binding {
 		// ============================================================
 		// SEARCH MODE BINDINGS
 		// Active when search input is focused
+		// Note: Most keys are forwarded to textinput for cursor/editing support
 		// ============================================================
 		{Key: "esc", Command: CmdSearchCancel, Context: ContextSearch, Description: "Cancel search"},
 		{Key: "enter", Command: CmdSearchConfirm, Context: ContextSearch, Description: "Apply search"},
 		{Key: "ctrl+u", Command: CmdSearchClear, Context: ContextSearch, Description: "Clear search"},
 		{Key: "ctrl+w", Command: CmdSearchClear, Context: ContextSearch, Description: "Clear search"},
-		{Key: "backspace", Command: CmdSearchBackspace, Context: ContextSearch, Description: "Delete character"},
-		// Note: printable characters are handled specially, not via bindings
 
 		// ============================================================
 		// CONFIRMATION DIALOG BINDINGS

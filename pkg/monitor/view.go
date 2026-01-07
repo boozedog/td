@@ -1465,23 +1465,21 @@ func (m Model) renderSearchBar() string {
 
 	var sb strings.Builder
 
-	// Icon and query display
+	// Icon: triangle, pink when active, subtle when inactive
+	pinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")) // Pink
 	if m.SearchMode {
-		sb.WriteString("🔍 ")
+		sb.WriteString(pinkStyle.Render("▸"))
+		sb.WriteString(" ")
 	} else {
-		sb.WriteString(subtleStyle.Render("🔍 "))
+		sb.WriteString(subtleStyle.Render("▸ "))
 	}
 
-	if m.SearchQuery == "" {
-		sb.WriteString(subtleStyle.Render("Search: "))
+	// Render the textinput (includes cursor and query)
+	if m.SearchMode {
+		sb.WriteString(m.SearchInput.View())
 	} else {
-		sb.WriteString("Search: ")
+		// Not in search mode but have a query - show it without cursor
 		sb.WriteString(m.SearchQuery)
-	}
-
-	// Cursor if in search mode
-	if m.SearchMode {
-		sb.WriteString("█")
 	}
 
 	// Closed indicator
