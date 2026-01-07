@@ -1167,3 +1167,213 @@ func TestReviewSubmitAlias(t *testing.T) {
 		t.Error("Expected 'submit' to be an alias for review command")
 	}
 }
+
+// Tests for auto-created handoff behavior
+
+func TestReviewAutoCreatesHandoffWhenMissing(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sessionID := "ses_test123"
+
+	// Create an issue in_progress
+	issue := &models.Issue{
+		Title:  "Test Issue",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Verify no handoff exists
+	handoff, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if handoff != nil {
+		t.Fatal("Expected no handoff initially, but found one")
+	}
+
+	// Simulate the auto-create logic from review command
+	autoHandoff := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: sessionID,
+		Done:      []string{"Auto-generated for review submission"},
+		Remaining: []string{},
+		Decisions: []string{},
+		Uncertain: []string{},
+	}
+	if err := database.AddHandoff(autoHandoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
+
+	// Verify handoff was created
+	created, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed after auto-create: %v", err)
+	}
+	if created == nil {
+		t.Fatal("Expected handoff to exist after auto-create")
+	}
+	if len(created.Done) != 1 || created.Done[0] != "Auto-generated for review submission" {
+		t.Errorf("Handoff Done field wrong: got %v", created.Done)
+	}
+	if created.SessionID != sessionID {
+		t.Errorf("Handoff SessionID wrong: got %q, want %q", created.SessionID, sessionID)
+	}
+}
+
+func TestReviewPreservesExistingHandoff(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sessionID := "ses_test123"
+
+	// Create an issue
+	issue := &models.Issue{
+		Title:  "Test Issue",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Create an explicit handoff with custom content
+	explicitHandoff := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: sessionID,
+		Done:      []string{"Implemented feature X", "Added tests"},
+		Remaining: []string{"Documentation"},
+		Decisions: []string{"Used approach A"},
+		Uncertain: []string{"Performance implications"},
+	}
+	if err := database.AddHandoff(explicitHandoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
+
+	// Simulate review command checking for handoff
+	existing, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+
+	// Handoff exists, so review should NOT auto-create
+	if existing == nil {
+		t.Fatal("Expected existing handoff to be found")
+	}
+
+	// Verify existing handoff is unchanged
+	if len(existing.Done) != 2 {
+		t.Errorf("Expected 2 Done items, got %d", len(existing.Done))
+	}
+	if existing.Done[0] != "Implemented feature X" {
+		t.Errorf("Done[0] wrong: got %q", existing.Done[0])
+	}
+	if len(existing.Remaining) != 1 || existing.Remaining[0] != "Documentation" {
+		t.Errorf("Remaining wrong: got %v", existing.Remaining)
+	}
+	if len(existing.Decisions) != 1 || existing.Decisions[0] != "Used approach A" {
+		t.Errorf("Decisions wrong: got %v", existing.Decisions)
+	}
+	if len(existing.Uncertain) != 1 || existing.Uncertain[0] != "Performance implications" {
+		t.Errorf("Uncertain wrong: got %v", existing.Uncertain)
+	}
+}
+
+func TestReviewWithWorkSessionTaggedIssue(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	sessionID := "ses_test123"
+
+	// Create a work session
+	ws := &models.WorkSession{
+		ID:        "ws-test123",
+		Name:      "Test Work Session",
+		SessionID: sessionID,
+	}
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+
+	// Create an issue
+	issue := &models.Issue{
+		Title:  "Test Issue",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Tag issue to work session
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID); err != nil {
+		t.Fatalf("TagIssueToWorkSession failed: %v", err)
+	}
+
+	// Verify issue is tagged to work session
+	tagged, err := database.GetWorkSessionIssues(ws.ID)
+	if err != nil {
+		t.Fatalf("GetWorkSessionIssues failed: %v", err)
+	}
+	if len(tagged) != 1 || tagged[0] != issue.ID {
+		t.Errorf("Expected issue to be tagged: got %v", tagged)
+	}
+
+	// Simulate auto-create handoff (as review command would do)
+	autoHandoff := &models.Handoff{
+		IssueID:   issue.ID,
+		SessionID: sessionID,
+		Done:      []string{"Auto-generated for review submission"},
+		Remaining: []string{},
+		Decisions: []string{},
+		Uncertain: []string{},
+	}
+	if err := database.AddHandoff(autoHandoff); err != nil {
+		t.Fatalf("AddHandoff failed: %v", err)
+	}
+
+	// Verify handoff was created
+	handoff, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if handoff == nil {
+		t.Fatal("Expected handoff to exist")
+	}
+
+	// Verify issue is STILL tagged to work session (not untagged by handoff)
+	stillTagged, err := database.GetWorkSessionIssues(ws.ID)
+	if err != nil {
+		t.Fatalf("GetWorkSessionIssues failed after handoff: %v", err)
+	}
+	if len(stillTagged) != 1 || stillTagged[0] != issue.ID {
+		t.Errorf("Issue should still be tagged to work session: got %v", stillTagged)
+	}
+
+	// Verify work session is still active (not ended)
+	retrievedWS, err := database.GetWorkSession(ws.ID)
+	if err != nil {
+		t.Fatalf("GetWorkSession failed: %v", err)
+	}
+	if retrievedWS == nil {
+		t.Fatal("Work session should still exist")
+	}
+	if retrievedWS.EndedAt != nil {
+		t.Error("Work session should NOT be ended by individual handoff")
+	}
+}

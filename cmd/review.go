@@ -24,7 +24,8 @@ var reviewCmd = &cobra.Command{
 	Use:     "review [issue-id...]",
 	Aliases: []string{"submit"},
 	Short:   "Submit one or more issues for review",
-	Long: `Submits the issue(s) for review. Requires a handoff to be recorded first.
+	Long: `Submits the issue(s) for review. If no handoff exists, a minimal one is
+auto-created (consider using 'td handoff' for better documentation).
 
 For epics/parent issues, automatically cascades to all open/in_progress
 descendants. Cascaded children don't require individual handoffs.
@@ -72,17 +73,29 @@ Supports bulk operations:
 				continue
 			}
 
-			// Check for handoff
+			// Check for handoff - auto-create if missing
 			handoff, err := database.GetLatestHandoff(issueID)
 			if err != nil || handoff == nil {
-				errMsg := fmt.Sprintf("handoff required before review: %s", issueID)
-				if jsonOutput {
-					output.JSONError(output.ErrCodeHandoffRequired, errMsg)
-				} else {
-					output.Warning("%s", errMsg)
+				// Auto-create minimal handoff
+				autoHandoff := &models.Handoff{
+					IssueID:   issueID,
+					SessionID: sess.ID,
+					Done:      []string{"Auto-generated for review submission"},
+					Remaining: []string{},
+					Decisions: []string{},
+					Uncertain: []string{},
 				}
-				skipped++
-				continue
+				if err := database.AddHandoff(autoHandoff); err != nil {
+					if jsonOutput {
+						output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("failed to create handoff: %v", err))
+					} else {
+						output.Error("failed to create handoff for %s: %v", issueID, err)
+					}
+					skipped++
+					continue
+				}
+				output.Warning("auto-created minimal handoff for %s - consider using 'td handoff' for better documentation", issueID)
+				handoff = autoHandoff
 			}
 
 			// Handle --minor flag
