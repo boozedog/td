@@ -2,6 +2,18 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.5.0] - 2026-01-07
+
+### Features
+- Improved shortcuts panel for standalone `td` command
+- Search field improvements
+- Add `td security` command for viewing self-close exception audit logs
+
+### Tests
+- Add comprehensive modal scroll boundary tests
+- Add comprehensive editor integration tests
+- Add security command and review tests
+
 ## [v0.4.26] - 2026-01-06
 
 ### Bug Fixes
