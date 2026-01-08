@@ -2822,15 +2822,15 @@ func TestModalScrollNotAccumulatingAtBottom(t *testing.T) {
 			initialScroll:  30,
 			contentLines:   50,
 			termHeight:     30,
-			expectedScroll: 30, // Should stay at max
+			expectedScroll: 30, // Should stay at max (maxScroll=30, can't go past)
 			description:    "At bottom, pressing down should not accumulate",
 		},
 		{
-			name:           "scroll below max clamps to max",
-			initialScroll:  35, // Over max
+			name:           "scroll near max clamps to max",
+			initialScroll:  28,
 			contentLines:   50,
 			termHeight:     30,
-			expectedScroll: 30, // Clamped to max
+			expectedScroll: 30, // After +3 delta, clamped to max=30
 			description:    "Scroll position clamped to maximum",
 		},
 		{
@@ -2846,188 +2846,8 @@ func TestModalScrollNotAccumulatingAtBottom(t *testing.T) {
 			initialScroll:  0,
 			contentLines:   5,
 			termHeight:     30,
-			expectedScroll: 0,
+			expectedScroll: 0, // maxScroll=0 since content fits
 			description:    "Content fits entirely, max scroll is 0",
-		},
-		{
-			name:           "exact fit at bottom",
-			initialScroll:  15,
-			contentLines:   35,
-			termHeight:     30,
-			expectedScroll: 15, // Exact max
-			description:    "Scroll at exact max boundary",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := Model{
-				Width:  80,
-				Height: tt.termHeight,
-				ModalStack: []ModalEntry{
-					{
-						IssueID:      "td-001",
-						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
-						Scroll:       tt.initialScroll,
-						ContentLines: tt.contentLines,
-						SourcePanel:  PanelTaskList,
-					},
-				},
-				PaneHeights: defaultPaneHeights(),
-			}
-
-			maxScroll := m.modalMaxScroll(m.CurrentModal())
-
-			// Verify initial scroll is clamped
-			if m.CurrentModal().Scroll > maxScroll {
-				m.CurrentModal().Scroll = maxScroll
-			}
-
-			// Try to scroll down via mousewheel (delta=3)
-			modal := m.CurrentModal()
-			modal.Scroll += 3
-			if modal.Scroll < 0 {
-				modal.Scroll = 0
-			}
-			if modal.Scroll > maxScroll {
-				modal.Scroll = maxScroll
-			}
-
-			if m.CurrentModal().Scroll != tt.expectedScroll {
-				t.Errorf("After scroll down at bottom: got %d, want %d (%s)",
-					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
-			}
-		})
-	}
-}
-
-// TestModalScrollPositionUpdatesCorrectly tests that scroll position updates
-// correctly when scrolling within valid bounds.
-func TestModalScrollPositionUpdatesCorrectly(t *testing.T) {
-	tests := []struct {
-		name           string
-		initialScroll  int
-		delta          int
-		contentLines   int
-		termHeight     int
-		expectedScroll int
-		description    string
-	}{
-		{
-			name:           "single line scroll down",
-			initialScroll:  5,
-			delta:          1,
-			contentLines:   50,
-			termHeight:     30,
-			expectedScroll: 6,
-			description:    "One line scroll increases position by 1",
-		},
-		{
-			name:           "multiple line scroll down",
-			initialScroll:  5,
-			delta:          5,
-			contentLines:   50,
-			termHeight:     30,
-			expectedScroll: 10,
-			description:    "Five line scroll increases position by 5",
-		},
-		{
-			name:           "mousewheel scroll down (delta=3)",
-			initialScroll:  5,
-			delta:          3,
-			contentLines:   50,
-			termHeight:     30,
-			expectedScroll: 8,
-			description:    "Mousewheel scroll with delta=3",
-		},
-		{
-			name:           "scroll from top",
-			initialScroll:  0,
-			delta:          3,
-			contentLines:   50,
-			termHeight:     30,
-			expectedScroll: 3,
-			description:    "Scrolling from top position",
-		},
-		{
-			name:           "scroll in middle range",
-			initialScroll:  10,
-			delta:          3,
-			contentLines:   50,
-			termHeight:     30,
-			expectedScroll: 13,
-			description:    "Scrolling from middle of document",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			m := Model{
-				Width:  80,
-				Height: tt.termHeight,
-				ModalStack: []ModalEntry{
-					{
-						IssueID:      "td-001",
-						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
-						Scroll:       tt.initialScroll,
-						ContentLines: tt.contentLines,
-						SourcePanel:  PanelTaskList,
-					},
-				},
-				PaneHeights: defaultPaneHeights(),
-			}
-
-			maxScroll := m.modalMaxScroll(m.CurrentModal())
-			modal := m.CurrentModal()
-			modal.Scroll += tt.delta
-			if modal.Scroll < 0 {
-				modal.Scroll = 0
-			}
-			if modal.Scroll > maxScroll {
-				modal.Scroll = maxScroll
-			}
-
-			if m.CurrentModal().Scroll != tt.expectedScroll {
-				t.Errorf("Scroll position: got %d, want %d (%s)",
-					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
-			}
-		})
-	}
-}
-
-// TestModalScrollKeyboardDownAtBottom tests pressing down key at bottom boundary.
-func TestModalScrollKeyboardDownAtBottom(t *testing.T) {
-	tests := []struct {
-		name           string
-		initialScroll  int
-		contentLines   int
-		termHeight     int
-		expectedScroll int
-		description    string
-	}{
-		{
-			name:           "down key at max scroll",
-			initialScroll:  30,
-			contentLines:   50,
-			termHeight:     30,
-			expectedScroll: 30,
-			description:    "Down key at bottom should not overshoot",
-		},
-		{
-			name:           "down key one before max",
-			initialScroll:  29,
-			contentLines:   50,
-			termHeight:     30,
-			expectedScroll: 30,
-			description:    "Down key one position from bottom reaches max",
-		},
-		{
-			name:           "down key in middle",
-			initialScroll:  10,
-			contentLines:   50,
-			termHeight:     30,
-			expectedScroll: 11,
-			description:    "Down key in middle of scrollable area",
 		},
 	}
 
@@ -3049,22 +2869,168 @@ func TestModalScrollKeyboardDownAtBottom(t *testing.T) {
 				PaneHeights: defaultPaneHeights(),
 			}
 
-			// Simulate CmdScrollDown (j key)
-			modal := m.CurrentModal()
-			maxScroll := m.modalMaxScroll(modal)
-			if modal.Scroll < maxScroll {
-				modal.Scroll++
+			// Scroll down via mouse wheel using actual handler
+			downMsg := tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonWheelDown,
+				X:      40,
+				Y:      15,
 			}
+			updated, _ := m.handleMouse(downMsg)
+			m2 := updated.(Model)
 
-			if m.CurrentModal().Scroll != tt.expectedScroll {
-				t.Errorf("After down key: got %d, want %d (%s)",
-					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			if m2.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After scroll down: got %d, want %d (%s)",
+					m2.CurrentModal().Scroll, tt.expectedScroll, tt.description)
 			}
 		})
 	}
 }
 
-// TestModalScrollKeyboardUpWorks tests that scrolling up works correctly.
+// TestModalScrollPositionUpdatesCorrectly tests that scroll position updates
+// correctly when scrolling within valid bounds using mouse wheel (delta=3).
+func TestModalScrollPositionUpdatesCorrectly(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialScroll  int
+		contentLines   int
+		termHeight     int
+		expectedScroll int
+		description    string
+	}{
+		{
+			name:           "mousewheel scroll down from position 5",
+			initialScroll:  5,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 8, // 5 + 3 (mouse wheel delta)
+			description:    "Mousewheel scroll with delta=3",
+		},
+		{
+			name:           "scroll from top",
+			initialScroll:  0,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 3,
+			description:    "Scrolling from top position",
+		},
+		{
+			name:           "scroll in middle range",
+			initialScroll:  10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 13,
+			description:    "Scrolling from middle of document",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:  80,
+				Height: tt.termHeight,
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{
+						IssueID:      "td-001",
+						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+						Scroll:       tt.initialScroll,
+						ContentLines: tt.contentLines,
+						SourcePanel:  PanelTaskList,
+					},
+				},
+				PaneHeights: defaultPaneHeights(),
+			}
+
+			// Scroll down via mouse wheel using actual handler
+			downMsg := tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonWheelDown,
+				X:      40,
+				Y:      15,
+			}
+			updated, _ := m.handleMouse(downMsg)
+			m2 := updated.(Model)
+
+			if m2.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("Scroll position: got %d, want %d (%s)",
+					m2.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			}
+		})
+	}
+}
+
+// TestModalScrollKeyboardDownAtBottom tests pressing j key at bottom boundary.
+// Uses handleKey with actual keyboard input instead of reimplementing logic.
+func TestModalScrollKeyboardDownAtBottom(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialScroll  int
+		contentLines   int
+		termHeight     int
+		expectedScroll int
+		description    string
+	}{
+		{
+			name:           "j key at max scroll",
+			initialScroll:  30,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 30, // At max, stays at max
+			description:    "j key at bottom should not overshoot",
+		},
+		{
+			name:           "j key one before max",
+			initialScroll:  29,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 30, // Goes to max
+			description:    "j key one position from bottom reaches max",
+		},
+		{
+			name:           "j key in middle",
+			initialScroll:  10,
+			contentLines:   50,
+			termHeight:     30,
+			expectedScroll: 11, // +1
+			description:    "j key in middle of scrollable area",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:  80,
+				Height: tt.termHeight,
+				Keymap: newTestKeymap(),
+				ModalStack: []ModalEntry{
+					{
+						IssueID:      "td-001",
+						Issue:        &models.Issue{ID: "td-001", Type: models.TypeTask},
+						Scroll:       tt.initialScroll,
+						ContentLines: tt.contentLines,
+						SourcePanel:  PanelTaskList,
+						// No special section focus - tests basic scroll
+					},
+				},
+				PaneHeights: defaultPaneHeights(),
+			}
+
+			// Send j key through handleKey
+			jKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+			updated, _ := m.handleKey(jKey)
+			m2 := updated.(Model)
+
+			if m2.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After j key: got %d, want %d (%s)",
+					m2.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			}
+		})
+	}
+}
+
+// TestModalScrollKeyboardUpWorks tests that scrolling up works correctly with k key.
+// Uses handleKey with actual keyboard input instead of reimplementing logic.
 func TestModalScrollKeyboardUpWorks(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -3075,36 +3041,36 @@ func TestModalScrollKeyboardUpWorks(t *testing.T) {
 		description    string
 	}{
 		{
-			name:           "up key from middle",
+			name:           "k key from middle",
 			initialScroll:  10,
 			contentLines:   50,
 			termHeight:     30,
 			expectedScroll: 9,
-			description:    "Up key decreases scroll by 1",
+			description:    "k key decreases scroll by 1",
 		},
 		{
-			name:           "up key from max",
+			name:           "k key from position 20",
 			initialScroll:  20,
 			contentLines:   50,
 			termHeight:     30,
 			expectedScroll: 19,
-			description:    "Up key from bottom moves one position up",
+			description:    "k key from position 20 moves to 19",
 		},
 		{
-			name:           "up key at top",
+			name:           "k key at top",
 			initialScroll:  0,
 			contentLines:   50,
 			termHeight:     30,
 			expectedScroll: 0,
-			description:    "Up key at top stays at 0",
+			description:    "k key at top stays at 0",
 		},
 		{
-			name:           "up key from position 1",
+			name:           "k key from position 1",
 			initialScroll:  1,
 			contentLines:   50,
 			termHeight:     30,
 			expectedScroll: 0,
-			description:    "Up key from position 1 goes to 0",
+			description:    "k key from position 1 goes to 0",
 		},
 	}
 
@@ -3113,6 +3079,7 @@ func TestModalScrollKeyboardUpWorks(t *testing.T) {
 			m := Model{
 				Width:  80,
 				Height: tt.termHeight,
+				Keymap: newTestKeymap(),
 				ModalStack: []ModalEntry{
 					{
 						IssueID:      "td-001",
@@ -3120,31 +3087,31 @@ func TestModalScrollKeyboardUpWorks(t *testing.T) {
 						Scroll:       tt.initialScroll,
 						ContentLines: tt.contentLines,
 						SourcePanel:  PanelTaskList,
+						// No special section focus - tests basic scroll
 					},
 				},
 				PaneHeights: defaultPaneHeights(),
 			}
 
-			// Simulate CmdScrollUp (k key)
-			modal := m.CurrentModal()
-			if modal.Scroll > 0 {
-				modal.Scroll--
-			}
+			// Send k key through handleKey
+			kKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'k'}}
+			updated, _ := m.handleKey(kKey)
+			m2 := updated.(Model)
 
-			if m.CurrentModal().Scroll != tt.expectedScroll {
-				t.Errorf("After up key: got %d, want %d (%s)",
-					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			if m2.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After k key: got %d, want %d (%s)",
+					m2.CurrentModal().Scroll, tt.expectedScroll, tt.description)
 			}
 		})
 	}
 }
 
-// TestModalScrollPageDownClampsBounds tests Page Down doesn't overshoot.
+// TestModalScrollPageDownClampsBounds tests mouse wheel scroll down clamps to max.
+// Uses handleMouse with actual mouse wheel input instead of reimplementing logic.
 func TestModalScrollPageDownClampsBounds(t *testing.T) {
 	tests := []struct {
 		name           string
 		initialScroll  int
-		pageSize       int
 		contentLines   int
 		termHeight     int
 		expectedScroll int
@@ -3152,39 +3119,35 @@ func TestModalScrollPageDownClampsBounds(t *testing.T) {
 	}{
 		{
 			name:           "page down near bottom clamps to max",
-			initialScroll:  25,
-			pageSize:       10,
+			initialScroll:  28, // maxScroll is ~30, +3 would be 31, clamps to 30
 			contentLines:   50,
 			termHeight:     30,
 			expectedScroll: 30,
-			description:    "Page down that would overshoot gets clamped",
+			description:    "Scroll down that would overshoot gets clamped",
 		},
 		{
 			name:           "page down from top",
 			initialScroll:  0,
-			pageSize:       10,
 			contentLines:   50,
 			termHeight:     30,
-			expectedScroll: 10,
-			description:    "Page down from top moves forward",
+			expectedScroll: 3, // Mouse wheel delta=3
+			description:    "Scroll down from top moves forward by 3",
 		},
 		{
 			name:           "page down at max stays at max",
 			initialScroll:  30,
-			pageSize:       10,
 			contentLines:   50,
 			termHeight:     30,
 			expectedScroll: 30,
-			description:    "Page down at max boundary stays at max",
+			description:    "Scroll down at max boundary stays at max",
 		},
 		{
-			name:           "small page size",
+			name:           "small content",
 			initialScroll:  0,
-			pageSize:       3,
-			contentLines:   50,
+			contentLines:   10, // Fits in viewport
 			termHeight:     30,
-			expectedScroll: 3,
-			description:    "Half-page scroll with small page size",
+			expectedScroll: 0, // maxScroll is 0
+			description:    "Small content that fits in viewport",
 		},
 	}
 
@@ -3193,6 +3156,7 @@ func TestModalScrollPageDownClampsBounds(t *testing.T) {
 			m := Model{
 				Width:  80,
 				Height: tt.termHeight,
+				Keymap: newTestKeymap(),
 				ModalStack: []ModalEntry{
 					{
 						IssueID:      "td-001",
@@ -3205,68 +3169,66 @@ func TestModalScrollPageDownClampsBounds(t *testing.T) {
 				PaneHeights: defaultPaneHeights(),
 			}
 
-			// Simulate Page Down
-			modal := m.CurrentModal()
-			maxScroll := m.modalMaxScroll(modal)
-			modal.Scroll += tt.pageSize
-			if modal.Scroll > maxScroll {
-				modal.Scroll = maxScroll
+			// Scroll down via mouse wheel using actual handler
+			downMsg := tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonWheelDown,
+				X:      40,
+				Y:      15,
 			}
+			updated, _ := m.handleMouse(downMsg)
+			m2 := updated.(Model)
 
-			if m.CurrentModal().Scroll != tt.expectedScroll {
-				t.Errorf("After page down: got %d, want %d (%s)",
-					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			if m2.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After scroll down: got %d, want %d (%s)",
+					m2.CurrentModal().Scroll, tt.expectedScroll, tt.description)
 			}
 		})
 	}
 }
 
-// TestModalScrollPageUpClampsBounds tests Page Up doesn't undershoot.
+// TestModalScrollPageUpClampsBounds tests mouse wheel scroll up clamps to 0.
+// Uses handleMouse with actual mouse wheel input instead of reimplementing logic.
 func TestModalScrollPageUpClampsBounds(t *testing.T) {
 	tests := []struct {
 		name           string
 		initialScroll  int
-		pageSize       int
 		contentLines   int
 		termHeight     int
 		expectedScroll int
 		description    string
 	}{
 		{
-			name:           "page up near top clamps to 0",
-			initialScroll:  5,
-			pageSize:       10,
+			name:           "scroll up near top clamps to 0",
+			initialScroll:  2, // -3 would be -1, clamps to 0
 			contentLines:   50,
 			termHeight:     30,
 			expectedScroll: 0,
-			description:    "Page up that would go negative gets clamped to 0",
+			description:    "Scroll up that would go negative gets clamped to 0",
 		},
 		{
-			name:           "page up from middle",
+			name:           "scroll up from middle",
 			initialScroll:  15,
-			pageSize:       5,
 			contentLines:   50,
 			termHeight:     30,
-			expectedScroll: 10,
-			description:    "Page up from middle position",
+			expectedScroll: 12, // 15 - 3
+			description:    "Scroll up from middle position",
 		},
 		{
-			name:           "page up at 0 stays at 0",
+			name:           "scroll up at 0 stays at 0",
 			initialScroll:  0,
-			pageSize:       10,
 			contentLines:   50,
 			termHeight:     30,
 			expectedScroll: 0,
-			description:    "Page up at top boundary stays at 0",
+			description:    "Scroll up at top boundary stays at 0",
 		},
 		{
-			name:           "page up from max",
+			name:           "scroll up from position 20",
 			initialScroll:  20,
-			pageSize:       10,
 			contentLines:   50,
 			termHeight:     30,
-			expectedScroll: 10,
-			description:    "Page up from bottom moves backward",
+			expectedScroll: 17, // 20 - 3
+			description:    "Scroll up moves backward by 3",
 		},
 	}
 
@@ -3275,6 +3237,7 @@ func TestModalScrollPageUpClampsBounds(t *testing.T) {
 			m := Model{
 				Width:  80,
 				Height: tt.termHeight,
+				Keymap: newTestKeymap(),
 				ModalStack: []ModalEntry{
 					{
 						IssueID:      "td-001",
@@ -3287,26 +3250,31 @@ func TestModalScrollPageUpClampsBounds(t *testing.T) {
 				PaneHeights: defaultPaneHeights(),
 			}
 
-			// Simulate Page Up
-			modal := m.CurrentModal()
-			modal.Scroll -= tt.pageSize
-			if modal.Scroll < 0 {
-				modal.Scroll = 0
+			// Scroll up via mouse wheel using actual handler
+			upMsg := tea.MouseMsg{
+				Action: tea.MouseActionPress,
+				Button: tea.MouseButtonWheelUp,
+				X:      40,
+				Y:      15,
 			}
+			updated, _ := m.handleMouse(upMsg)
+			m2 := updated.(Model)
 
-			if m.CurrentModal().Scroll != tt.expectedScroll {
-				t.Errorf("After page up: got %d, want %d (%s)",
-					m.CurrentModal().Scroll, tt.expectedScroll, tt.description)
+			if m2.CurrentModal().Scroll != tt.expectedScroll {
+				t.Errorf("After scroll up: got %d, want %d (%s)",
+					m2.CurrentModal().Scroll, tt.expectedScroll, tt.description)
 			}
 		})
 	}
 }
 
 // TestModalScrollEdgeCaseEmptyModal tests scroll with empty modal content.
+// Uses handleMouse with actual mouse wheel input instead of reimplementing logic.
 func TestModalScrollEdgeCaseEmptyModal(t *testing.T) {
 	m := Model{
 		Width:  80,
 		Height: 30,
+		Keymap: newTestKeymap(),
 		ModalStack: []ModalEntry{
 			{
 				IssueID:      "td-001",
@@ -3325,26 +3293,28 @@ func TestModalScrollEdgeCaseEmptyModal(t *testing.T) {
 		t.Errorf("Empty modal max scroll should be 0, got %d", maxScroll)
 	}
 
-	// Trying to scroll down should clamp to 0
-	modal := m.CurrentModal()
-	modal.Scroll += 3
-	if modal.Scroll < 0 {
-		modal.Scroll = 0
+	// Trying to scroll down should clamp to 0 via actual handler
+	downMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelDown,
+		X:      40,
+		Y:      15,
 	}
-	if modal.Scroll > maxScroll {
-		modal.Scroll = maxScroll
-	}
+	updated, _ := m.handleMouse(downMsg)
+	m2 := updated.(Model)
 
-	if m.CurrentModal().Scroll != 0 {
-		t.Errorf("Empty modal scroll should clamp to 0, got %d", m.CurrentModal().Scroll)
+	if m2.CurrentModal().Scroll != 0 {
+		t.Errorf("Empty modal scroll should clamp to 0, got %d", m2.CurrentModal().Scroll)
 	}
 }
 
 // TestModalScrollEdgeCaseSingleItemModal tests scroll with minimal content.
+// Uses handleMouse with actual mouse wheel input instead of reimplementing logic.
 func TestModalScrollEdgeCaseSingleItemModal(t *testing.T) {
 	m := Model{
 		Width:  80,
 		Height: 30,
+		Keymap: newTestKeymap(),
 		ModalStack: []ModalEntry{
 			{
 				IssueID:      "td-001",
@@ -3363,26 +3333,28 @@ func TestModalScrollEdgeCaseSingleItemModal(t *testing.T) {
 		t.Errorf("Single-item modal (content fits) max scroll should be 0, got %d", maxScroll)
 	}
 
-	// Try to scroll down - should stay at 0
-	modal := m.CurrentModal()
-	modal.Scroll += 5
-	if modal.Scroll < 0 {
-		modal.Scroll = 0
+	// Try to scroll down via actual handler - should stay at 0
+	downMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelDown,
+		X:      40,
+		Y:      15,
 	}
-	if modal.Scroll > maxScroll {
-		modal.Scroll = maxScroll
-	}
+	updated, _ := m.handleMouse(downMsg)
+	m2 := updated.(Model)
 
-	if m.CurrentModal().Scroll != 0 {
-		t.Errorf("Content-fits modal scroll should be 0, got %d", m.CurrentModal().Scroll)
+	if m2.CurrentModal().Scroll != 0 {
+		t.Errorf("Content-fits modal scroll should be 0, got %d", m2.CurrentModal().Scroll)
 	}
 }
 
 // TestModalScrollEdgeCaseFullModal tests scroll with completely filled modal.
+// Uses handleMouse with actual mouse wheel input instead of reimplementing logic.
 func TestModalScrollEdgeCaseFullModal(t *testing.T) {
 	m := Model{
 		Width:  80,
 		Height: 30,
+		Keymap: newTestKeymap(),
 		ModalStack: []ModalEntry{
 			{
 				IssueID:      "td-001",
@@ -3401,23 +3373,22 @@ func TestModalScrollEdgeCaseFullModal(t *testing.T) {
 		t.Errorf("Full modal should have positive max scroll, got %d", maxScroll)
 	}
 
-	// Set scroll to max and verify it doesn't increase
-	modal := m.CurrentModal()
-	modal.Scroll = maxScroll
-	initialScroll := modal.Scroll
+	// Set scroll to max and verify it doesn't increase via actual handler
+	m.CurrentModal().Scroll = maxScroll
 
-	// Try to scroll down more
-	modal.Scroll += 10
-	if modal.Scroll < 0 {
-		modal.Scroll = 0
+	// Try to scroll down more via actual handler
+	downMsg := tea.MouseMsg{
+		Action: tea.MouseActionPress,
+		Button: tea.MouseButtonWheelDown,
+		X:      40,
+		Y:      15,
 	}
-	if modal.Scroll > maxScroll {
-		modal.Scroll = maxScroll
-	}
+	updated, _ := m.handleMouse(downMsg)
+	m2 := updated.(Model)
 
-	if m.CurrentModal().Scroll != initialScroll {
+	if m2.CurrentModal().Scroll != maxScroll {
 		t.Errorf("Full modal at max should not scroll further, got %d want %d",
-			m.CurrentModal().Scroll, initialScroll)
+			m2.CurrentModal().Scroll, maxScroll)
 	}
 }
 
