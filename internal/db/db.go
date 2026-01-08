@@ -381,6 +381,113 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	return &issue, nil
 }
 
+// GetIssuesByIDs fetches multiple issues in a single query
+func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Normalize and dedupe IDs
+	seen := make(map[string]bool)
+	normalizedIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		nid := NormalizeIssueID(id)
+		if !seen[nid] {
+			seen[nid] = true
+			normalizedIDs = append(normalizedIDs, nid)
+		}
+	}
+
+	placeholders := make([]string, len(normalizedIDs))
+	args := make([]interface{}, len(normalizedIDs))
+	for i, id := range normalizedIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance,
+		       implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch
+		FROM issues WHERE id IN (%s)
+	`, strings.Join(placeholders, ","))
+
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var issues []models.Issue
+	for rows.Next() {
+		var issue models.Issue
+		var labels string
+		var closedAt, deletedAt sql.NullTime
+		if err := rows.Scan(
+			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
+			&issue.Points, &labels, &issue.ParentID, &issue.Acceptance,
+			&issue.ImplementerSession, &issue.CreatorSession, &issue.ReviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &issue.CreatedBranch,
+		); err != nil {
+			return nil, err
+		}
+		if labels != "" {
+			issue.Labels = strings.Split(labels, ",")
+		}
+		if closedAt.Valid {
+			issue.ClosedAt = &closedAt.Time
+		}
+		if deletedAt.Valid {
+			issue.DeletedAt = &deletedAt.Time
+		}
+		issues = append(issues, issue)
+	}
+
+	return issues, nil
+}
+
+// GetIssueTitles fetches titles for multiple issues in a single query
+func (db *DB) GetIssueTitles(ids []string) (map[string]string, error) {
+	if len(ids) == 0 {
+		return make(map[string]string), nil
+	}
+
+	// Normalize and dedupe IDs
+	seen := make(map[string]bool)
+	normalizedIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		nid := NormalizeIssueID(id)
+		if !seen[nid] {
+			seen[nid] = true
+			normalizedIDs = append(normalizedIDs, nid)
+		}
+	}
+
+	// Build query with placeholders
+	placeholders := make([]string, len(normalizedIDs))
+	args := make([]interface{}, len(normalizedIDs))
+	for i, id := range normalizedIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf("SELECT id, title FROM issues WHERE id IN (%s)", strings.Join(placeholders, ","))
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	titles := make(map[string]string)
+	for rows.Next() {
+		var id, title string
+		if err := rows.Scan(&id, &title); err != nil {
+			return nil, err
+		}
+		titles[id] = title
+	}
+
+	return titles, nil
+}
+
 // UpdateIssue updates an issue
 func (db *DB) UpdateIssue(issue *models.Issue) error {
 	return db.withWriteLock(func() error {
@@ -1104,6 +1211,70 @@ func (db *DB) GetBlockedBy(issueID string) ([]string, error) {
 	return blocked, nil
 }
 
+// GetAllDependencies returns all dependency relationships as a map
+func (db *DB) GetAllDependencies() (map[string][]string, error) {
+	rows, err := db.conn.Query(`
+		SELECT issue_id, depends_on_id FROM issue_dependencies WHERE relation_type = 'depends_on'
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	deps := make(map[string][]string)
+	for rows.Next() {
+		var issueID, depID string
+		if err := rows.Scan(&issueID, &depID); err != nil {
+			return nil, err
+		}
+		deps[issueID] = append(deps[issueID], depID)
+	}
+	return deps, nil
+}
+
+// GetIssueStatuses fetches statuses for multiple issues in a single query
+func (db *DB) GetIssueStatuses(ids []string) (map[string]models.Status, error) {
+	if len(ids) == 0 {
+		return make(map[string]models.Status), nil
+	}
+
+	// Dedupe IDs
+	seen := make(map[string]bool)
+	uniqueIDs := make([]string, 0, len(ids))
+	for _, id := range ids {
+		nid := NormalizeIssueID(id)
+		if !seen[nid] {
+			seen[nid] = true
+			uniqueIDs = append(uniqueIDs, nid)
+		}
+	}
+
+	placeholders := make([]string, len(uniqueIDs))
+	args := make([]interface{}, len(uniqueIDs))
+	for i, id := range uniqueIDs {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+
+	query := fmt.Sprintf("SELECT id, status FROM issues WHERE id IN (%s)", strings.Join(placeholders, ","))
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	statuses := make(map[string]models.Status)
+	for rows.Next() {
+		var id string
+		var status models.Status
+		if err := rows.Scan(&id, &status); err != nil {
+			return nil, err
+		}
+		statuses[id] = status
+	}
+	return statuses, nil
+}
+
 // LinkFile links a file to an issue
 func (db *DB) LinkFile(issueID, filePath string, role models.FileRole, sha string) error {
 	return db.withWriteLock(func() error {
@@ -1373,57 +1544,55 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 		ByPriority: make(map[models.Priority]int),
 	}
 
-	// Total non-deleted issues
-	var total int
-	err := db.conn.QueryRow(`SELECT COUNT(*) FROM issues WHERE deleted_at IS NULL`).Scan(&total)
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	tomorrow := today.AddDate(0, 0, 1)
+	weekAgo := now.AddDate(0, 0, -7)
+
+	// Consolidate scalar counts into single query
+	err := db.conn.QueryRow(`
+		SELECT
+			COUNT(*),
+			COALESCE(SUM(points), 0),
+			SUM(CASE WHEN created_at >= ? AND created_at < ? THEN 1 ELSE 0 END),
+			SUM(CASE WHEN created_at >= ? THEN 1 ELSE 0 END),
+			(SELECT COUNT(*) FROM logs),
+			(SELECT COUNT(*) FROM handoffs)
+		FROM issues WHERE deleted_at IS NULL
+	`, today, tomorrow, weekAgo).Scan(
+		&stats.Total, &stats.TotalPoints, &stats.CreatedToday, &stats.CreatedThisWeek,
+		&stats.TotalLogs, &stats.TotalHandoffs,
+	)
 	if err != nil {
 		return nil, err
 	}
-	stats.Total = total
 
-	// By status
-	rows, err := db.conn.Query(`SELECT status, COUNT(*) FROM issues WHERE deleted_at IS NULL GROUP BY status`)
+	// Consolidate GROUP BY queries using UNION ALL
+	rows, err := db.conn.Query(`
+		SELECT 'status' as category, status as value, COUNT(*) as cnt FROM issues WHERE deleted_at IS NULL GROUP BY status
+		UNION ALL
+		SELECT 'type' as category, type as value, COUNT(*) as cnt FROM issues WHERE deleted_at IS NULL GROUP BY type
+		UNION ALL
+		SELECT 'priority' as category, priority as value, COUNT(*) as cnt FROM issues WHERE deleted_at IS NULL GROUP BY priority
+	`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var status string
+		var category, value string
 		var count int
-		if err := rows.Scan(&status, &count); err != nil {
+		if err := rows.Scan(&category, &value, &count); err != nil {
 			return nil, err
 		}
-		stats.ByStatus[models.Status(status)] = count
-	}
-
-	// By type
-	rows, err = db.conn.Query(`SELECT type, COUNT(*) FROM issues WHERE deleted_at IS NULL GROUP BY type`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var typ string
-		var count int
-		if err := rows.Scan(&typ, &count); err != nil {
-			return nil, err
+		switch category {
+		case "status":
+			stats.ByStatus[models.Status(value)] = count
+		case "type":
+			stats.ByType[models.Type(value)] = count
+		case "priority":
+			stats.ByPriority[models.Priority(value)] = count
 		}
-		stats.ByType[models.Type(typ)] = count
-	}
-
-	// By priority
-	rows, err = db.conn.Query(`SELECT priority, COUNT(*) FROM issues WHERE deleted_at IS NULL GROUP BY priority`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var priority string
-		var count int
-		if err := rows.Scan(&priority, &count); err != nil {
-			return nil, err
-		}
-		stats.ByPriority[models.Priority(priority)] = count
 	}
 
 	// Oldest open issue
@@ -1510,47 +1679,12 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 		stats.LastClosed = &closedIssue
 	}
 
-	// Issues created today
-	now := time.Now()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	tomorrow := today.AddDate(0, 0, 1)
-	var createdToday int
-	db.conn.QueryRow(`SELECT COUNT(*) FROM issues WHERE deleted_at IS NULL AND created_at >= ? AND created_at < ?`,
-		today, tomorrow).Scan(&createdToday)
-	stats.CreatedToday = createdToday
-
-	// Issues created this week (last 7 days)
-	weekAgo := now.AddDate(0, 0, -7)
-	var createdThisWeek int
-	db.conn.QueryRow(`SELECT COUNT(*) FROM issues WHERE deleted_at IS NULL AND created_at >= ?`,
-		weekAgo).Scan(&createdThisWeek)
-	stats.CreatedThisWeek = createdThisWeek
-
-	// Total points
-	var totalPoints int
-	db.conn.QueryRow(`SELECT COALESCE(SUM(points), 0) FROM issues WHERE deleted_at IS NULL`).Scan(&totalPoints)
-	stats.TotalPoints = totalPoints
-
-	// Average points per task
+	// Derived stats
 	if stats.Total > 0 {
-		stats.AvgPointsPerTask = float64(totalPoints) / float64(stats.Total)
-	}
-
-	// Completion rate (closed / total)
-	if stats.Total > 0 {
+		stats.AvgPointsPerTask = float64(stats.TotalPoints) / float64(stats.Total)
 		closedCount := stats.ByStatus[models.StatusClosed]
 		stats.CompletionRate = float64(closedCount) / float64(stats.Total)
 	}
-
-	// Total logs
-	var totalLogs int
-	db.conn.QueryRow(`SELECT COUNT(*) FROM logs`).Scan(&totalLogs)
-	stats.TotalLogs = totalLogs
-
-	// Total handoffs
-	var totalHandoffs int
-	db.conn.QueryRow(`SELECT COUNT(*) FROM handoffs`).Scan(&totalHandoffs)
-	stats.TotalHandoffs = totalHandoffs
 
 	// Most active session (by log count)
 	var mostActiveSession string

@@ -1208,20 +1208,8 @@ func (m Model) renderStatusBarChart(stats *models.ExtendedStats, width int) stri
 			barLen = (count * barWidth) / maxCount
 		}
 
-		// Build bar with appropriate color
-		var statusColor lipgloss.Style
-		switch status {
-		case models.StatusOpen:
-			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("45"))
-		case models.StatusInProgress:
-			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-		case models.StatusBlocked:
-			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-		case models.StatusInReview:
-			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
-		case models.StatusClosed:
-			statusColor = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-		}
+		// Build bar with appropriate color from pre-created styles
+		statusColor := statusChartStyles[status]
 
 		// Build filled and empty segments
 		filled := strings.Repeat(statsBarFilled, barLen)

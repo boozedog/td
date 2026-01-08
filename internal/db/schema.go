@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 7
+const SchemaVersion = 8
 
 const schema = `
 -- Issues table
@@ -223,5 +223,12 @@ CREATE INDEX IF NOT EXISTS idx_logs_work_session ON logs(work_session_id);
 );
 CREATE INDEX IF NOT EXISTS idx_ish_issue ON issue_session_history(issue_id);
 CREATE INDEX IF NOT EXISTS idx_ish_session ON issue_session_history(session_id);`,
+	},
+	{
+		Version:     8,
+		Description: "Add timestamp indexes for activity queries",
+		SQL: `CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_handoffs_timestamp ON handoffs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_issues_deleted_status ON issues(deleted_at, status);`,
 	},
 }

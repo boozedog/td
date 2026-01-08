@@ -70,7 +70,8 @@ func FetchData(database *db.DB, sessionID string, startedAt time.Time, searchQue
 
 // fetchActivity combines logs, actions, and comments into a unified activity feed
 func fetchActivity(database *db.DB, limit int) []ActivityItem {
-	var items []ActivityItem
+	// Pre-allocate for logs + actions + comments (3x limit max)
+	items := make([]ActivityItem, 0, limit*3)
 
 	// Fetch logs
 	logs, _ := database.GetRecentLogsAll(limit)
@@ -120,17 +121,23 @@ func fetchActivity(database *db.DB, limit int) []ActivityItem {
 		items = items[:limit]
 	}
 
-	// Fetch issue titles for all items
-	titleCache := make(map[string]string)
-	for i := range items {
-		if items[i].IssueID == "" {
-			continue
+	// Collect unique issue IDs
+	issueIDs := make([]string, 0, len(items))
+	seen := make(map[string]bool)
+	for _, item := range items {
+		if item.IssueID != "" && !seen[item.IssueID] {
+			seen[item.IssueID] = true
+			issueIDs = append(issueIDs, item.IssueID)
 		}
-		if title, ok := titleCache[items[i].IssueID]; ok {
-			items[i].IssueTitle = title
-		} else if issue, err := database.GetIssue(items[i].IssueID); err == nil {
-			titleCache[items[i].IssueID] = issue.Title
-			items[i].IssueTitle = issue.Title
+	}
+
+	// Batch fetch all titles in single query
+	titles, _ := database.GetIssueTitles(issueIDs)
+
+	// Apply titles to items
+	for i := range items {
+		if items[i].IssueID != "" {
+			items[i].IssueTitle = titles[items[i].IssueID]
 		}
 	}
 
@@ -181,6 +188,25 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 		return issues
 	}
 
+	// Batch load all dependencies and their statuses upfront
+	allDeps, _ := database.GetAllDependencies()
+	var allDepIDs []string
+	for _, deps := range allDeps {
+		allDepIDs = append(allDepIDs, deps...)
+	}
+	depStatuses, _ := database.GetIssueStatuses(allDepIDs)
+
+	// Helper to check if issue is blocked by unclosed dependencies
+	isBlockedByDeps := func(issueID string) bool {
+		deps := allDeps[issueID]
+		for _, depID := range deps {
+			if status, ok := depStatuses[depID]; ok && status != models.StatusClosed {
+				return true
+			}
+		}
+		return false
+	}
+
 	// Check if this is a TDQ query
 	useTDQ := searchQuery != "" && isTDQQuery(searchQuery)
 
@@ -195,17 +221,7 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 			for _, issue := range allIssues {
 				switch issue.Status {
 				case models.StatusOpen:
-					// Check if blocked by dependencies
-					deps, _ := database.GetDependencies(issue.ID)
-					isBlocked := false
-					for _, depID := range deps {
-						depIssue, err := database.GetIssue(depID)
-						if err == nil && depIssue.Status != models.StatusClosed {
-							isBlocked = true
-							break
-						}
-					}
-					if isBlocked {
+					if isBlockedByDeps(issue.ID) {
 						data.Blocked = append(data.Blocked, issue)
 					} else {
 						data.Ready = append(data.Ready, issue)
@@ -248,16 +264,7 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 	// Separate open issues into ready vs blocked-by-dependency
 	var blockedByDep []models.Issue
 	for _, issue := range openIssues {
-		deps, _ := database.GetDependencies(issue.ID)
-		isBlocked := false
-		for _, depID := range deps {
-			depIssue, err := database.GetIssue(depID)
-			if err == nil && depIssue.Status != models.StatusClosed {
-				isBlocked = true
-				break
-			}
-		}
-		if isBlocked {
+		if isBlockedByDeps(issue.ID) {
 			blockedByDep = append(blockedByDep, issue)
 		} else {
 			data.Ready = append(data.Ready, issue)

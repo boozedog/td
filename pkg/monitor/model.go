@@ -457,19 +457,29 @@ func (m Model) fetchIssueDetails(issueID string) tea.Cmd {
 			// Silently ignore errors - parent may have been deleted
 		}
 
-		// Fetch dependencies (blocked by)
+		// Fetch dependencies (blocked by) and dependents (blocks) with batch query
 		depIDs, _ := m.DB.GetDependencies(issueID)
-		for _, depID := range depIDs {
-			if depIssue, err := m.DB.GetIssue(depID); err == nil {
-				msg.BlockedBy = append(msg.BlockedBy, *depIssue)
-			}
-		}
-
-		// Fetch dependents (issues blocked by this one)
 		blockedIDs, _ := m.DB.GetBlockedBy(issueID)
-		for _, blockedID := range blockedIDs {
-			if blockedIssue, err := m.DB.GetIssue(blockedID); err == nil {
-				msg.Blocks = append(msg.Blocks, *blockedIssue)
+
+		// Combine IDs for single batch fetch
+		allRelatedIDs := append(depIDs, blockedIDs...)
+		if len(allRelatedIDs) > 0 {
+			relatedIssues, _ := m.DB.GetIssuesByIDs(allRelatedIDs)
+			// Build lookup map
+			issueMap := make(map[string]models.Issue)
+			for _, i := range relatedIssues {
+				issueMap[i.ID] = i
+			}
+			// Split into BlockedBy and Blocks
+			for _, depID := range depIDs {
+				if i, ok := issueMap[depID]; ok {
+					msg.BlockedBy = append(msg.BlockedBy, i)
+				}
+			}
+			for _, blockedID := range blockedIDs {
+				if i, ok := issueMap[blockedID]; ok {
+					msg.Blocks = append(msg.Blocks, i)
+				}
 			}
 		}
 

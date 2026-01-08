@@ -55,6 +55,15 @@ var (
 		models.StatusClosed:     lipgloss.NewStyle().Foreground(mutedColor),
 	}
 
+	// Status chart styles (slightly different colors for stats charts)
+	statusChartStyles = map[models.Status]lipgloss.Style{
+		models.StatusOpen:       lipgloss.NewStyle().Foreground(lipgloss.Color("45")),
+		models.StatusInProgress: lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
+		models.StatusBlocked:    lipgloss.NewStyle().Foreground(lipgloss.Color("196")),
+		models.StatusInReview:   lipgloss.NewStyle().Foreground(lipgloss.Color("141")),
+		models.StatusClosed:     lipgloss.NewStyle().Foreground(successColor),
+	}
+
 	// Priority styles
 	priorityStyles = map[models.Priority]lipgloss.Style{
 		models.PriorityP0: lipgloss.NewStyle().Foreground(errorColor).Bold(true),
