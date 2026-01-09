@@ -1,10 +1,28 @@
+// Package workflow implements the issue status state machine.
+//
+// Guards are condition checks that run during status transitions in Advisory
+// and Strict modes. In Liberal mode (default), guards are skipped.
+//
+// Currently active guards (attached to transitions):
+//   - BlockedGuard: Requires --force to start blocked issues
+//   - DifferentReviewerGuard: Prevents self-approval
+//
+// Future guards (defined but not yet attached to transitions):
+//   - EpicChildrenGuard: Warns when closing epic with open children
+//   - SelfCloseGuard: Prevents self-closing without exception
+//   - InProgressRequiredGuard: Validates review source status
+//
+// These future guards require caller modifications to pass necessary context
+// (e.g., open child count, self-close exception reason) and will be wired
+// up when Advisory/Strict modes are enabled by default.
 package workflow
 
 import (
 	"github.com/marcus/td/internal/models"
 )
 
-// BlockedGuard warns when starting a blocked issue without --force
+// BlockedGuard warns when starting a blocked issue without --force.
+// Active: Attached to blocked → in_progress transition.
 type BlockedGuard struct{}
 
 func (g *BlockedGuard) Name() string {
@@ -29,7 +47,8 @@ func (g *BlockedGuard) Check(ctx *TransitionContext) GuardResult {
 	}
 }
 
-// DifferentReviewerGuard ensures approvals come from different session than implementer
+// DifferentReviewerGuard ensures approvals come from different session than implementer.
+// Active: Attached to in_review → closed transition.
 type DifferentReviewerGuard struct{}
 
 func (g *DifferentReviewerGuard) Name() string {
@@ -72,7 +91,8 @@ func (g *DifferentReviewerGuard) Check(ctx *TransitionContext) GuardResult {
 	return GuardResult{Passed: true}
 }
 
-// EpicChildrenGuard warns when closing epic with open children
+// EpicChildrenGuard warns when closing epic with open children.
+// Future: Not yet attached to transitions. Requires caller to set OpenChildCount.
 type EpicChildrenGuard struct {
 	// OpenChildCount is set by caller before validation
 	OpenChildCount int
@@ -104,7 +124,8 @@ func (g *EpicChildrenGuard) Check(ctx *TransitionContext) GuardResult {
 	return GuardResult{Passed: true}
 }
 
-// SelfCloseGuard prevents closing issues you implemented without exception
+// SelfCloseGuard prevents closing issues you implemented without exception.
+// Future: Not yet attached to transitions. Requires caller to set SelfCloseException.
 type SelfCloseGuard struct {
 	// SelfCloseException is the reason provided for self-close bypass
 	SelfCloseException string
@@ -154,7 +175,9 @@ func (g *SelfCloseGuard) Check(ctx *TransitionContext) GuardResult {
 	return GuardResult{Passed: true}
 }
 
-// InProgressRequiredGuard ensures issue is in progress before review
+// InProgressRequiredGuard ensures issue is in progress before review.
+// Future: Not yet attached to transitions. Transition definitions already
+// prevent most invalid paths (e.g., blocked → in_review).
 type InProgressRequiredGuard struct{}
 
 func (g *InProgressRequiredGuard) Name() string {

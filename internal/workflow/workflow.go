@@ -16,7 +16,9 @@ const (
 	ModeStrict
 )
 
-// ActionContext identifies the source of the transition request
+// ActionContext identifies the source of the transition request.
+// Used by guards to apply context-specific rules (e.g., admin bypass).
+// Currently only ContextAdmin is checked by DifferentReviewerGuard.
 type ActionContext string
 
 const (
@@ -26,7 +28,7 @@ const (
 	ContextMonitor ActionContext = "monitor"
 	// ContextWorkSession indicates transition from work session commands
 	ContextWorkSession ActionContext = "worksession"
-	// ContextAdmin indicates administrative bypass
+	// ContextAdmin indicates administrative bypass (allows self-approval)
 	ContextAdmin ActionContext = "admin"
 )
 

@@ -288,6 +288,9 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Record session action for bypass prevention
+	m.DB.RecordSessionAction(issue.ID, m.SessionID, models.ActionSessionReviewed)
+
 	// Log action for undo
 	m.DB.LogAction(&models.ActionLog{
 		SessionID:  m.SessionID,
