@@ -9,6 +9,7 @@ import (
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -111,6 +112,12 @@ var updateCmd = &cobra.Command{
 				newStatus := models.NormalizeStatus(status)
 				if !models.IsValidStatus(newStatus) {
 					output.Error("invalid status: %s (valid: open, in_progress, in_review, blocked, closed)", status)
+					continue
+				}
+				// Validate transition with state machine
+				sm := workflow.DefaultMachine()
+				if !sm.IsValidTransition(issue.Status, newStatus) {
+					output.Warning("cannot update %s: invalid transition from %s to %s", issueID, issue.Status, newStatus)
 					continue
 				}
 				issue.Status = newStatus

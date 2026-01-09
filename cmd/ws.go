@@ -15,6 +15,7 @@ import (
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -132,6 +133,12 @@ var wsTagCmd = &cobra.Command{
 			// Start the issue if not already started (unless --no-start)
 			noStart, _ := cmd.Flags().GetBool("no-start")
 			if !noStart && issue.Status == models.StatusOpen {
+				// Validate transition with state machine
+				sm := workflow.DefaultMachine()
+				if !sm.IsValidTransition(issue.Status, models.StatusInProgress) {
+					output.Warning("cannot auto-start %s: invalid transition from %s", issueID, issue.Status)
+					continue
+				}
 				issue.Status = models.StatusInProgress
 				issue.ImplementerSession = sess.ID
 				database.UpdateIssue(issue)
@@ -518,9 +525,15 @@ Flags support values, stdin (-), or file (@path):
 
 		// Submit for review if requested
 		if submitReview {
+			sm := workflow.DefaultMachine()
 			for _, issueID := range issueIDs {
 				issue, _ := database.GetIssue(issueID)
 				if issue != nil && issue.Status == models.StatusInProgress {
+					// Validate transition with state machine
+					if !sm.IsValidTransition(issue.Status, models.StatusInReview) {
+						output.Warning("cannot auto-review %s: invalid transition from %s", issueID, issue.Status)
+						continue
+					}
 					issue.Status = models.StatusInReview
 					database.UpdateIssue(issue)
 					// Clear focus if this was the focused issue

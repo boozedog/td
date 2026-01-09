@@ -8,6 +8,7 @@ import (
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -38,6 +39,13 @@ var blockCmd = &cobra.Command{
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
 				output.Error("%v", err)
+				continue
+			}
+
+			// Validate transition with state machine
+			sm := workflow.DefaultMachine()
+			if !sm.IsValidTransition(issue.Status, models.StatusBlocked) {
+				output.Warning("cannot block %s: invalid transition from %s", issueID, issue.Status)
 				continue
 			}
 
@@ -116,6 +124,14 @@ Examples:
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
 				output.Warning("issue not found: %s", issueID)
+				skipped++
+				continue
+			}
+
+			// Validate transition with state machine
+			sm := workflow.DefaultMachine()
+			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
+				output.Warning("cannot reopen %s: invalid transition from %s", issueID, issue.Status)
 				skipped++
 				continue
 			}
@@ -208,6 +224,14 @@ Examples:
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
 				output.Warning("issue not found: %s", issueID)
+				skipped++
+				continue
+			}
+
+			// Validate transition with state machine
+			sm := workflow.DefaultMachine()
+			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
+				output.Warning("cannot unblock %s: invalid transition from %s", issueID, issue.Status)
 				skipped++
 				continue
 			}

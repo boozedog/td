@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	dbFile     = ".todos/issues.db"
-	idPrefix   = "td-"
-	wsIDPrefix = "ws-"
+	dbFile        = ".todos/issues.db"
+	idPrefix      = "td-"
+	wsIDPrefix    = "ws-"
+	boardIDPrefix = "bd-"
 )
 
 // NormalizeIssueID ensures an issue ID has the td- prefix
@@ -307,6 +308,15 @@ func generateWSID() (string, error) {
 		return "", err
 	}
 	return wsIDPrefix + hex.EncodeToString(bytes), nil
+}
+
+// generateBoardID generates a unique board ID
+func generateBoardID() (string, error) {
+	bytes := make([]byte, 4) // 8 hex characters
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return boardIDPrefix + hex.EncodeToString(bytes), nil
 }
 
 // CreateIssue creates a new issue

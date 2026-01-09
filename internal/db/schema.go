@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 8
+const SchemaVersion = 9
 
 const schema = `
 -- Issues table
@@ -227,8 +227,34 @@ CREATE INDEX IF NOT EXISTS idx_ish_session ON issue_session_history(session_id);
 	{
 		Version:     8,
 		Description: "Add timestamp indexes for activity queries",
-		SQL: `CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
-CREATE INDEX IF NOT EXISTS idx_handoffs_timestamp ON handoffs(timestamp);
+		SQL: `CREATE INDEX IF NOT EXISTS idx_handoffs_timestamp ON handoffs(timestamp);
 CREATE INDEX IF NOT EXISTS idx_issues_deleted_status ON issues(deleted_at, status);`,
+	},
+	{
+		Version:     9,
+		Description: "Add boards and board_issues tables",
+		SQL: `
+-- Boards table
+CREATE TABLE IF NOT EXISTS boards (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    last_viewed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Board-Issue membership with ordering
+CREATE TABLE IF NOT EXISTS board_issues (
+    board_id TEXT NOT NULL,
+    issue_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    added_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (board_id, issue_id),
+    FOREIGN KEY (board_id) REFERENCES boards(id) ON DELETE CASCADE,
+    FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_board_issues_position ON board_issues(board_id, position);
+`,
 	},
 }

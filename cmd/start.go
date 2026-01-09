@@ -10,6 +10,7 @@ import (
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -74,11 +75,37 @@ Examples:
 				continue
 			}
 
-			// Check if blocked
+			// Validate transition with state machine
+			sm := workflow.DefaultMachine()
+			ctx := &workflow.TransitionContext{
+				Issue:      issue,
+				FromStatus: issue.Status,
+				ToStatus:   models.StatusInProgress,
+				SessionID:  sess.ID,
+				Force:      force,
+				Context:    workflow.ContextCLI,
+			}
+
+			if !sm.IsValidTransition(issue.Status, models.StatusInProgress) {
+				output.Warning("cannot start %s: invalid transition from %s", issueID, issue.Status)
+				skipped++
+				continue
+			}
+
+			// Check if blocked without force (preserving existing behavior)
 			if issue.Status == models.StatusBlocked && !force {
 				output.Warning("cannot start blocked issue: %s (use --force to override)", issueID)
 				skipped++
 				continue
+			}
+
+			// Run guards (for advisory warnings in future)
+			if results, _ := sm.Validate(ctx); len(results) > 0 {
+				for _, r := range results {
+					if !r.Passed {
+						output.Warning("%s: %s", issueID, r.Message)
+					}
+				}
 			}
 
 			// Capture previous state for undo

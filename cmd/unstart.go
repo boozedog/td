@@ -8,6 +8,7 @@ import (
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -52,7 +53,15 @@ Examples:
 				continue
 			}
 
-			// Only unstart in_progress issues
+			// Validate transition with state machine
+			sm := workflow.DefaultMachine()
+			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
+				output.Warning("cannot unstart %s: invalid transition from %s", issueID, issue.Status)
+				skipped++
+				continue
+			}
+
+			// Only unstart in_progress issues (preserving existing behavior)
 			if issue.Status != models.StatusInProgress {
 				output.Warning("issue not in_progress: %s (status: %s)", issueID, issue.Status)
 				skipped++

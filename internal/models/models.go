@@ -171,6 +171,31 @@ type WorkSessionIssue struct {
 	TaggedAt      time.Time `json:"tagged_at"`
 }
 
+// Board represents a named view into issues with custom ordering
+type Board struct {
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	LastViewedAt *time.Time `json:"last_viewed_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// BoardIssue represents board membership with ordering
+type BoardIssue struct {
+	BoardID  string    `json:"board_id"`
+	IssueID  string    `json:"issue_id"`
+	Position int       `json:"position"`
+	AddedAt  time.Time `json:"added_at"`
+}
+
+// BoardIssueView joins BoardIssue with Issue data
+type BoardIssueView struct {
+	BoardID  string    `json:"board_id"`
+	Position int       `json:"position"`
+	AddedAt  time.Time `json:"added_at"`
+	Issue    Issue     `json:"issue"`
+}
+
 // Comment represents a comment on an issue
 type Comment struct {
 	ID        int64     `json:"id"`
@@ -208,6 +233,11 @@ const (
 	ActionLinkFile   ActionType = "link_file"
 	ActionUnlinkFile ActionType = "unlink_file"
 	ActionHandoff    ActionType = "handoff"
+	ActionBoardCreate      ActionType = "board_create"
+	ActionBoardDelete      ActionType = "board_delete"
+	ActionBoardAddIssue    ActionType = "board_add_issue"
+	ActionBoardRemoveIssue ActionType = "board_remove_issue"
+	ActionBoardMoveIssue   ActionType = "board_move_issue"
 )
 
 // ActionLog represents a logged action that can be undone

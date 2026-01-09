@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/workflow"
 )
 
 // markForReview marks the selected issue for review
@@ -31,6 +32,12 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 		if err != nil || issue == nil {
 			return m, nil
 		}
+	}
+
+	// Validate transition with state machine
+	sm := workflow.DefaultMachine()
+	if !sm.IsValidTransition(issue.Status, models.StatusInReview) {
+		return m, nil
 	}
 
 	// Only allow marking in_progress or open issues for review
@@ -186,6 +193,13 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Validate transition with state machine
+	sm := workflow.DefaultMachine()
+	if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
+		m.CloseConfirmOpen = false
+		return m, nil
+	}
+
 	// Update status
 	now := time.Now()
 	issue.Status = models.StatusClosed
@@ -254,6 +268,12 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Validate transition with state machine
+	sm := workflow.DefaultMachine()
+	if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
+		return m, nil
+	}
+
 	// Can't approve your own issues
 	if issue.ImplementerSession == m.SessionID {
 		return m, nil
@@ -306,6 +326,16 @@ func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 		if err != nil || issue == nil {
 			return m, nil
 		}
+	}
+
+	// Validate transition with state machine
+	sm := workflow.DefaultMachine()
+	if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
+		m.StatusMessage = "Cannot reopen from " + string(issue.Status)
+		m.StatusIsError = true
+		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg {
+			return ClearStatusMsg{}
+		})
 	}
 
 	// Can only reopen closed issues

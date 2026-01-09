@@ -9,6 +9,7 @@ import (
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/workflow"
 	"github.com/spf13/cobra"
 )
 
@@ -101,6 +102,18 @@ Supports bulk operations:
 			// Handle --minor flag
 			if minor, _ := cmd.Flags().GetBool("minor"); minor {
 				issue.Minor = true
+			}
+
+			// Validate transition with state machine
+			sm := workflow.DefaultMachine()
+			if !sm.IsValidTransition(issue.Status, models.StatusInReview) {
+				if jsonOutput {
+					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot review %s: invalid transition from %s", issueID, issue.Status))
+				} else {
+					output.Warning("cannot review %s: invalid transition from %s", issueID, issue.Status)
+				}
+				skipped++
+				continue
 			}
 
 			// Capture previous state for undo
@@ -298,6 +311,20 @@ Supports bulk operations:
 				continue
 			}
 
+			// Validate transition with state machine
+			sm := workflow.DefaultMachine()
+			if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
+				if !all {
+					if jsonOutput {
+						output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot approve %s: invalid transition from %s", issueID, issue.Status))
+					} else {
+						output.Warning("cannot approve %s: invalid transition from %s", issueID, issue.Status)
+					}
+				}
+				skipped++
+				continue
+			}
+
 			// Check that reviewer was not involved with this issue (unless minor task)
 			// Handle DB errors conservatively - assume involvement on error
 			wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
@@ -443,6 +470,18 @@ Supports bulk operations:
 				continue
 			}
 
+			// Validate transition with state machine
+			sm := workflow.DefaultMachine()
+			if !sm.IsValidTransition(issue.Status, models.StatusInProgress) {
+				if jsonOutput {
+					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot reject %s: invalid transition from %s", issueID, issue.Status))
+				} else {
+					output.Warning("cannot reject %s: invalid transition from %s", issueID, issue.Status)
+				}
+				skipped++
+				continue
+			}
+
 			// Capture previous state for undo
 			prevData, _ := json.Marshal(issue)
 
@@ -552,6 +591,14 @@ Examples:
 			issue, err := database.GetIssue(issueID)
 			if err != nil {
 				output.Warning("issue not found: %s", issueID)
+				skipped++
+				continue
+			}
+
+			// Validate transition with state machine
+			sm := workflow.DefaultMachine()
+			if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
+				output.Warning("cannot close %s: invalid transition from %s", issueID, issue.Status)
 				skipped++
 				continue
 			}
