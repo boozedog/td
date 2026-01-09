@@ -38,6 +38,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_board_issues_position ON board_issues(boar
 
 ## Issue Lifecycle in Boards
 
+- **Multi-Board Membership**: An issue can exist on multiple boards simultaneously. Removing it from one board does not affect its presence on others.
 - **Closing** an issue: Issue remains in board at its position (closed issues visible with status filter)
 - **Soft-deleting** an issue (`deleted_at` set): Board membership is preserved, but deleted issues are excluded from board views
 - **Restoring** an issue: Issue reappears in boards at its original position
@@ -47,7 +48,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_board_issues_position ON board_issues(boar
 
 Simple integers (1, 2, 3...) with full reindex on insert/move. Given typical issue counts (<1000), this is sub-millisecond and keeps implementation simple. Positions are **1-indexed**.
 
-**Reindexing**: wrap add/move/remove in a transaction. To avoid unique index conflicts, apply a temporary offset (e.g., `position = position + 10000`) before writing final contiguous positions.
+**Reindexing**: wrap add/move/remove in a single transaction. To avoid unique index conflicts, apply a temporary offset (e.g., `position = position + 10000`) before writing final contiguous positions.
 
 ## Board Name Validation
 
@@ -61,14 +62,14 @@ Simple integers (1, 2, 3...) with full reindex on insert/move. Given typical iss
 
 ```
 td board                              # Show help (list subcommands)
-td board list                         # List all boards
+td board list                         # List all boards (shows ID, Name, and Issue Count)
 td board list --json                  # List boards as JSON
 td board create <board>               # Create board
-td board delete <board>               # Delete board
+td board delete <board>               # Delete board (issues are NOT deleted, only the view)
 td board show <board>                 # Show board with ordered issues (all statuses)
 td board show <board> --status open,in_progress  # Filter by status
 td board show <board> --json          # Output as JSON
-td board add <board> <id>...          # Add issue(s) to board (at end)
+td board add <board> <id>...          # Add issue(s) to board. Errors if issue is already on board.
 td board add <board> <id> --at <pos>  # Add at specific position (1-indexed)
 td board remove <board> <id>          # Remove issue from board
 td board move <board> <id> <position> # Move to absolute position (1-indexed)
