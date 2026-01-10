@@ -83,11 +83,14 @@ func logAnalytics(err error) {
 	// Build event using captured command (set in PersistentPostRun) or args fallback
 	event := buildCommandEvent(executedCmd, err)
 
-	// If no command was captured (e.g., unknown command), use args[0]
+	// If no command was captured (e.g., unknown command), find first non-flag arg
 	if event.Command == "" {
 		args := os.Args[1:]
-		if len(args) > 0 {
-			event.Command = args[0]
+		for _, arg := range args {
+			if !strings.HasPrefix(arg, "-") {
+				event.Command = arg
+				break
+			}
 		}
 	}
 
