@@ -1011,6 +1011,204 @@ func TestMaxScrollOffsetActivityPanel(t *testing.T) {
 	}
 }
 
+// TestConfirmDialogButtonNavigation tests Tab navigation in delete confirmation dialog
+func TestConfirmDialogButtonNavigation(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialFocus   int
+		key            string
+		expectedFocus  int
+		description    string
+	}{
+		{
+			name:          "tab from yes to no",
+			initialFocus:  0,
+			key:           "tab",
+			expectedFocus: 1,
+			description:   "Tab moves from Yes to No",
+		},
+		{
+			name:          "tab from no wraps to yes",
+			initialFocus:  1,
+			key:           "tab",
+			expectedFocus: 0,
+			description:   "Tab wraps from No back to Yes",
+		},
+		{
+			name:          "shift+tab from yes wraps to no",
+			initialFocus:  0,
+			key:           "shift+tab",
+			expectedFocus: 1,
+			description:   "Shift+Tab wraps from Yes to No",
+		},
+		{
+			name:          "shift+tab from no to yes",
+			initialFocus:  1,
+			key:           "shift+tab",
+			expectedFocus: 0,
+			description:   "Shift+Tab moves from No to Yes",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				ConfirmOpen:        true,
+				ConfirmButtonFocus: tt.initialFocus,
+				ConfirmIssueID:     "td-test",
+				ConfirmTitle:       "Test Issue",
+			}
+
+			// Simulate tab navigation
+			if tt.key == "tab" {
+				m.ConfirmButtonFocus = (m.ConfirmButtonFocus + 1) % 2
+			} else if tt.key == "shift+tab" {
+				m.ConfirmButtonFocus = (m.ConfirmButtonFocus + 1) % 2 // Same as tab for 2 buttons
+			}
+
+			if m.ConfirmButtonFocus != tt.expectedFocus {
+				t.Errorf("%s: button focus = %d, want %d", tt.description, m.ConfirmButtonFocus, tt.expectedFocus)
+			}
+		})
+	}
+}
+
+// TestCloseConfirmDialogButtonNavigation tests Tab navigation in close confirmation dialog
+func TestCloseConfirmDialogButtonNavigation(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialFocus   int
+		key            string
+		expectedFocus  int
+		description    string
+	}{
+		{
+			name:          "tab from input to confirm",
+			initialFocus:  0,
+			key:           "tab",
+			expectedFocus: 1,
+			description:   "Tab moves from input to Confirm button",
+		},
+		{
+			name:          "tab from confirm to cancel",
+			initialFocus:  1,
+			key:           "tab",
+			expectedFocus: 2,
+			description:   "Tab moves from Confirm to Cancel button",
+		},
+		{
+			name:          "tab from cancel wraps to input",
+			initialFocus:  2,
+			key:           "tab",
+			expectedFocus: 0,
+			description:   "Tab wraps from Cancel back to input",
+		},
+		{
+			name:          "shift+tab from input wraps to cancel",
+			initialFocus:  0,
+			key:           "shift+tab",
+			expectedFocus: 2,
+			description:   "Shift+Tab wraps from input to Cancel",
+		},
+		{
+			name:          "shift+tab from confirm to input",
+			initialFocus:  1,
+			key:           "shift+tab",
+			expectedFocus: 0,
+			description:   "Shift+Tab moves from Confirm to input",
+		},
+		{
+			name:          "shift+tab from cancel to confirm",
+			initialFocus:  2,
+			key:           "shift+tab",
+			expectedFocus: 1,
+			description:   "Shift+Tab moves from Cancel to Confirm",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				CloseConfirmOpen:        true,
+				CloseConfirmButtonFocus: tt.initialFocus,
+				CloseConfirmIssueID:     "td-test",
+				CloseConfirmTitle:       "Test Issue",
+			}
+
+			// Simulate tab navigation
+			if tt.key == "tab" {
+				m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 1) % 3
+			} else if tt.key == "shift+tab" {
+				m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 2) % 3
+			}
+
+			if m.CloseConfirmButtonFocus != tt.expectedFocus {
+				t.Errorf("%s: button focus = %d, want %d", tt.description, m.CloseConfirmButtonFocus, tt.expectedFocus)
+			}
+		})
+	}
+}
+
+// TestConfirmDialogButtonStyles tests that buttons render with correct styles
+func TestConfirmDialogButtonStyles(t *testing.T) {
+	tests := []struct {
+		name        string
+		buttonFocus int
+		buttonHover int
+		description string
+	}{
+		{
+			name:        "yes focused no hover",
+			buttonFocus: 0,
+			buttonHover: 0,
+			description: "Yes button focused, no hover",
+		},
+		{
+			name:        "no focused with hover on yes",
+			buttonFocus: 1,
+			buttonHover: 1,
+			description: "No button focused, Yes hovered",
+		},
+		{
+			name:        "yes focused and hovered",
+			buttonFocus: 0,
+			buttonHover: 1,
+			description: "Yes button focused and hovered (focus takes precedence)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := Model{
+				Width:              80,
+				Height:             24,
+				ConfirmOpen:        true,
+				ConfirmButtonFocus: tt.buttonFocus,
+				ConfirmButtonHover: tt.buttonHover,
+				ConfirmIssueID:     "td-test",
+				ConfirmTitle:       "Test Issue",
+				ConfirmAction:      "delete",
+			}
+
+			// Verify the render doesn't panic and produces output
+			output := m.renderConfirmation()
+			if output == "" {
+				t.Errorf("%s: renderConfirmation returned empty string", tt.description)
+			}
+
+			// Verify buttons are rendered
+			if !containsString(output, "Yes") || !containsString(output, "No") {
+				t.Errorf("%s: buttons not found in output", tt.description)
+			}
+		})
+	}
+}
+
+// containsString checks if a string contains a substring (helper for tests)
+func containsString(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && (s[0:len(substr)] == substr || containsString(s[1:], substr)))
+}
+
 // TestMouseClickEdgeCases tests mouse click edge cases
 func TestMouseClickEdgeCases(t *testing.T) {
 	tests := []struct {

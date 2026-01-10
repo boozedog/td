@@ -59,7 +59,7 @@ Mouse support:
 
 		model := monitor.NewModel(database, sess.ID, interval, versionStr, baseDir)
 
-		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseAllMotion())
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("error running monitor: %w", err)
 		}

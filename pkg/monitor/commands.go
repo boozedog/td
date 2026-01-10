@@ -622,6 +622,69 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	// Button navigation for confirmation dialogs
+	case keymap.CmdNextButton:
+		if m.CloseConfirmOpen {
+			// Cycle: input(0) -> confirm(1) -> cancel(2) -> input(0)
+			m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 1) % 3
+			if m.CloseConfirmButtonFocus == 0 {
+				m.CloseConfirmInput.Focus()
+			} else {
+				m.CloseConfirmInput.Blur()
+			}
+			return m, nil
+		}
+		if m.ConfirmOpen {
+			// Cycle: yes(0) -> no(1) -> yes(0)
+			m.ConfirmButtonFocus = (m.ConfirmButtonFocus + 1) % 2
+			return m, nil
+		}
+		return m, nil
+
+	case keymap.CmdPrevButton:
+		if m.CloseConfirmOpen {
+			// Reverse cycle: input(0) <- confirm(1) <- cancel(2) <- input(0)
+			m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 2) % 3
+			if m.CloseConfirmButtonFocus == 0 {
+				m.CloseConfirmInput.Focus()
+			} else {
+				m.CloseConfirmInput.Blur()
+			}
+			return m, nil
+		}
+		if m.ConfirmOpen {
+			// Reverse cycle: yes(0) <- no(1) <- yes(0)
+			m.ConfirmButtonFocus = (m.ConfirmButtonFocus + 1) % 2
+			return m, nil
+		}
+		return m, nil
+
+	case keymap.CmdSelect:
+		// Execute focused button in confirmation dialogs
+		if m.CloseConfirmOpen {
+			switch m.CloseConfirmButtonFocus {
+			case 0: // Input focused - confirm (same as Enter in input)
+				return m.executeCloseWithReason()
+			case 1: // Confirm button focused
+				return m.executeCloseWithReason()
+			case 2: // Cancel button focused
+				m.CloseConfirmOpen = false
+				m.CloseConfirmIssueID = ""
+				m.CloseConfirmTitle = ""
+				return m, nil
+			}
+		}
+		if m.ConfirmOpen {
+			switch m.ConfirmButtonFocus {
+			case 0: // Yes button focused
+				return m.executeDelete()
+			case 1: // No button focused
+				m.ConfirmOpen = false
+				return m, nil
+			}
+		}
+		return m, nil
+
 	// Section navigation - Tab cycles through focusable sections (top-to-bottom visual order)
 	case keymap.CmdFocusTaskSection:
 		if modal := m.CurrentModal(); modal != nil {

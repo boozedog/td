@@ -152,6 +152,9 @@ func DefaultBindings() []Binding {
 		{Key: "n", Command: CmdCancel, Context: ContextConfirm, Description: "Cancel"},
 		{Key: "N", Command: CmdCancel, Context: ContextConfirm, Description: "Cancel"},
 		{Key: "esc", Command: CmdCancel, Context: ContextConfirm, Description: "Cancel"},
+		{Key: "tab", Command: CmdNextButton, Context: ContextConfirm, Description: "Next button"},
+		{Key: "shift+tab", Command: CmdPrevButton, Context: ContextConfirm, Description: "Previous button"},
+		{Key: "enter", Command: CmdSelect, Context: ContextConfirm, Description: "Execute focused button"},
 
 		// ============================================================
 		// EPIC TASKS BINDINGS (when task section in epic modal is focused)

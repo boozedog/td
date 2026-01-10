@@ -184,6 +184,40 @@ var (
 				Border(lipgloss.RoundedBorder()).
 				BorderForeground(lipgloss.Color("214")). // Orange/Yellow
 				Padding(0, 1)
+
+	// Button styles for interactive modal buttons
+	buttonStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("252")).
+			Background(lipgloss.Color("238")).
+			Padding(0, 2)
+
+	buttonFocusedStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("255")).
+				Background(primaryColor). // Purple/Magenta
+				Bold(true).
+				Padding(0, 2)
+
+	buttonHoverStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("255")).
+				Background(lipgloss.Color("245")).
+				Padding(0, 2)
+
+	// Danger button styles (for destructive actions like delete)
+	buttonDangerStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("252")).
+				Background(lipgloss.Color("238")).
+				Padding(0, 2)
+
+	buttonDangerFocusedStyle = lipgloss.NewStyle().
+					Foreground(lipgloss.Color("255")).
+					Background(errorColor). // Red
+					Bold(true).
+					Padding(0, 2)
+
+	buttonDangerHoverStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("255")).
+				Background(lipgloss.Color("203")). // Lighter red
+				Padding(0, 2)
 )
 
 // formatStatus renders a status with color
@@ -233,6 +267,42 @@ func formatActivityBadge(actType string) string {
 
 // ansiPattern matches ANSI escape sequences
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+// renderButton renders a button with appropriate style based on focus and hover state.
+// Parameters:
+//   - label: the button text
+//   - isFocused: true if this button has keyboard focus
+//   - isHovered: true if mouse is hovering over this button
+//   - isDanger: true for destructive actions (uses red when focused)
+func renderButton(label string, isFocused, isHovered, isDanger bool) string {
+	var style lipgloss.Style
+	if isDanger {
+		if isFocused {
+			style = buttonDangerFocusedStyle
+		} else if isHovered {
+			style = buttonDangerHoverStyle
+		} else {
+			style = buttonDangerStyle
+		}
+	} else {
+		if isFocused {
+			style = buttonFocusedStyle
+		} else if isHovered {
+			style = buttonHoverStyle
+		} else {
+			style = buttonStyle
+		}
+	}
+	return style.Render(label)
+}
+
+// renderButtonPair renders two buttons side by side with appropriate spacing.
+// Returns the rendered buttons and their positions for hit-testing.
+func renderButtonPair(leftLabel, rightLabel string, leftFocused, rightFocused, leftHovered, rightHovered, leftDanger, rightDanger bool) string {
+	left := renderButton(leftLabel, leftFocused, leftHovered, leftDanger)
+	right := renderButton(rightLabel, rightFocused, rightHovered, rightDanger)
+	return left + "  " + right
+}
 
 // highlightRow applies selection highlight to entire row width, preserving text colors
 func highlightRow(line string, width int) string {

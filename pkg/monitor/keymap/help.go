@@ -79,6 +79,19 @@ func (r *Registry) GenerateHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
 	}
 
+	sb.WriteString("\nCONFIRMATION DIALOGS:\n")
+	confirmBindings := []HelpBinding{
+		{Keys: "Tab / Shift+Tab", Description: "Switch between buttons"},
+		{Keys: "Enter", Description: "Execute focused button"},
+		{Keys: "Y / y", Description: "Confirm (delete dialog)"},
+		{Keys: "N / n", Description: "Cancel (delete dialog)"},
+		{Keys: "Esc", Description: "Cancel and close"},
+		{Keys: "Click", Description: "Click buttons directly"},
+	}
+	for _, b := range confirmBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
 	sb.WriteString("\nFORM (when editing):\n")
 	formBindings := []HelpBinding{
 		{Keys: "Ctrl+S", Description: "Save form"},

@@ -109,6 +109,10 @@ const (
 
 	// Filters
 	CmdCycleTypeFilter Command = "cycle-type-filter"
+
+	// Button navigation (for confirmation dialogs and forms)
+	CmdNextButton Command = "next-button"
+	CmdPrevButton Command = "prev-button"
 )
 
 // Binding maps a key or key sequence to a command in a specific context
