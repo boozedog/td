@@ -338,7 +338,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMouse(msg)
 
 	case TickMsg:
-		return m, tea.Batch(m.fetchData(), m.scheduleTick())
+		cmds := []tea.Cmd{m.fetchData(), m.scheduleTick()}
+		if modalCmd := m.fetchModalDataIfOpen(); modalCmd != nil {
+			cmds = append(cmds, modalCmd)
+		}
+		return m, tea.Batch(cmds...)
 
 	case RefreshDataMsg:
 		m.FocusedIssue = msg.FocusedIssue
@@ -360,6 +364,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case IssueDetailsMsg:
 		// Only update if this is for the currently open modal
 		if modal := m.CurrentModal(); modal != nil && msg.IssueID == modal.IssueID {
+			// Detect initial load vs reactive refresh
+			isInitialLoad := modal.Issue == nil
+
 			modal.Loading = false
 			modal.Error = msg.Error
 			modal.Issue = msg.Issue
@@ -370,15 +377,31 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			modal.Blocks = msg.Blocks
 			modal.EpicTasks = msg.EpicTasks
 			modal.ParentEpic = msg.ParentEpic
-			modal.ParentEpicFocused = false // Reset focus on load
+			if isInitialLoad {
+				modal.ParentEpicFocused = false // Only reset focus on initial load
+			}
 
 			// Calculate content lines for scroll clamping
 			modal.ContentLines = m.estimateModalContentLines(modal)
 
 			// Auto-focus task section for epics with tasks (enables j/k navigation)
-			if msg.Issue != nil && msg.Issue.Type == models.TypeEpic && len(msg.EpicTasks) > 0 {
+			// Only on initial load - preserve cursor state during reactive refreshes
+			if isInitialLoad && msg.Issue != nil && msg.Issue.Type == models.TypeEpic && len(msg.EpicTasks) > 0 {
 				modal.TaskSectionFocused = true
 				modal.EpicTasksCursor = 0
+			}
+
+			// On refresh, clamp cursors to valid range if items were removed
+			if !isInitialLoad {
+				if len(modal.EpicTasks) > 0 && modal.EpicTasksCursor >= len(modal.EpicTasks) {
+					modal.EpicTasksCursor = len(modal.EpicTasks) - 1
+				}
+				if len(modal.BlockedBy) > 0 && modal.BlockedByCursor >= len(modal.BlockedBy) {
+					modal.BlockedByCursor = len(modal.BlockedBy) - 1
+				}
+				if len(modal.Blocks) > 0 && modal.BlocksCursor >= len(modal.Blocks) {
+					modal.BlocksCursor = len(modal.Blocks) - 1
+				}
 			}
 
 			// Trigger async markdown rendering (expensive)
@@ -458,6 +481,16 @@ func (m Model) fetchData() tea.Cmd {
 		data := FetchData(m.DB, m.SessionID, m.StartedAt, m.SearchQuery, m.IncludeClosed, m.SortMode)
 		return data
 	}
+}
+
+// fetchModalDataIfOpen returns a command to refresh the current modal's data
+// if a modal is open, otherwise returns nil
+func (m Model) fetchModalDataIfOpen() tea.Cmd {
+	modal := m.CurrentModal()
+	if modal == nil || modal.Loading {
+		return nil
+	}
+	return m.fetchIssueDetails(modal.IssueID)
 }
 
 // fetchIssueDetails returns a command that fetches issue details for the modal
