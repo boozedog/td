@@ -196,6 +196,9 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 	}
 	depStatuses, _ := database.GetIssueStatuses(allDepIDs)
 
+	// Get rejected in_progress issue IDs for "needs rework" detection
+	rejectedIDs, _ := database.GetRejectedInProgressIssueIDs()
+
 	// Helper to check if issue is blocked by unclosed dependencies
 	isBlockedByDeps := func(issueID string) bool {
 		deps := allDeps[issueID]
@@ -227,8 +230,12 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 						data.Ready = append(data.Ready, issue)
 					}
 				case models.StatusInProgress:
-					// In-progress issues show in Ready (active work)
-					data.Ready = append(data.Ready, issue)
+					// In-progress issues: check if needs rework (rejected without re-submission)
+					if rejectedIDs[issue.ID] {
+						data.NeedsRework = append(data.NeedsRework, issue)
+					} else {
+						data.Ready = append(data.Ready, issue)
+					}
 				case models.StatusBlocked:
 					data.Blocked = append(data.Blocked, issue)
 				case models.StatusInReview:
@@ -266,6 +273,28 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 	for _, issue := range openIssues {
 		if isBlockedByDeps(issue.ID) {
 			blockedByDep = append(blockedByDep, issue)
+		} else {
+			data.Ready = append(data.Ready, issue)
+		}
+	}
+
+	// In-progress issues: categorize as Ready or NeedsRework
+	var inProgressIssues []models.Issue
+	if searchQuery != "" && !useTDQ {
+		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
+			Status: []models.Status{models.StatusInProgress},
+		})
+		inProgressIssues = extractIssues(results)
+	} else if searchQuery == "" {
+		inProgressIssues, _ = database.ListIssues(db.ListIssuesOptions{
+			Status:   []models.Status{models.StatusInProgress},
+			SortBy:   sortBy,
+			SortDesc: sortDesc,
+		})
+	}
+	for _, issue := range inProgressIssues {
+		if rejectedIDs[issue.ID] {
+			data.NeedsRework = append(data.NeedsRework, issue)
 		} else {
 			data.Ready = append(data.Ready, issue)
 		}

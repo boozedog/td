@@ -1987,6 +1987,41 @@ func (db *DB) GetRecentActionsAll(limit int) ([]models.ActionLog, error) {
 	return actions, nil
 }
 
+// GetRejectedInProgressIssueIDs returns IDs of in_progress issues that have a
+// recent ActionReject without a subsequent ActionReview (needs rework)
+func (db *DB) GetRejectedInProgressIssueIDs() (map[string]bool, error) {
+	query := `
+		SELECT DISTINCT i.id FROM issues i
+		WHERE i.status = 'in_progress' AND i.deleted_at IS NULL
+		  AND EXISTS (
+			SELECT 1 FROM action_log al
+			WHERE al.entity_id = i.id AND al.action_type = 'reject' AND al.undone = 0
+			  AND NOT EXISTS (
+				SELECT 1 FROM action_log al2
+				WHERE al2.entity_id = i.id AND al2.action_type = 'review'
+				  AND al2.timestamp > al.timestamp
+			  )
+		  )
+	`
+
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result[id] = true
+	}
+
+	return result, nil
+}
+
 // GetRecentCommentsAll returns recent comments across all issues
 func (db *DB) GetRecentCommentsAll(limit int) ([]models.Comment, error) {
 	query := `SELECT id, issue_id, session_id, text, created_at

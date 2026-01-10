@@ -173,10 +173,11 @@ func updateQueryType(query string, typeMode TypeFilterMode) string {
 type TaskListCategory string
 
 const (
-	CategoryReviewable TaskListCategory = "REVIEW"
-	CategoryReady      TaskListCategory = "READY"
-	CategoryBlocked    TaskListCategory = "BLOCKED"
-	CategoryClosed     TaskListCategory = "CLOSED"
+	CategoryReviewable  TaskListCategory = "REVIEW"
+	CategoryNeedsRework TaskListCategory = "REWORK"
+	CategoryReady       TaskListCategory = "READY"
+	CategoryBlocked     TaskListCategory = "BLOCKED"
+	CategoryClosed      TaskListCategory = "CLOSED"
 )
 
 // ActivityItem represents a unified activity item (log, action, or comment)
@@ -193,10 +194,11 @@ type ActivityItem struct {
 
 // TaskListData holds categorized issues for the task list panel
 type TaskListData struct {
-	Ready      []models.Issue
-	Reviewable []models.Issue
-	Blocked    []models.Issue
-	Closed     []models.Issue
+	Ready       []models.Issue
+	Reviewable  []models.Issue
+	NeedsRework []models.Issue
+	Blocked     []models.Issue
+	Closed      []models.Issue
 }
 
 // TaskListRow represents a single selectable row in the task list panel

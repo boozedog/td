@@ -145,9 +145,10 @@ func (m Model) renderCompact() string {
 	}
 
 	s.WriteString(fmt.Sprintf("In Progress: %d\n", len(m.InProgress)))
-	s.WriteString(fmt.Sprintf("Ready: %d | Review: %d | Blocked: %d\n",
+	s.WriteString(fmt.Sprintf("Ready: %d | Review: %d | Rework: %d | Blocked: %d\n",
 		len(m.TaskList.Ready),
 		len(m.TaskList.Reviewable),
+		len(m.TaskList.NeedsRework),
 		len(m.TaskList.Blocked)))
 
 	s.WriteString("\nq:quit r:refresh ?:help")
@@ -510,6 +511,9 @@ func (m Model) formatCategoryHeader(cat TaskListCategory) string {
 	case CategoryReviewable:
 		count = len(m.TaskList.Reviewable)
 		return reviewAlertStyle.Render("★ REVIEWABLE") + fmt.Sprintf(" (%d):", count)
+	case CategoryNeedsRework:
+		count = len(m.TaskList.NeedsRework)
+		return reworkColor.Render("⚠ NEEDS REWORK") + fmt.Sprintf(" (%d):", count)
 	case CategoryReady:
 		count = len(m.TaskList.Ready)
 		return readyColor.Render("READY") + fmt.Sprintf(" (%d):", count)
@@ -528,6 +532,8 @@ func (m Model) formatCategoryTag(cat TaskListCategory) string {
 	switch cat {
 	case CategoryReviewable:
 		return reviewColor.Render("[REV]")
+	case CategoryNeedsRework:
+		return reworkColor.Render("[RWK]")
 	case CategoryReady:
 		return readyColor.Render("[RDY]")
 	case CategoryBlocked:
@@ -1811,6 +1817,7 @@ var (
 	readyColor   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	reviewColor  = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
 	blockedColor = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	reworkColor  = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // Orange/warning
 
 	// Prominent style for review alert in footer
 	reviewAlertStyle = lipgloss.NewStyle().

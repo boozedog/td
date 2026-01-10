@@ -1027,3 +1027,74 @@ func TestReviewableByFilter(t *testing.T) {
 		}
 	})
 }
+
+func TestGetRejectedInProgressIssueIDs(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	// Create test issues
+	issue1 := &models.Issue{Title: "Issue 1", Status: models.StatusInProgress}
+	issue2 := &models.Issue{Title: "Issue 2", Status: models.StatusInProgress}
+	issue3 := &models.Issue{Title: "Issue 3", Status: models.StatusInProgress}
+	issue4 := &models.Issue{Title: "Issue 4", Status: models.StatusOpen} // Not in_progress
+
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+	db.CreateIssue(issue3)
+	db.CreateIssue(issue4)
+
+	// issue1: rejected, no subsequent review (should be detected)
+	db.LogAction(&models.ActionLog{
+		SessionID:  "ses_reviewer",
+		ActionType: models.ActionReject,
+		EntityType: "issue",
+		EntityID:   issue1.ID,
+	})
+
+	// issue2: rejected, then re-submitted (should NOT be detected)
+	db.LogAction(&models.ActionLog{
+		SessionID:  "ses_reviewer",
+		ActionType: models.ActionReject,
+		EntityType: "issue",
+		EntityID:   issue2.ID,
+	})
+	db.LogAction(&models.ActionLog{
+		SessionID:  "ses_implementer",
+		ActionType: models.ActionReview,
+		EntityType: "issue",
+		EntityID:   issue2.ID,
+	})
+
+	// issue3: never rejected (should NOT be detected)
+	// issue4: rejected but not in_progress status (should NOT be detected)
+	db.LogAction(&models.ActionLog{
+		SessionID:  "ses_reviewer",
+		ActionType: models.ActionReject,
+		EntityType: "issue",
+		EntityID:   issue4.ID,
+	})
+
+	// Get rejected IDs
+	rejectedIDs, err := db.GetRejectedInProgressIssueIDs()
+	if err != nil {
+		t.Fatalf("GetRejectedInProgressIssueIDs failed: %v", err)
+	}
+
+	// Only issue1 should be detected
+	if !rejectedIDs[issue1.ID] {
+		t.Errorf("issue1 should be detected as rejected in_progress")
+	}
+	if rejectedIDs[issue2.ID] {
+		t.Errorf("issue2 should NOT be detected (was re-submitted)")
+	}
+	if rejectedIDs[issue3.ID] {
+		t.Errorf("issue3 should NOT be detected (never rejected)")
+	}
+	if rejectedIDs[issue4.ID] {
+		t.Errorf("issue4 should NOT be detected (not in_progress status)")
+	}
+}

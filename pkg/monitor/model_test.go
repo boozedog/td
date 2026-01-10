@@ -176,21 +176,23 @@ func TestSelectedIssueIDEmptyLists(t *testing.T) {
 func TestBuildTaskListRows(t *testing.T) {
 	m := Model{
 		TaskList: TaskListData{
-			Reviewable: []models.Issue{{ID: "r1"}, {ID: "r2"}},
-			Ready:      []models.Issue{{ID: "rd1"}},
-			Blocked:    []models.Issue{{ID: "b1"}, {ID: "b2"}, {ID: "b3"}},
+			Reviewable:  []models.Issue{{ID: "r1"}, {ID: "r2"}},
+			NeedsRework: []models.Issue{{ID: "rw1"}},
+			Ready:       []models.Issue{{ID: "rd1"}},
+			Blocked:     []models.Issue{{ID: "b1"}, {ID: "b2"}, {ID: "b3"}},
 		},
 	}
 
 	m.buildTaskListRows()
 
-	// Order should be: Reviewable, Ready, Blocked
+	// Order should be: Reviewable, NeedsRework, Ready, Blocked
 	expected := []struct {
 		id       string
 		category TaskListCategory
 	}{
 		{"r1", CategoryReviewable},
 		{"r2", CategoryReviewable},
+		{"rw1", CategoryNeedsRework},
 		{"rd1", CategoryReady},
 		{"b1", CategoryBlocked},
 		{"b2", CategoryBlocked},
