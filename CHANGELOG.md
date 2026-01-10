@@ -2,6 +2,20 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.8.0] - 2026-01-10
+
+### Features
+- Add issue state machine with workflow guards
+  - Formal state transitions (open → in_progress → in_review → closed)
+  - Validation guards prevent invalid state changes
+  - New `td workflow` command for state diagnostics
+- Add "needs rework" indicator for rejected in_progress issues
+- Improved modal system documentation
+
+### Bug Fixes
+- Consolidate analytics logging to avoid double logging
+- Add safe fallback for rejected issue detection errors
+
 ## [v0.7.0] - 2026-01-08
 
 ### Features
