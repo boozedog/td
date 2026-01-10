@@ -17,6 +17,7 @@ var (
 	baseDir         string
 	baseDirOverride *string // For testing
 	cmdStartTime    time.Time
+	executedCmd     *cobra.Command // Captured for analytics logging
 )
 
 // SetVersion sets the version string
@@ -34,41 +35,26 @@ Optimized for session continuity—capturing working state so new context window
 		cmdStartTime = time.Now()
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		if !db.AnalyticsEnabled() {
-			return
-		}
-		dir := getBaseDir()
-		if dir == "" {
-			return
-		}
-		event := buildCommandEvent(cmd, nil)
-		_ = db.LogCommandUsage(dir, event) // Sync for now to debug
+		// Capture executed command for analytics (logged in Execute() to avoid double logging)
+		executedCmd = cmd
 	},
 }
 
 // Execute runs the root command
 func Execute() {
 	cmdStartTime = time.Now()
-	if err := rootCmd.Execute(); err != nil {
+	executedCmd = nil // Reset for this execution
+
+	err := rootCmd.Execute()
+
+	// Log analytics once (handles both success and failure)
+	logAnalytics(err)
+
+	if err != nil {
 		args := os.Args[1:]
 
 		// Log agent error for analysis
 		logAgentError(args, err.Error())
-
-		// Log failed command analytics
-		if db.AnalyticsEnabled() {
-			dir := getBaseDir()
-			if dir == "" {
-				dir, _ = os.Getwd()
-			}
-			if dir != "" {
-				event := buildCommandEvent(nil, err)
-				if len(args) > 0 {
-					event.Command = args[0]
-				}
-				_ = db.LogCommandUsage(dir, event)
-			}
-		}
 
 		// Check if this is an unknown command that we can provide workflow hints for
 		if len(args) > 0 && handleWorkflowHint(args[0]) {
@@ -78,6 +64,34 @@ func Execute() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// logAnalytics logs command usage analytics once after execution completes
+func logAnalytics(err error) {
+	if !db.AnalyticsEnabled() {
+		return
+	}
+
+	dir := getBaseDir()
+	if dir == "" {
+		dir, _ = os.Getwd()
+	}
+	if dir == "" {
+		return
+	}
+
+	// Build event using captured command (set in PersistentPostRun) or args fallback
+	event := buildCommandEvent(executedCmd, err)
+
+	// If no command was captured (e.g., unknown command), use args[0]
+	if event.Command == "" {
+		args := os.Args[1:]
+		if len(args) > 0 {
+			event.Command = args[0]
+		}
+	}
+
+	_ = db.LogCommandUsage(dir, event)
 }
 
 // logAgentError logs a failed command for agent UX analysis

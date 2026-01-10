@@ -197,7 +197,10 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 	depStatuses, _ := database.GetIssueStatuses(allDepIDs)
 
 	// Get rejected in_progress issue IDs for "needs rework" detection
-	rejectedIDs, _ := database.GetRejectedInProgressIssueIDs()
+	rejectedIDs, err := database.GetRejectedInProgressIssueIDs()
+	if err != nil {
+		rejectedIDs = make(map[string]bool) // Safe fallback on error
+	}
 
 	// Helper to check if issue is blocked by unclosed dependencies
 	isBlockedByDeps := func(issueID string) bool {
