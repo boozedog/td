@@ -85,16 +85,19 @@ func logAnalytics(err error) {
 
 	// If no command was captured (e.g., unknown command), find first non-flag arg
 	if event.Command == "" {
-		args := os.Args[1:]
-		for _, arg := range args {
-			if !strings.HasPrefix(arg, "-") {
-				event.Command = arg
-				break
-			}
-		}
+		event.Command = firstNonFlagArg(os.Args[1:])
 	}
 
 	_ = db.LogCommandUsage(dir, event)
+}
+
+func firstNonFlagArg(args []string) string {
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			return arg
+		}
+	}
+	return ""
 }
 
 // logAgentError logs a failed command for agent UX analysis

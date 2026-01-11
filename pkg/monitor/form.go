@@ -18,6 +18,25 @@ const (
 	FormModeEdit   FormMode = "edit"
 )
 
+const (
+	formButtonFocusForm   = -1
+	formButtonFocusSubmit = 0
+	formButtonFocusCancel = 1
+)
+
+const (
+	formKeyTitle        = "title"
+	formKeyType         = "type"
+	formKeyPriority     = "priority"
+	formKeyDescription  = "description"
+	formKeyLabels       = "labels"
+	formKeyParent       = "parent"
+	formKeyPoints       = "points"
+	formKeyAcceptance   = "acceptance"
+	formKeyMinor        = "minor"
+	formKeyDependencies = "dependencies"
+)
+
 // FormState holds the state for the issue form modal
 type FormState struct {
 	Mode     FormMode
@@ -39,17 +58,23 @@ type FormState struct {
 	Acceptance   string
 	Minor        bool
 	Dependencies string // Comma-separated issue IDs
+
+	// Button focus: -1 = form fields focused, 0 = submit, 1 = cancel
+	ButtonFocus int
+	ButtonHover int // 0 = none, 1 = submit, 2 = cancel
 }
 
 // NewFormState creates a new form state for creating an issue
 func NewFormState(mode FormMode, parentID string) *FormState {
 	state := &FormState{
-		Mode:     mode,
-		ParentID: parentID,
-		Parent:   parentID,
-		Type:     string(models.TypeTask),
-		Priority: string(models.PriorityP2),
-		Points:   "0",
+		Mode:        mode,
+		ParentID:    parentID,
+		Parent:      parentID,
+		Type:        string(models.TypeTask),
+		Priority:    string(models.PriorityP2),
+		Points:      "0",
+		ButtonFocus: formButtonFocusForm,
+		ButtonHover: 0,
 	}
 	state.buildForm()
 	return state
@@ -69,6 +94,8 @@ func NewFormStateForEdit(issue *models.Issue) *FormState {
 		Points:      pointsToString(issue.Points),
 		Acceptance:  issue.Acceptance,
 		Minor:       issue.Minor,
+		ButtonFocus: formButtonFocusForm,
+		ButtonHover: 0,
 	}
 	state.buildForm()
 	return state
@@ -114,6 +141,7 @@ func (fs *FormState) buildForm() {
 	// Standard fields group
 	standardGroup := huh.NewGroup(
 		huh.NewInput().
+			Key(formKeyTitle).
 			Title("Title").
 			Value(&fs.Title).
 			Placeholder("Issue title...").
@@ -124,19 +152,23 @@ func (fs *FormState) buildForm() {
 				return nil
 			}),
 		huh.NewSelect[string]().
+			Key(formKeyType).
 			Title("Type").
 			Options(typeOptions...).
 			Value(&fs.Type),
 		huh.NewSelect[string]().
+			Key(formKeyPriority).
 			Title("Priority").
 			Options(priorityOptions...).
 			Value(&fs.Priority),
 		huh.NewText().
+			Key(formKeyDescription).
 			Title("Description").
 			Value(&fs.Description).
 			Placeholder("Optional description...").
 			Lines(3),
 		huh.NewInput().
+			Key(formKeyLabels).
 			Title("Labels").
 			Value(&fs.Labels).
 			Placeholder("label1, label2, ..."),
@@ -145,23 +177,28 @@ func (fs *FormState) buildForm() {
 	// Extended fields group
 	extendedGroup := huh.NewGroup(
 		huh.NewInput().
+			Key(formKeyParent).
 			Title("Parent Epic").
 			Value(&fs.Parent).
 			Placeholder("td-xxxxxxxx"),
 		huh.NewSelect[string]().
+			Key(formKeyPoints).
 			Title("Story Points").
 			Options(pointsOptions...).
 			Value(&fs.Points),
 		huh.NewText().
+			Key(formKeyAcceptance).
 			Title("Acceptance Criteria").
 			Value(&fs.Acceptance).
 			Placeholder("- [ ] Criterion 1\n- [ ] Criterion 2").
 			Lines(3),
 		huh.NewConfirm().
+			Key(formKeyMinor).
 			Title("Minor Issue").
 			Description("Minor issues can be self-reviewed").
 			Value(&fs.Minor),
 		huh.NewInput().
+			Key(formKeyDependencies).
 			Title("Dependencies").
 			Value(&fs.Dependencies).
 			Placeholder("td-xxx, td-yyy"),
@@ -182,6 +219,28 @@ func (fs *FormState) buildForm() {
 func (fs *FormState) ToggleExtended() {
 	fs.ShowExtended = !fs.ShowExtended
 	fs.buildForm()
+}
+
+func (fs *FormState) focusedFieldKey() string {
+	if fs == nil || fs.Form == nil {
+		return ""
+	}
+	field := fs.Form.GetFocusedField()
+	if field == nil {
+		return ""
+	}
+	return field.GetKey()
+}
+
+func (fs *FormState) firstFieldKey() string {
+	return formKeyTitle
+}
+
+func (fs *FormState) lastFieldKey() string {
+	if fs.ShowExtended {
+		return formKeyDependencies
+	}
+	return formKeyLabels
 }
 
 // ToIssue converts form values to an Issue model

@@ -1133,24 +1133,17 @@ func (m Model) renderFormModal() string {
 		return ""
 	}
 
-	// Calculate modal dimensions (80% of terminal, capped)
-	modalWidth := m.Width * 80 / 100
-	if modalWidth > 90 {
-		modalWidth = 90
-	}
-	if modalWidth < 50 {
-		modalWidth = 50
-	}
-	modalHeight := m.Height * 85 / 100
-	if modalHeight > 35 {
-		modalHeight = 35
-	}
-	if modalHeight < 20 {
-		modalHeight = 20
-	}
+	modalWidth, modalHeight := m.formModalDimensions()
 
 	// Render the huh form
 	formView := m.FormState.Form.View()
+
+	// Interactive buttons
+	submitFocused := m.FormState.ButtonFocus == formButtonFocusSubmit
+	cancelFocused := m.FormState.ButtonFocus == formButtonFocusCancel
+	submitHovered := m.FormState.ButtonHover == 1
+	cancelHovered := m.FormState.ButtonHover == 2
+	buttons := renderButtonPair("Submit", "Cancel", submitFocused, cancelFocused, submitHovered, cancelHovered, false, false)
 
 	// Build footer with key hints
 	var footerParts []string
@@ -1159,11 +1152,12 @@ func (m Model) renderFormModal() string {
 	} else {
 		footerParts = append(footerParts, subtleStyle.Render("Ctrl+X:show extended"))
 	}
+	footerParts = append(footerParts, subtleStyle.Render("Tab:next  Shift+Tab:prev  Enter:select"))
 	footerParts = append(footerParts, subtleStyle.Render("Ctrl+S:submit  Esc:cancel"))
 	footer := strings.Join(footerParts, "  ")
 
 	// Combine form and footer
-	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", footer)
+	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", buttons, "", footer)
 
 	// Select border color - cyan for forms (different from issue modals)
 	borderColor := lipgloss.Color("45") // Cyan
@@ -1394,7 +1388,7 @@ func (m Model) renderConfirmation() string {
 	yesHovered := m.ConfirmButtonHover == 1
 	noHovered := m.ConfirmButtonHover == 2
 
-	yesBtn := renderButton("Yes", yesFocused, yesHovered, true)  // Danger button for destructive action
+	yesBtn := renderButton("Yes", yesFocused, yesHovered, true) // Danger button for destructive action
 	noBtn := renderButton("No", noFocused, noHovered, false)
 
 	content.WriteString(yesBtn)

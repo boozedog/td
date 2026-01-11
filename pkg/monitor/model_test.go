@@ -331,7 +331,7 @@ func TestEscapeClearsSearchFilterFromMainView(t *testing.T) {
 	m := Model{
 		Height:       30,
 		ActivePanel:  PanelTaskList,
-		SearchMode:   false, // Not in search mode
+		SearchMode:   false,           // Not in search mode
 		SearchQuery:  "active filter", // But filter is active
 		Cursor:       make(map[Panel]int),
 		SelectedID:   make(map[Panel]string),
@@ -532,11 +532,11 @@ func TestTaskListLinesFromOffset(t *testing.T) {
 
 func TestMaxScrollOffsetTaskList(t *testing.T) {
 	tests := []struct {
-		name          string
-		rows          []TaskListRow
-		height        int
-		expectedMax   int
-		description   string
+		name        string
+		rows        []TaskListRow
+		height      int
+		expectedMax int
+		description string
 	}{
 		{
 			name: "content fits - no scroll needed",
@@ -1342,10 +1342,10 @@ func TestParentEpicFocus_JKeyFocusesEpicWhenScroll0(t *testing.T) {
 		Keymap: newTestKeymap(),
 		ModalStack: []ModalEntry{
 			{
-				IssueID:     "td-story",
-				Issue:       &models.Issue{ID: "td-story", Type: models.TypeTask},
-				ParentEpic:  parentEpic,
-				Scroll:      0,
+				IssueID:           "td-story",
+				Issue:             &models.Issue{ID: "td-story", Type: models.TypeTask},
+				ParentEpic:        parentEpic,
+				Scroll:            0,
 				ParentEpicFocused: false,
 			},
 		},
@@ -1768,11 +1768,11 @@ func TestModalContentWidth(t *testing.T) {
 // This enables j/k navigation without requiring Tab to enter the task section
 func TestEpicAutoFocusTaskSection(t *testing.T) {
 	tests := []struct {
-		name               string
-		issue              *models.Issue
-		epicTasks          []models.Issue
-		expectFocused      bool
-		expectCursor       int
+		name          string
+		issue         *models.Issue
+		epicTasks     []models.Issue
+		expectFocused bool
+		expectCursor  int
 	}{
 		{
 			name:          "epic with tasks auto-focuses",
@@ -1829,6 +1829,85 @@ func TestEpicAutoFocusTaskSection(t *testing.T) {
 					m2.CurrentModal().EpicTasksCursor, tt.expectCursor)
 			}
 		})
+	}
+}
+
+func TestIssueDetailsRefreshPreservesFocusAndClamps(t *testing.T) {
+	issue := &models.Issue{ID: "td-001", Type: models.TypeEpic}
+	parentEpic := &models.Issue{ID: "td-parent", Type: models.TypeEpic}
+
+	m := Model{
+		Keymap: newTestKeymap(),
+		ModalStack: []ModalEntry{
+			{
+				IssueID:            issue.ID,
+				Issue:              issue,
+				TaskSectionFocused: true,
+				EpicTasksCursor:    2,
+				BlockedByCursor:    3,
+				BlocksCursor:       1,
+				ParentEpic:         parentEpic,
+				ParentEpicFocused:  true,
+			},
+		},
+	}
+
+	msg := IssueDetailsMsg{
+		IssueID:    issue.ID,
+		Issue:      issue,
+		ParentEpic: parentEpic,
+		EpicTasks: []models.Issue{
+			{ID: "td-epic-1"},
+			{ID: "td-epic-2"},
+		},
+		BlockedBy: []models.Issue{
+			{ID: "td-blocked-1"},
+			{ID: "td-blocked-2"},
+		},
+		Blocks: []models.Issue{
+			{ID: "td-blocks-1"},
+		},
+	}
+
+	updated, _ := m.Update(msg)
+	m2 := updated.(Model)
+	modal := m2.CurrentModal()
+	if modal == nil {
+		t.Fatal("Expected modal to remain open")
+	}
+	if !modal.TaskSectionFocused {
+		t.Error("TaskSectionFocused should be preserved on refresh")
+	}
+	if modal.EpicTasksCursor != 1 {
+		t.Errorf("EpicTasksCursor = %d, want 1", modal.EpicTasksCursor)
+	}
+	if modal.BlockedByCursor != 1 {
+		t.Errorf("BlockedByCursor = %d, want 1", modal.BlockedByCursor)
+	}
+	if modal.BlocksCursor != 0 {
+		t.Errorf("BlocksCursor = %d, want 0", modal.BlocksCursor)
+	}
+	if !modal.ParentEpicFocused {
+		t.Error("ParentEpicFocused should be preserved on refresh")
+	}
+}
+
+func TestFetchModalDataIfOpen(t *testing.T) {
+	m := Model{}
+	if cmd := m.fetchModalDataIfOpen(); cmd != nil {
+		t.Error("Expected nil command with no modal open")
+	}
+
+	m.ModalStack = []ModalEntry{
+		{IssueID: "td-001", Loading: true},
+	}
+	if cmd := m.fetchModalDataIfOpen(); cmd != nil {
+		t.Error("Expected nil command while modal is loading")
+	}
+
+	m.ModalStack[0].Loading = false
+	if cmd := m.fetchModalDataIfOpen(); cmd == nil {
+		t.Error("Expected command when modal is open and not loading")
 	}
 }
 
@@ -1912,18 +1991,18 @@ func TestSortModeToSortClause(t *testing.T) {
 // when the search bar appears (SearchQuery changes from empty to non-empty)
 func TestSortModeUpdatesPanelBounds(t *testing.T) {
 	m := Model{
-		Width:           80,
-		Height:          30,
-		SortMode:        SortByPriority,
-		SearchQuery:     "", // Empty initially - no search bar
-		PaneHeights:     config.DefaultPaneHeights(),
-		PanelBounds:     make(map[Panel]Rect),
-		DividerBounds:   [2]Rect{},
-		Cursor:          make(map[Panel]int),
-		ScrollOffset:    make(map[Panel]int),
-		SelectedID:      make(map[Panel]string),
-		Keymap:          newTestKeymap(),
-		SearchInput:     textinput.New(),
+		Width:         80,
+		Height:        30,
+		SortMode:      SortByPriority,
+		SearchQuery:   "", // Empty initially - no search bar
+		PaneHeights:   config.DefaultPaneHeights(),
+		PanelBounds:   make(map[Panel]Rect),
+		DividerBounds: [2]Rect{},
+		Cursor:        make(map[Panel]int),
+		ScrollOffset:  make(map[Panel]int),
+		SelectedID:    make(map[Panel]string),
+		Keymap:        newTestKeymap(),
+		SearchInput:   textinput.New(),
 	}
 	m.updatePanelBounds()
 
@@ -2033,19 +2112,19 @@ func TestTypeFilterUpdatesPanelBounds(t *testing.T) {
 // when sort/filter has caused search bar to appear
 func TestMouseClickWithSortFilterActive(t *testing.T) {
 	m := Model{
-		Width:          80,
-		Height:         30,
-		SortMode:       SortByPriority,
-		SearchQuery:    "", // Empty initially
-		PaneHeights:    config.DefaultPaneHeights(),
-		PanelBounds:    make(map[Panel]Rect),
-		DividerBounds:  [2]Rect{},
-		Cursor:         make(map[Panel]int),
-		ScrollOffset:   make(map[Panel]int),
-		SelectedID:     make(map[Panel]string),
-		Keymap:         newTestKeymap(),
-		SearchInput:    textinput.New(),
-		ActivePanel:    PanelCurrentWork,
+		Width:           80,
+		Height:          30,
+		SortMode:        SortByPriority,
+		SearchQuery:     "", // Empty initially
+		PaneHeights:     config.DefaultPaneHeights(),
+		PanelBounds:     make(map[Panel]Rect),
+		DividerBounds:   [2]Rect{},
+		Cursor:          make(map[Panel]int),
+		ScrollOffset:    make(map[Panel]int),
+		SelectedID:      make(map[Panel]string),
+		Keymap:          newTestKeymap(),
+		SearchInput:     textinput.New(),
+		ActivePanel:     PanelCurrentWork,
 		CurrentWorkRows: []string{"issue-1", "issue-2", "issue-3"},
 	}
 	m.updatePanelBounds()
@@ -2096,17 +2175,17 @@ func TestMouseClickWithSortFilterActive(t *testing.T) {
 // newResizeTestModel creates a model configured for pane resize testing
 func newResizeTestModel(width, height int) Model {
 	m := Model{
-		Width:            width,
-		Height:           height,
-		PaneHeights:      [3]float64{0.333, 0.333, 0.334},
-		PanelBounds:      make(map[Panel]Rect),
-		DividerBounds:    [2]Rect{},
-		DraggingDivider:  -1,
-		DividerHover:     -1,
-		Cursor:           make(map[Panel]int),
-		ScrollOffset:     make(map[Panel]int),
-		SelectedID:       make(map[Panel]string),
-		Keymap:           newTestKeymap(),
+		Width:           width,
+		Height:          height,
+		PaneHeights:     [3]float64{0.333, 0.333, 0.334},
+		PanelBounds:     make(map[Panel]Rect),
+		DividerBounds:   [2]Rect{},
+		DraggingDivider: -1,
+		DividerHover:    -1,
+		Cursor:          make(map[Panel]int),
+		ScrollOffset:    make(map[Panel]int),
+		SelectedID:      make(map[Panel]string),
+		Keymap:          newTestKeymap(),
 	}
 	m.updatePanelBounds()
 	return m
@@ -2308,10 +2387,10 @@ func TestVisibleHeightUsesActualPanelHeight(t *testing.T) {
 func TestHitTestTaskListRowBottomIndicator(t *testing.T) {
 	// Test that clicks on the bottom scroll indicator return -1
 	m := Model{
-		Width:  80,
-		Height: 30,
-		PaneHeights:   [3]float64{0.333, 0.333, 0.334},
-		PanelBounds:   make(map[Panel]Rect),
+		Width:       80,
+		Height:      30,
+		PaneHeights: [3]float64{0.333, 0.333, 0.334},
+		PanelBounds: make(map[Panel]Rect),
 		ScrollOffset: map[Panel]int{
 			PanelTaskList: 2, // Scrolled down, so top indicator is shown
 		},
@@ -2363,7 +2442,7 @@ func TestHitTestTaskListRowWithCategories(t *testing.T) {
 	// Use a large panel so we have plenty of visible lines for testing
 	m := Model{
 		Width:       80,
-		Height:      50, // Large height for ample visible lines
+		Height:      50,                        // Large height for ample visible lines
 		PaneHeights: [3]float64{0.1, 0.8, 0.1}, // TaskList gets 80%
 		ScrollOffset: map[Panel]int{
 			PanelTaskList: 0,
@@ -2406,17 +2485,17 @@ func TestHitTestTaskListRowWithCategories(t *testing.T) {
 			offset: 0,
 			// Layout: header(reviewable), rev-1, rev-2, blank, header(ready), ready-1...
 			expectations: map[int]int{
-				0: -1, // Reviewable header
-				1: 0,  // rev-1
-				2: 1,  // rev-2
-				3: -1, // blank line before Ready
-				4: -1, // Ready header
-				5: 2,  // ready-1
-				6: 3,  // ready-2
-				7: 4,  // ready-3
-				8: -1, // blank line before Blocked
-				9: -1, // Blocked header
-				10: 5, // block-1
+				0:  -1, // Reviewable header
+				1:  0,  // rev-1
+				2:  1,  // rev-2
+				3:  -1, // blank line before Ready
+				4:  -1, // Ready header
+				5:  2,  // ready-1
+				6:  3,  // ready-2
+				7:  4,  // ready-3
+				8:  -1, // blank line before Blocked
+				9:  -1, // Blocked header
+				10: 5,  // block-1
 			},
 		},
 	}
@@ -2440,7 +2519,7 @@ func TestHitTestTaskListRowWithScrolling(t *testing.T) {
 	// Use small panel to force scrolling
 	m := Model{
 		Width:       80,
-		Height:      20, // Small height to force scrolling
+		Height:      20,                        // Small height to force scrolling
 		PaneHeights: [3]float64{0.2, 0.6, 0.2}, // TaskList gets 60%
 		ScrollOffset: map[Panel]int{
 			PanelTaskList: 0,
@@ -2807,17 +2886,18 @@ func TestDragDivider1Multiple(t *testing.T) {
 		}
 	}
 }
+
 // TestModalScrollNotAccumulatingAtBottom tests that scroll position stops at the bottom
 // and doesn't accumulate when pressing down/Page Down at the bottom boundary.
 // Issue: td-05277607
 func TestModalScrollNotAccumulatingAtBottom(t *testing.T) {
 	tests := []struct {
-		name            string
-		initialScroll   int
-		contentLines    int
-		termHeight      int
-		expectedScroll  int
-		description     string
+		name           string
+		initialScroll  int
+		contentLines   int
+		termHeight     int
+		expectedScroll int
+		description    string
 	}{
 		{
 			name:           "scroll at max stays at max after single down",
@@ -3397,46 +3477,46 @@ func TestModalScrollEdgeCaseFullModal(t *testing.T) {
 // TestModalMaxScrollCalculation tests the modalMaxScroll calculation itself.
 func TestModalMaxScrollCalculation(t *testing.T) {
 	tests := []struct {
-		name           string
-		contentLines   int
-		termHeight     int
-		expectedMax    int
-		description    string
+		name         string
+		contentLines int
+		termHeight   int
+		expectedMax  int
+		description  string
 	}{
 		{
-			name:           "content smaller than viewport",
-			contentLines:   10,
-			termHeight:     30,
-			expectedMax:    0,
-			description:    "Content fits entirely, max scroll is 0",
+			name:         "content smaller than viewport",
+			contentLines: 10,
+			termHeight:   30,
+			expectedMax:  0,
+			description:  "Content fits entirely, max scroll is 0",
 		},
 		{
-			name:           "content larger than viewport",
-			contentLines:   100,
-			termHeight:     30,
-			expectedMax:    80, // modalHeight=24, visibleHeight=20, 100-20=80
-			description:    "Large content has positive max scroll",
+			name:         "content larger than viewport",
+			contentLines: 100,
+			termHeight:   30,
+			expectedMax:  80, // modalHeight=24, visibleHeight=20, 100-20=80
+			description:  "Large content has positive max scroll",
 		},
 		{
-			name:           "exact fit after border/footer",
-			contentLines:   24, // modalHeight-4
-			termHeight:     30,
-			expectedMax:    4,
-			description:    "Content size accounting for modal overhead",
+			name:         "exact fit after border/footer",
+			contentLines: 24, // modalHeight-4
+			termHeight:   30,
+			expectedMax:  4,
+			description:  "Content size accounting for modal overhead",
 		},
 		{
-			name:           "minimal terminal height",
-			contentLines:   50,
-			termHeight:     10,
-			expectedMax:    39, // modalHeight=8, visibleHeight=4, 50-4=46 but clamped
-			description:    "Small terminal with large content",
+			name:         "minimal terminal height",
+			contentLines: 50,
+			termHeight:   10,
+			expectedMax:  39, // modalHeight=8, visibleHeight=4, 50-4=46 but clamped
+			description:  "Small terminal with large content",
 		},
 		{
-			name:           "large terminal height",
-			contentLines:   50,
-			termHeight:     100,
-			expectedMax:    14, // modalHeight=40, visibleHeight=36, 50-36=14
-			description:    "Large terminal with moderate content",
+			name:         "large terminal height",
+			contentLines: 50,
+			termHeight:   100,
+			expectedMax:  14, // modalHeight=40, visibleHeight=36, 50-36=14
+			description:  "Large terminal with moderate content",
 		},
 	}
 

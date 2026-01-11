@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/marcus/td/internal/config"
 )
 
@@ -666,6 +667,9 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.CloseConfirmOpen && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 		return m.handleCloseConfirmDialogClick(msg.X, msg.Y)
 	}
+	if m.FormOpen && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		return m.handleFormDialogClick(msg.X, msg.Y)
+	}
 
 	// Handle mouse motion for hover states on confirmation dialogs
 	if m.ConfirmOpen && msg.Action == tea.MouseActionMotion {
@@ -674,9 +678,12 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	if m.CloseConfirmOpen && msg.Action == tea.MouseActionMotion {
 		return m.handleCloseConfirmDialogHover(msg.X, msg.Y)
 	}
+	if m.FormOpen && msg.Action == tea.MouseActionMotion {
+		return m.handleFormDialogHover(msg.X, msg.Y)
+	}
 
 	// Ignore other mouse events when modals/overlays are open
-	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.HelpOpen || m.ShowTDQHelp {
+	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.HelpOpen || m.ShowTDQHelp {
 		return m, nil
 	}
 
@@ -1210,6 +1217,92 @@ func (m Model) handleCloseConfirmDialogHover(x, y int) (tea.Model, tea.Cmd) {
 		m.CloseConfirmButtonHover = 1 // Confirm
 	} else if x >= cancelStartX && x < cancelEndX {
 		m.CloseConfirmButtonHover = 2 // Cancel
+	}
+
+	return m, nil
+}
+
+// handleFormDialogClick handles mouse clicks on the form modal buttons
+func (m Model) handleFormDialogClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.FormState == nil || m.FormState.Form == nil {
+		return m, nil
+	}
+
+	modalWidth, modalHeight := m.formModalDimensions()
+	formView := m.FormState.Form.View()
+	formHeight := lipgloss.Height(formView)
+
+	modalOuterWidth := modalWidth + 2
+	modalOuterHeight := modalHeight + 2
+
+	modalX := (m.Width - modalOuterWidth) / 2
+	modalY := (m.Height - modalOuterHeight) / 2
+
+	contentStartY := modalY + 2
+	buttonRowY := contentStartY + formHeight + 1
+
+	if y != buttonRowY {
+		return m, nil
+	}
+
+	contentStartX := modalX + 3
+	submitWidth := lipgloss.Width(renderButton("Submit", false, false, false))
+	cancelWidth := lipgloss.Width(renderButton("Cancel", false, false, false))
+
+	submitStartX := contentStartX
+	submitEndX := submitStartX + submitWidth
+	cancelStartX := submitEndX + 2
+	cancelEndX := cancelStartX + cancelWidth
+
+	if x >= submitStartX && x < submitEndX {
+		return m.submitForm()
+	}
+	if x >= cancelStartX && x < cancelEndX {
+		m.closeForm()
+		return m, nil
+	}
+
+	return m, nil
+}
+
+// handleFormDialogHover handles mouse hover on the form modal buttons
+func (m Model) handleFormDialogHover(x, y int) (tea.Model, tea.Cmd) {
+	if m.FormState == nil || m.FormState.Form == nil {
+		return m, nil
+	}
+
+	modalWidth, modalHeight := m.formModalDimensions()
+	formView := m.FormState.Form.View()
+	formHeight := lipgloss.Height(formView)
+
+	modalOuterWidth := modalWidth + 2
+	modalOuterHeight := modalHeight + 2
+
+	modalX := (m.Width - modalOuterWidth) / 2
+	modalY := (m.Height - modalOuterHeight) / 2
+
+	contentStartY := modalY + 2
+	buttonRowY := contentStartY + formHeight + 1
+
+	m.FormState.ButtonHover = 0
+
+	if y != buttonRowY {
+		return m, nil
+	}
+
+	contentStartX := modalX + 3
+	submitWidth := lipgloss.Width(renderButton("Submit", false, false, false))
+	cancelWidth := lipgloss.Width(renderButton("Cancel", false, false, false))
+
+	submitStartX := contentStartX
+	submitEndX := submitStartX + submitWidth
+	cancelStartX := submitEndX + 2
+	cancelEndX := cancelStartX + cancelWidth
+
+	if x >= submitStartX && x < submitEndX {
+		m.FormState.ButtonHover = 1
+	} else if x >= cancelStartX && x < cancelEndX {
+		m.FormState.ButtonHover = 2
 	}
 
 	return m, nil

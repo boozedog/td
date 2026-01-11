@@ -68,6 +68,56 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case keyMsg.Type == tea.KeyCtrlO:
 			return m.executeCommand(keymap.CmdFormOpenEditor)
 		}
+
+		if m.FormState != nil {
+			moveToButtons := func(focus int) (tea.Model, tea.Cmd) {
+				m.FormState.ButtonFocus = focus
+				m.FormState.ButtonHover = 0
+				return m, nil
+			}
+
+			switch keyMsg.Type {
+			case tea.KeyTab:
+				if m.FormState.ButtonFocus >= 0 {
+					switch m.FormState.ButtonFocus {
+					case formButtonFocusSubmit:
+						return moveToButtons(formButtonFocusCancel)
+					case formButtonFocusCancel:
+						return moveToButtons(formButtonFocusForm)
+					default:
+						return moveToButtons(formButtonFocusSubmit)
+					}
+				}
+				if m.FormState.focusedFieldKey() == m.FormState.lastFieldKey() {
+					return moveToButtons(formButtonFocusSubmit)
+				}
+			case tea.KeyShiftTab:
+				if m.FormState.ButtonFocus >= 0 {
+					switch m.FormState.ButtonFocus {
+					case formButtonFocusCancel:
+						return moveToButtons(formButtonFocusSubmit)
+					case formButtonFocusSubmit:
+						return moveToButtons(formButtonFocusForm)
+					default:
+						return moveToButtons(formButtonFocusCancel)
+					}
+				}
+				if m.FormState.focusedFieldKey() == m.FormState.firstFieldKey() {
+					return moveToButtons(formButtonFocusCancel)
+				}
+			case tea.KeyEnter:
+				switch m.FormState.ButtonFocus {
+				case formButtonFocusSubmit:
+					return m.executeCommand(keymap.CmdFormSubmit)
+				case formButtonFocusCancel:
+					return m.executeCommand(keymap.CmdFormCancel)
+				}
+			}
+
+			if m.FormState.ButtonFocus >= 0 {
+				return m, nil
+			}
+		}
 	}
 
 	// Handle editor finished message

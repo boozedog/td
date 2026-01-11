@@ -155,6 +155,12 @@ func TestNewFormState(t *testing.T) {
 			if state.ShowExtended != false {
 				t.Errorf("ShowExtended = %v, want false", state.ShowExtended)
 			}
+			if state.ButtonFocus != formButtonFocusForm {
+				t.Errorf("ButtonFocus = %d, want %d", state.ButtonFocus, formButtonFocusForm)
+			}
+			if state.ButtonHover != 0 {
+				t.Errorf("ButtonHover = %d, want 0", state.ButtonHover)
+			}
 			if state.Form == nil {
 				t.Error("Form should be initialized")
 			}
@@ -216,6 +222,12 @@ func TestNewFormStateForEdit(t *testing.T) {
 				}
 				if state.Minor != false {
 					t.Errorf("Minor = %v, want false", state.Minor)
+				}
+				if state.ButtonFocus != formButtonFocusForm {
+					t.Errorf("ButtonFocus = %d, want %d", state.ButtonFocus, formButtonFocusForm)
+				}
+				if state.ButtonHover != 0 {
+					t.Errorf("ButtonHover = %d, want 0", state.ButtonHover)
 				}
 				if state.Form == nil {
 					t.Error("Form should be initialized")
