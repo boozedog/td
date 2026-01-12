@@ -401,6 +401,20 @@ func (p StatusFilterPreset) Name() string {
 	}
 }
 
+// StatusFilterMapToSlice converts a map[Status]bool to []Status for DB calls
+func StatusFilterMapToSlice(filter map[models.Status]bool) []models.Status {
+	if filter == nil {
+		return nil
+	}
+	var result []models.Status
+	for status, visible := range filter {
+		if visible {
+			result = append(result, status)
+		}
+	}
+	return result
+}
+
 // ToFilter converts a preset to a status filter map
 func (p StatusFilterPreset) ToFilter() map[models.Status]bool {
 	switch p {

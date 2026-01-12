@@ -1151,6 +1151,12 @@ func (m Model) fetchBoards() tea.Cmd {
 
 // fetchBoardIssues returns a command that fetches issues for a board
 func (m Model) fetchBoardIssues(boardID string) tea.Cmd {
+	// Capture status filter at call time (closure captures by value)
+	statusFilter := m.BoardMode.StatusFilter
+	if statusFilter == nil {
+		statusFilter = DefaultBoardStatusFilter()
+	}
+
 	return func() tea.Msg {
 		// Get the board to check if it has a query
 		board, err := m.DB.GetBoard(boardID)
@@ -1165,13 +1171,21 @@ func (m Model) fetchBoardIssues(boardID string) tea.Cmd {
 			if err != nil {
 				return BoardIssuesMsg{BoardID: boardID, Error: err}
 			}
-			issues, err = m.DB.ApplyBoardPositions(boardID, queryResults)
+			// Filter by status (query.Execute doesn't filter by status)
+			var filtered []models.Issue
+			for _, issue := range queryResults {
+				if statusFilter[issue.Status] {
+					filtered = append(filtered, issue)
+				}
+			}
+			issues, err = m.DB.ApplyBoardPositions(boardID, filtered)
 			if err != nil {
 				return BoardIssuesMsg{BoardID: boardID, Error: err}
 			}
 		} else {
-			// Empty query - use GetBoardIssues which handles this case
-			issues, err = m.DB.GetBoardIssues(boardID, m.SessionID, nil)
+			// Empty query - use GetBoardIssues with status filter
+			statusSlice := StatusFilterMapToSlice(statusFilter)
+			issues, err = m.DB.GetBoardIssues(boardID, m.SessionID, statusSlice)
 			if err != nil {
 				return BoardIssuesMsg{BoardID: boardID, Error: err}
 			}
