@@ -295,9 +295,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				m.BoardPickerCursor++
 			}
 		} else if m.TaskListMode == TaskListModeBoard {
-			if m.BoardMode.Cursor < len(m.BoardMode.Issues)-1 {
-				m.BoardMode.Cursor++
-				m.ensureBoardCursorVisible()
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				if m.BoardMode.SwimlaneCursor < len(m.BoardMode.SwimlaneRows)-1 {
+					m.BoardMode.SwimlaneCursor++
+					m.ensureBoardCursorVisible()
+				}
+			} else {
+				if m.BoardMode.Cursor < len(m.BoardMode.Issues)-1 {
+					m.BoardMode.Cursor++
+					m.ensureBoardCursorVisible()
+				}
 			}
 		} else if m.HandoffsOpen {
 			if m.HandoffsCursor < len(m.HandoffsData)-1 {
@@ -348,9 +355,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				m.BoardPickerCursor--
 			}
 		} else if m.TaskListMode == TaskListModeBoard {
-			if m.BoardMode.Cursor > 0 {
-				m.BoardMode.Cursor--
-				m.ensureBoardCursorVisible()
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				if m.BoardMode.SwimlaneCursor > 0 {
+					m.BoardMode.SwimlaneCursor--
+					m.ensureBoardCursorVisible()
+				}
+			} else {
+				if m.BoardMode.Cursor > 0 {
+					m.BoardMode.Cursor--
+					m.ensureBoardCursorVisible()
+				}
 			}
 		} else if m.HandoffsOpen {
 			if m.HandoffsCursor > 0 {
@@ -375,8 +389,13 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		} else if m.BoardPickerOpen {
 			m.BoardPickerCursor = 0
 		} else if m.TaskListMode == TaskListModeBoard {
-			m.BoardMode.Cursor = 0
-			m.BoardMode.ScrollOffset = 0
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				m.BoardMode.SwimlaneCursor = 0
+				m.BoardMode.SwimlaneScroll = 0
+			} else {
+				m.BoardMode.Cursor = 0
+				m.BoardMode.ScrollOffset = 0
+			}
 		} else if m.HandoffsOpen {
 			m.HandoffsCursor = 0
 			m.HandoffsScroll = 0
@@ -401,9 +420,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				m.BoardPickerCursor = len(m.AllBoards) - 1
 			}
 		} else if m.TaskListMode == TaskListModeBoard {
-			if len(m.BoardMode.Issues) > 0 {
-				m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
-				m.ensureBoardCursorVisible()
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				if len(m.BoardMode.SwimlaneRows) > 0 {
+					m.BoardMode.SwimlaneCursor = len(m.BoardMode.SwimlaneRows) - 1
+					m.ensureBoardCursorVisible()
+				}
+			} else {
+				if len(m.BoardMode.Issues) > 0 {
+					m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
+					m.ensureBoardCursorVisible()
+				}
 			}
 		} else if m.HandoffsOpen {
 			if len(m.HandoffsData) > 0 {
@@ -442,12 +468,22 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				modal.Scroll = maxScroll
 			}
 		} else if m.TaskListMode == TaskListModeBoard {
-			m.BoardMode.Cursor += pageSize
-			if m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
-				m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
-			}
-			if m.BoardMode.Cursor < 0 {
-				m.BoardMode.Cursor = 0
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				m.BoardMode.SwimlaneCursor += pageSize
+				if m.BoardMode.SwimlaneCursor >= len(m.BoardMode.SwimlaneRows) {
+					m.BoardMode.SwimlaneCursor = len(m.BoardMode.SwimlaneRows) - 1
+				}
+				if m.BoardMode.SwimlaneCursor < 0 {
+					m.BoardMode.SwimlaneCursor = 0
+				}
+			} else {
+				m.BoardMode.Cursor += pageSize
+				if m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
+					m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
+				}
+				if m.BoardMode.Cursor < 0 {
+					m.BoardMode.Cursor = 0
+				}
 			}
 			m.ensureBoardCursorVisible()
 		} else if m.HandoffsOpen {
@@ -487,9 +523,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				modal.Scroll = 0
 			}
 		} else if m.TaskListMode == TaskListModeBoard {
-			m.BoardMode.Cursor -= pageSize
-			if m.BoardMode.Cursor < 0 {
-				m.BoardMode.Cursor = 0
+			if m.BoardMode.ViewMode == BoardViewSwimlanes {
+				m.BoardMode.SwimlaneCursor -= pageSize
+				if m.BoardMode.SwimlaneCursor < 0 {
+					m.BoardMode.SwimlaneCursor = 0
+				}
+			} else {
+				m.BoardMode.Cursor -= pageSize
+				if m.BoardMode.Cursor < 0 {
+					m.BoardMode.Cursor = 0
+				}
 			}
 			m.ensureBoardCursorVisible()
 		} else if m.HandoffsOpen {
@@ -949,6 +992,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdMoveIssueDown:
 		return m.moveIssueInBoard(1)
+
+	case keymap.CmdToggleBoardView:
+		return m.toggleBoardView()
 	}
 
 	return m, nil
@@ -976,6 +1022,9 @@ func (m Model) selectBoard() (Model, tea.Cmd) {
 	m.BoardMode.Board = &board
 	m.BoardMode.Cursor = 0
 	m.BoardMode.ScrollOffset = 0
+	m.BoardMode.SwimlaneCursor = 0
+	m.BoardMode.SwimlaneScroll = 0
+	m.BoardMode.ViewMode = BoardViewModeFromString(board.ViewMode)
 	if m.BoardMode.StatusFilter == nil {
 		m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
 	}
@@ -992,14 +1041,30 @@ func (m Model) selectBoard() (Model, tea.Cmd) {
 
 // openIssueFromBoard opens the issue modal for the currently selected board issue
 func (m Model) openIssueFromBoard() (tea.Model, tea.Cmd) {
-	if m.TaskListMode != TaskListModeBoard || len(m.BoardMode.Issues) == 0 {
-		return m, nil
-	}
-	if m.BoardMode.Cursor < 0 || m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
+	if m.TaskListMode != TaskListModeBoard {
 		return m, nil
 	}
 
-	issueID := m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
+	var issueID string
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		// Swimlanes view: get issue from SwimlaneRows
+		if len(m.BoardMode.SwimlaneRows) == 0 {
+			return m, nil
+		}
+		if m.BoardMode.SwimlaneCursor < 0 || m.BoardMode.SwimlaneCursor >= len(m.BoardMode.SwimlaneRows) {
+			return m, nil
+		}
+		issueID = m.BoardMode.SwimlaneRows[m.BoardMode.SwimlaneCursor].Issue.ID
+	} else {
+		// Backlog view: get issue from Issues
+		if len(m.BoardMode.Issues) == 0 {
+			return m, nil
+		}
+		if m.BoardMode.Cursor < 0 || m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
+			return m, nil
+		}
+		issueID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
+	}
 	return m.pushModal(issueID, PanelTaskList) // Use TaskList as source panel for board mode
 }
 
@@ -1054,11 +1119,82 @@ func (m Model) cycleBoardStatusFilter() (Model, tea.Cmd) {
 	)
 }
 
+// toggleBoardView toggles between swimlanes and backlog view modes
+func (m Model) toggleBoardView() (Model, tea.Cmd) {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
+		return m, nil
+	}
+
+	// Get currently selected issue ID before toggling
+	var selectedID string
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		if m.BoardMode.SwimlaneCursor >= 0 && m.BoardMode.SwimlaneCursor < len(m.BoardMode.SwimlaneRows) {
+			selectedID = m.BoardMode.SwimlaneRows[m.BoardMode.SwimlaneCursor].Issue.ID
+		}
+	} else {
+		if m.BoardMode.Cursor >= 0 && m.BoardMode.Cursor < len(m.BoardMode.Issues) {
+			selectedID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
+		}
+	}
+
+	// Toggle view mode
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		m.BoardMode.ViewMode = BoardViewBacklog
+		m.StatusMessage = "Switched to backlog view"
+	} else {
+		m.BoardMode.ViewMode = BoardViewSwimlanes
+		m.StatusMessage = "Switched to swimlanes view"
+	}
+
+	// Try to preserve selection by finding the same issue in the new view
+	if selectedID != "" {
+		if m.BoardMode.ViewMode == BoardViewSwimlanes {
+			// Find issue in swimlane rows
+			for i, row := range m.BoardMode.SwimlaneRows {
+				if row.Issue.ID == selectedID {
+					m.BoardMode.SwimlaneCursor = i
+					break
+				}
+			}
+		} else {
+			// Find issue in backlog issues
+			for i, biv := range m.BoardMode.Issues {
+				if biv.Issue.ID == selectedID {
+					m.BoardMode.Cursor = i
+					break
+				}
+			}
+		}
+	}
+
+	// Persist view mode to database
+	viewModeStr := m.BoardMode.ViewMode.String()
+	if err := m.DB.UpdateBoardViewMode(m.BoardMode.Board.ID, viewModeStr); err != nil {
+		// Non-fatal, just show error
+		m.StatusMessage = "View switched (save failed: " + err.Error() + ")"
+		m.StatusIsError = true
+	}
+
+	// Update the board struct too for consistency
+	m.BoardMode.Board.ViewMode = viewModeStr
+
+	return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+}
+
 // moveIssueInBoard moves the current issue up or down in the board
 func (m Model) moveIssueInBoard(direction int) (Model, tea.Cmd) {
 	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
 		return m, nil
 	}
+
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		return m.moveIssueInSwimlane(direction)
+	}
+	return m.moveIssueInBacklog(direction)
+}
+
+// moveIssueInBacklog moves the current issue up or down in the backlog view
+func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 	if len(m.BoardMode.Issues) == 0 {
 		return m, nil
 	}
@@ -1118,6 +1254,83 @@ func (m Model) moveIssueInBoard(direction int) (Model, tea.Cmd) {
 			return m, nil
 		}
 		m.BoardMode.Cursor = targetIdx
+	} else {
+		// Current is positioned but target is not - can't swap with unpositioned
+		return m, nil
+	}
+
+	return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
+}
+
+// moveIssueInSwimlane moves the current issue up or down within its swimlane (category)
+func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
+	if len(m.BoardMode.SwimlaneRows) == 0 {
+		return m, nil
+	}
+
+	cursor := m.BoardMode.SwimlaneCursor
+	if cursor < 0 || cursor >= len(m.BoardMode.SwimlaneRows) {
+		return m, nil
+	}
+
+	currentRow := m.BoardMode.SwimlaneRows[cursor]
+	currentCategory := currentRow.Category
+
+	// Find target index within the same category
+	targetIdx := cursor + direction
+	if targetIdx < 0 || targetIdx >= len(m.BoardMode.SwimlaneRows) {
+		return m, nil // Can't move beyond bounds
+	}
+
+	targetRow := m.BoardMode.SwimlaneRows[targetIdx]
+
+	// Only allow moves within the same category
+	if targetRow.Category != currentCategory {
+		return m, nil // Can't cross lane boundaries
+	}
+
+	// Find the BoardIssueView for both issues to get position info
+	var currentBIV, targetBIV *models.BoardIssueView
+	for i := range m.BoardMode.Issues {
+		if m.BoardMode.Issues[i].Issue.ID == currentRow.Issue.ID {
+			currentBIV = &m.BoardMode.Issues[i]
+		}
+		if m.BoardMode.Issues[i].Issue.ID == targetRow.Issue.ID {
+			targetBIV = &m.BoardMode.Issues[i]
+		}
+	}
+
+	if currentBIV == nil || targetBIV == nil {
+		return m, nil
+	}
+
+	// Both must be positioned for swap, or we need to position the current issue
+	if currentBIV.HasPosition && targetBIV.HasPosition {
+		// Both positioned - swap positions
+		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentBIV.Issue.ID, targetBIV.Issue.ID); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		m.BoardMode.SwimlaneCursor = targetIdx
+	} else if !currentBIV.HasPosition {
+		// Current issue is unpositioned - insert at target position
+		var insertPos int
+		if targetBIV.HasPosition {
+			if direction < 0 {
+				insertPos = targetBIV.Position
+			} else {
+				insertPos = targetBIV.Position + 1
+			}
+		} else {
+			insertPos = 1
+		}
+		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		m.BoardMode.SwimlaneCursor = targetIdx
 	} else {
 		// Current is positioned but target is not - can't swap with unpositioned
 		return m, nil

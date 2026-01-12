@@ -308,6 +308,7 @@ func DefaultBindings() []Binding {
 		{Key: "y", Command: CmdCopyToClipboard, Context: ContextBoard, Description: "Copy issue as markdown"},
 		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextBoard, Description: "Copy issue ID"},
 		{Key: "r", Command: CmdRefresh, Context: ContextBoard, Description: "Refresh"},
+		{Key: "v", Command: CmdToggleBoardView, Context: ContextBoard, Description: "Toggle swimlanes/backlog view"},
 	}
 }
 

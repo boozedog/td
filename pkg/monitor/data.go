@@ -436,3 +436,134 @@ func FetchStats(database *db.DB) StatsDataMsg {
 		Data: &StatsData{ExtendedStats: stats},
 	}
 }
+
+// CategorizeBoardIssues takes board issues and groups them by status category
+// for the swimlanes view. Issues are sorted within each category by the
+// provided sort mode (not by position).
+func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sessionID string, sortMode SortMode) TaskListData {
+	var data TaskListData
+
+	if len(issues) == 0 {
+		return data
+	}
+
+	// Get rejected in_progress issue IDs for "needs rework" detection
+	rejectedIDs, err := database.GetRejectedInProgressIssueIDs()
+	if err != nil {
+		rejectedIDs = make(map[string]bool)
+	}
+
+	// Batch load all dependencies and their statuses
+	allDeps, _ := database.GetAllDependencies()
+	var allDepIDs []string
+	for _, deps := range allDeps {
+		allDepIDs = append(allDepIDs, deps...)
+	}
+	depStatuses, _ := database.GetIssueStatuses(allDepIDs)
+
+	// Helper to check if issue is blocked by unclosed dependencies
+	isBlockedByDeps := func(issueID string) bool {
+		deps := allDeps[issueID]
+		for _, depID := range deps {
+			if status, ok := depStatuses[depID]; ok && status != models.StatusClosed {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Categorize issues
+	for _, biv := range issues {
+		issue := biv.Issue
+		switch issue.Status {
+		case models.StatusOpen:
+			if isBlockedByDeps(issue.ID) {
+				data.Blocked = append(data.Blocked, issue)
+			} else {
+				data.Ready = append(data.Ready, issue)
+			}
+		case models.StatusInProgress:
+			if rejectedIDs[issue.ID] {
+				data.NeedsRework = append(data.NeedsRework, issue)
+			} else {
+				data.Ready = append(data.Ready, issue)
+			}
+		case models.StatusBlocked:
+			data.Blocked = append(data.Blocked, issue)
+		case models.StatusInReview:
+			if issue.ImplementerSession != sessionID {
+				data.Reviewable = append(data.Reviewable, issue)
+			}
+		case models.StatusClosed:
+			data.Closed = append(data.Closed, issue)
+		}
+	}
+
+	// Sort each category by the specified sort mode
+	sortFunc := getSortFunc(sortMode)
+	sort.Slice(data.Ready, sortFunc(data.Ready))
+	sort.Slice(data.Reviewable, sortFunc(data.Reviewable))
+	sort.Slice(data.NeedsRework, sortFunc(data.NeedsRework))
+	sort.Slice(data.Blocked, sortFunc(data.Blocked))
+	sort.Slice(data.Closed, sortFunc(data.Closed))
+
+	return data
+}
+
+// getSortFunc returns a sort.Slice less function for the given sort mode
+func getSortFunc(sortMode SortMode) func(issues []models.Issue) func(i, j int) bool {
+	return func(issues []models.Issue) func(i, j int) bool {
+		switch sortMode {
+		case SortByCreatedDesc:
+			return func(i, j int) bool {
+				return issues[i].CreatedAt.After(issues[j].CreatedAt)
+			}
+		case SortByUpdatedDesc:
+			return func(i, j int) bool {
+				return issues[i].UpdatedAt.After(issues[j].UpdatedAt)
+			}
+		default: // SortByPriority
+			return func(i, j int) bool {
+				// Priority sort: P0 < P1 < P2 < P3 < P4 (ascending)
+				if issues[i].Priority != issues[j].Priority {
+					return issues[i].Priority < issues[j].Priority
+				}
+				// Secondary sort by updated_at descending
+				return issues[i].UpdatedAt.After(issues[j].UpdatedAt)
+			}
+		}
+	}
+}
+
+// BuildSwimlaneRows flattens categorized TaskListData into TaskListRow slice
+// for cursor navigation in swimlanes view
+func BuildSwimlaneRows(data TaskListData) []TaskListRow {
+	var rows []TaskListRow
+
+	// Add reviewable issues
+	for _, issue := range data.Reviewable {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryReviewable})
+	}
+
+	// Add needs rework issues
+	for _, issue := range data.NeedsRework {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryNeedsRework})
+	}
+
+	// Add ready issues
+	for _, issue := range data.Ready {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryReady})
+	}
+
+	// Add blocked issues
+	for _, issue := range data.Blocked {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryBlocked})
+	}
+
+	// Add closed issues
+	for _, issue := range data.Closed {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryClosed})
+	}
+
+	return rows
+}

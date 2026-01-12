@@ -2239,14 +2239,15 @@ func (db *DB) CreateBoard(name, queryStr string) (*models.Board, error) {
 			Name:      name,
 			Query:     queryStr,
 			IsBuiltin: false,
+			ViewMode:  "swimlanes",
 			CreatedAt: now,
 			UpdatedAt: now,
 		}
 
 		_, err = db.conn.Exec(`
-			INSERT INTO boards (id, name, query, is_builtin, created_at, updated_at)
-			VALUES (?, ?, ?, 0, ?, ?)
-		`, board.ID, board.Name, board.Query, board.CreatedAt, board.UpdatedAt)
+			INSERT INTO boards (id, name, query, is_builtin, view_mode, created_at, updated_at)
+			VALUES (?, ?, ?, 0, ?, ?, ?)
+		`, board.ID, board.Name, board.Query, board.ViewMode, board.CreatedAt, board.UpdatedAt)
 
 		return err
 	})
@@ -2271,10 +2272,10 @@ func (db *DB) GetBoard(id string) (*models.Board, error) {
 	var lastViewedAt sql.NullTime
 
 	err := db.conn.QueryRow(`
-		SELECT id, name, query, is_builtin, last_viewed_at, created_at, updated_at
+		SELECT id, name, query, is_builtin, view_mode, last_viewed_at, created_at, updated_at
 		FROM boards WHERE id = ?
 	`, id).Scan(
-		&board.ID, &board.Name, &board.Query, &isBuiltin, &lastViewedAt,
+		&board.ID, &board.Name, &board.Query, &isBuiltin, &board.ViewMode, &lastViewedAt,
 		&board.CreatedAt, &board.UpdatedAt,
 	)
 
@@ -2300,10 +2301,10 @@ func (db *DB) GetBoardByName(name string) (*models.Board, error) {
 	var lastViewedAt sql.NullTime
 
 	err := db.conn.QueryRow(`
-		SELECT id, name, query, is_builtin, last_viewed_at, created_at, updated_at
+		SELECT id, name, query, is_builtin, view_mode, last_viewed_at, created_at, updated_at
 		FROM boards WHERE name = ? COLLATE NOCASE
 	`, name).Scan(
-		&board.ID, &board.Name, &board.Query, &isBuiltin, &lastViewedAt,
+		&board.ID, &board.Name, &board.Query, &isBuiltin, &board.ViewMode, &lastViewedAt,
 		&board.CreatedAt, &board.UpdatedAt,
 	)
 
@@ -2335,7 +2336,7 @@ func (db *DB) ResolveBoardRef(ref string) (*models.Board, error) {
 // ListBoards returns all boards sorted by last_viewed_at DESC
 func (db *DB) ListBoards() ([]models.Board, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, name, query, is_builtin, last_viewed_at, created_at, updated_at
+		SELECT id, name, query, is_builtin, view_mode, last_viewed_at, created_at, updated_at
 		FROM boards
 		ORDER BY CASE WHEN last_viewed_at IS NULL THEN 1 ELSE 0 END, last_viewed_at DESC, name ASC
 	`)
@@ -2351,7 +2352,7 @@ func (db *DB) ListBoards() ([]models.Board, error) {
 		var lastViewedAt sql.NullTime
 
 		if err := rows.Scan(
-			&board.ID, &board.Name, &board.Query, &isBuiltin, &lastViewedAt,
+			&board.ID, &board.Name, &board.Query, &isBuiltin, &board.ViewMode, &lastViewedAt,
 			&board.CreatedAt, &board.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -2433,13 +2434,13 @@ func (db *DB) GetLastViewedBoard() (*models.Board, error) {
 	var lastViewedAt sql.NullTime
 
 	err := db.conn.QueryRow(`
-		SELECT id, name, query, is_builtin, last_viewed_at, created_at, updated_at
+		SELECT id, name, query, is_builtin, view_mode, last_viewed_at, created_at, updated_at
 		FROM boards
 		WHERE last_viewed_at IS NOT NULL
 		ORDER BY last_viewed_at DESC
 		LIMIT 1
 	`).Scan(
-		&board.ID, &board.Name, &board.Query, &isBuiltin, &lastViewedAt,
+		&board.ID, &board.Name, &board.Query, &isBuiltin, &board.ViewMode, &lastViewedAt,
 		&board.CreatedAt, &board.UpdatedAt,
 	)
 
@@ -2464,6 +2465,18 @@ func (db *DB) UpdateBoardLastViewed(boardID string) error {
 	return db.withWriteLock(func() error {
 		now := time.Now()
 		_, err := db.conn.Exec(`UPDATE boards SET last_viewed_at = ? WHERE id = ?`, now, boardID)
+		return err
+	})
+}
+
+// UpdateBoardViewMode updates the view_mode for a board (swimlanes or backlog)
+func (db *DB) UpdateBoardViewMode(boardID, viewMode string) error {
+	if viewMode != "swimlanes" && viewMode != "backlog" {
+		return fmt.Errorf("invalid view mode: %s (must be 'swimlanes' or 'backlog')", viewMode)
+	}
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`UPDATE boards SET view_mode = ?, updated_at = ? WHERE id = ?`,
+			viewMode, time.Now(), boardID)
 		return err
 	})
 }

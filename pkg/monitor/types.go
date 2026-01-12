@@ -24,6 +24,32 @@ const (
 	TaskListModeBoard                           // Board view with flat list and ordering
 )
 
+// BoardViewMode represents the display mode within a board
+type BoardViewMode int
+
+const (
+	BoardViewSwimlanes BoardViewMode = iota // Default: grouped by status categories
+	BoardViewBacklog                        // Flat list with position ordering
+)
+
+// String returns the display name for the view mode
+func (v BoardViewMode) String() string {
+	switch v {
+	case BoardViewBacklog:
+		return "backlog"
+	default:
+		return "swimlanes"
+	}
+}
+
+// FromString parses a view mode string (from database)
+func BoardViewModeFromString(s string) BoardViewMode {
+	if s == "backlog" {
+		return BoardViewBacklog
+	}
+	return BoardViewSwimlanes
+}
+
 // Rect represents a rectangular region for hit-testing
 type Rect struct {
 	X, Y, W, H int
@@ -358,10 +384,19 @@ type BoardIssuesMsg struct {
 // BoardMode holds state for board mode view (when Task List is in board mode)
 type BoardMode struct {
 	Board        *models.Board           // Currently active board
-	Issues       []models.BoardIssueView // Issues in the board
-	Cursor       int                     // Selected issue index
-	ScrollOffset int                     // Scroll offset for long lists
+	Issues       []models.BoardIssueView // Issues in the board (for backlog view)
+	Cursor       int                     // Selected issue index (backlog view)
+	ScrollOffset int                     // Scroll offset for long lists (backlog view)
 	StatusFilter map[models.Status]bool  // Status filter (true = visible)
+
+	// View mode toggle (swimlanes vs backlog)
+	ViewMode BoardViewMode // Current view mode
+
+	// Swimlanes view state (separate cursor/scroll from backlog)
+	SwimlaneData   TaskListData   // Categorized data for swimlanes view
+	SwimlaneRows   []TaskListRow  // Flattened rows for swimlanes view
+	SwimlaneCursor int            // Cursor position in swimlanes view
+	SwimlaneScroll int            // Scroll offset in swimlanes view
 }
 
 // DefaultBoardStatusFilter returns the default status filter (closed hidden)
