@@ -31,7 +31,8 @@ func (m Model) currentContext() keymap.Context {
 	if m.StatsOpen {
 		return keymap.ContextStats
 	}
-	if m.BoardMode.Active {
+	// Board mode context when Task List is active and in board mode
+	if m.ActivePanel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
 		return keymap.ContextBoard
 	}
 	if m.ModalOpen() {
@@ -293,7 +294,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if m.BoardPickerCursor < len(m.AllBoards)-1 {
 				m.BoardPickerCursor++
 			}
-		} else if m.BoardMode.Active {
+		} else if m.TaskListMode == TaskListModeBoard {
 			if m.BoardMode.Cursor < len(m.BoardMode.Issues)-1 {
 				m.BoardMode.Cursor++
 				m.ensureBoardCursorVisible()
@@ -346,7 +347,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if m.BoardPickerCursor > 0 {
 				m.BoardPickerCursor--
 			}
-		} else if m.BoardMode.Active {
+		} else if m.TaskListMode == TaskListModeBoard {
 			if m.BoardMode.Cursor > 0 {
 				m.BoardMode.Cursor--
 				m.ensureBoardCursorVisible()
@@ -373,7 +374,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			modal.Scroll = 0
 		} else if m.BoardPickerOpen {
 			m.BoardPickerCursor = 0
-		} else if m.BoardMode.Active {
+		} else if m.TaskListMode == TaskListModeBoard {
 			m.BoardMode.Cursor = 0
 			m.BoardMode.ScrollOffset = 0
 		} else if m.HandoffsOpen {
@@ -399,7 +400,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if len(m.AllBoards) > 0 {
 				m.BoardPickerCursor = len(m.AllBoards) - 1
 			}
-		} else if m.BoardMode.Active {
+		} else if m.TaskListMode == TaskListModeBoard {
 			if len(m.BoardMode.Issues) > 0 {
 				m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
 				m.ensureBoardCursorVisible()
@@ -440,7 +441,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if modal.Scroll > maxScroll {
 				modal.Scroll = maxScroll
 			}
-		} else if m.BoardMode.Active {
+		} else if m.TaskListMode == TaskListModeBoard {
 			m.BoardMode.Cursor += pageSize
 			if m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
 				m.BoardMode.Cursor = len(m.BoardMode.Issues) - 1
@@ -485,7 +486,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if modal.Scroll < 0 {
 				modal.Scroll = 0
 			}
-		} else if m.BoardMode.Active {
+		} else if m.TaskListMode == TaskListModeBoard {
 			m.BoardMode.Cursor -= pageSize
 			if m.BoardMode.Cursor < 0 {
 				m.BoardMode.Cursor = 0
@@ -598,7 +599,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if m.HandoffsOpen {
 			return m.openIssueFromHandoffs()
 		}
-		if m.BoardMode.Active {
+		if m.TaskListMode == TaskListModeBoard {
 			return m.openIssueFromBoard()
 		}
 		return m.openModal()
@@ -970,7 +971,8 @@ func (m Model) selectBoard() (Model, tea.Cmd) {
 	}
 
 	board := m.AllBoards[m.BoardPickerCursor]
-	m.BoardMode.Active = true
+	m.TaskListMode = TaskListModeBoard
+	m.ActivePanel = PanelTaskList // Focus the Task List panel
 	m.BoardMode.Board = &board
 	m.BoardMode.Cursor = 0
 	m.BoardMode.ScrollOffset = 0
@@ -990,7 +992,7 @@ func (m Model) selectBoard() (Model, tea.Cmd) {
 
 // openIssueFromBoard opens the issue modal for the currently selected board issue
 func (m Model) openIssueFromBoard() (tea.Model, tea.Cmd) {
-	if !m.BoardMode.Active || len(m.BoardMode.Issues) == 0 {
+	if m.TaskListMode != TaskListModeBoard || len(m.BoardMode.Issues) == 0 {
 		return m, nil
 	}
 	if m.BoardMode.Cursor < 0 || m.BoardMode.Cursor >= len(m.BoardMode.Issues) {
@@ -1001,36 +1003,19 @@ func (m Model) openIssueFromBoard() (tea.Model, tea.Cmd) {
 	return m.pushModal(issueID, PanelTaskList) // Use TaskList as source panel for board mode
 }
 
-// exitBoardMode switches back to the All Issues board
+// exitBoardMode returns to the categorized Task List view
 func (m Model) exitBoardMode() (Model, tea.Cmd) {
-	// Get the built-in All Issues board
-	board, err := m.DB.GetBoard("bd-all-issues")
-	if err != nil {
-		m.StatusMessage = "Error: " + err.Error()
-		m.StatusIsError = true
-		return m, nil
-	}
-
-	m.BoardMode.Active = true
-	m.BoardMode.Board = board
+	m.TaskListMode = TaskListModeCategorized
+	m.BoardMode.Board = nil
+	m.BoardMode.Issues = nil
 	m.BoardMode.Cursor = 0
 	m.BoardMode.ScrollOffset = 0
-	if m.BoardMode.StatusFilter == nil {
-		m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
-	}
-
-	// Update last viewed
-	if err := m.DB.UpdateBoardLastViewed(board.ID); err != nil {
-		m.StatusMessage = "Error: " + err.Error()
-		m.StatusIsError = true
-	}
-
-	return m, m.fetchBoardIssues(board.ID)
+	return m, m.fetchData()
 }
 
 // toggleBoardClosed toggles the closed status in the board status filter
 func (m Model) toggleBoardClosed() (Model, tea.Cmd) {
-	if !m.BoardMode.Active || m.BoardMode.Board == nil {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
 		return m, nil
 	}
 
@@ -1053,7 +1038,7 @@ func (m Model) toggleBoardClosed() (Model, tea.Cmd) {
 
 // cycleBoardStatusFilter cycles through status filter presets
 func (m Model) cycleBoardStatusFilter() (Model, tea.Cmd) {
-	if !m.BoardMode.Active || m.BoardMode.Board == nil {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
 		return m, nil
 	}
 
@@ -1071,7 +1056,7 @@ func (m Model) cycleBoardStatusFilter() (Model, tea.Cmd) {
 
 // moveIssueInBoard moves the current issue up or down in the board
 func (m Model) moveIssueInBoard(direction int) (Model, tea.Cmd) {
-	if !m.BoardMode.Active || m.BoardMode.Board == nil {
+	if m.TaskListMode != TaskListModeBoard || m.BoardMode.Board == nil {
 		return m, nil
 	}
 	if len(m.BoardMode.Issues) == 0 {

@@ -16,6 +16,14 @@ const (
 	PanelActivity
 )
 
+// TaskListMode represents the display mode of the Task List panel
+type TaskListMode int
+
+const (
+	TaskListModeCategorized TaskListMode = iota // Default categorized view (Reviewable, Ready, Blocked, etc.)
+	TaskListModeBoard                           // Board view with flat list and ordering
+)
+
 // Rect represents a rectangular region for hit-testing
 type Rect struct {
 	X, Y, W, H int
@@ -347,9 +355,8 @@ type BoardIssuesMsg struct {
 	Error   error
 }
 
-// BoardMode holds state for board mode view
+// BoardMode holds state for board mode view (when Task List is in board mode)
 type BoardMode struct {
-	Active       bool                    // Whether board mode is active
 	Board        *models.Board           // Currently active board
 	Issues       []models.BoardIssueView // Issues in the board
 	Cursor       int                     // Selected issue index

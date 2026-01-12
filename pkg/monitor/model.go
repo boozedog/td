@@ -102,6 +102,7 @@ type Model struct {
 	AllBoards         []models.Board
 
 	// Board mode state
+	TaskListMode         TaskListMode       // Whether Task List shows categorized or board view
 	BoardMode            BoardMode          // Active board mode state
 	BoardStatusPreset    StatusFilterPreset // Current status filter preset for cycling
 
@@ -365,6 +366,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case TickMsg:
 		cmds := []tea.Cmd{m.fetchData(), m.scheduleTick()}
+		// Also refresh board issues if in board mode
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+		}
 		if modalCmd := m.fetchModalDataIfOpen(); modalCmd != nil {
 			cmds = append(cmds, modalCmd)
 		}
@@ -499,7 +504,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case RestoreLastBoardMsg:
 		if msg.Board != nil {
-			m.BoardMode.Active = true
+			m.TaskListMode = TaskListModeBoard
+			m.ActivePanel = PanelTaskList // Focus the Task List panel
 			m.BoardMode.Board = msg.Board
 			m.BoardMode.Cursor = 0
 			m.BoardMode.ScrollOffset = 0
