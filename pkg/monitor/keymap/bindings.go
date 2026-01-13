@@ -309,6 +309,34 @@ func DefaultBindings() []Binding {
 		{Key: "Y", Command: CmdCopyIDToClipboard, Context: ContextBoard, Description: "Copy issue ID"},
 		{Key: "r", Command: CmdRefresh, Context: ContextBoard, Description: "Refresh"},
 		{Key: "v", Command: CmdToggleBoardView, Context: ContextBoard, Description: "Toggle swimlanes/backlog view"},
+
+		// Panel navigation (same as ContextMain)
+		{Key: "tab", Command: CmdNextPanel, Context: ContextBoard, Description: "Next panel"},
+		{Key: "shift+tab", Command: CmdPrevPanel, Context: ContextBoard, Description: "Previous panel"},
+
+		// Search (same as ContextMain)
+		{Key: "/", Command: CmdSearch, Context: ContextBoard, Description: "Search"},
+
+		// Issue actions (same as ContextMain)
+		{Key: "C", Command: CmdCloseIssue, Context: ContextBoard, Description: "Close issue"},
+		{Key: "O", Command: CmdReopenIssue, Context: ContextBoard, Description: "Reopen issue"},
+		{Key: "n", Command: CmdNewIssue, Context: ContextBoard, Description: "New issue"},
+		{Key: "e", Command: CmdEditIssue, Context: ContextBoard, Description: "Edit issue"},
+		{Key: "x", Command: CmdDelete, Context: ContextBoard, Description: "Delete issue"},
+		{Key: "a", Command: CmdApprove, Context: ContextBoard, Description: "Approve issue"},
+		{Key: "R", Command: CmdMarkForReview, Context: ContextBoard, Description: "Submit for review"},
+
+		// Other actions (same as ContextMain)
+		{Key: "s", Command: CmdOpenStats, Context: ContextBoard, Description: "Open statistics"},
+		{Key: "h", Command: CmdOpenHandoffs, Context: ContextBoard, Description: "Open handoffs"},
+		{Key: "S", Command: CmdCycleSortMode, Context: ContextBoard, Description: "Cycle sort mode"},
+		{Key: "T", Command: CmdCycleTypeFilter, Context: ContextBoard, Description: "Cycle type filter"},
+
+		// Additional navigation (same as ContextMain)
+		{Key: "ctrl+f", Command: CmdFullPageDown, Context: ContextBoard, Description: "Full page down"},
+		{Key: "ctrl+b", Command: CmdFullPageUp, Context: ContextBoard, Description: "Full page up"},
+		{Key: "home", Command: CmdCursorTop, Context: ContextBoard, Description: "Go to top"},
+		{Key: "end", Command: CmdCursorBottom, Context: ContextBoard, Description: "Go to bottom"},
 	}
 }
 

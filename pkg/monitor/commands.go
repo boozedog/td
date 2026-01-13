@@ -1214,39 +1214,45 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 
 	targetIssue := m.BoardMode.Issues[targetIdx]
 
-	// Both must be positioned for swap, or we need to position the current issue
-	if currentIssue.HasPosition && targetIssue.HasPosition {
-		// Both positioned - swap positions
-		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentIssue.Issue.ID, targetIssue.Issue.ID); err != nil {
+	// Position-on-demand: ensure both issues are positioned before swapping
+	// First, position target if needed
+	if !targetIssue.HasPosition {
+		var targetPos int
+		if currentIssue.HasPosition {
+			// Place target relative to current's position
+			if direction < 0 {
+				targetPos = currentIssue.Position // Target goes at current's position (will shift current down)
+			} else {
+				targetPos = currentIssue.Position + 1
+			}
+		} else {
+			// Neither positioned - find nearest positioned neighbor or use 1
+			targetPos = 1
+			for i := targetIdx; i >= 0; i-- {
+				if m.BoardMode.Issues[i].HasPosition {
+					targetPos = m.BoardMode.Issues[i].Position + 1
+					break
+				}
+			}
+		}
+		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetIssue.Issue.ID, targetPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.BoardMode.Cursor = targetIdx
-	} else if !currentIssue.HasPosition {
-		// Current issue is unpositioned - insert at target position
+		m.BoardMode.Issues[targetIdx].HasPosition = true
+		m.BoardMode.Issues[targetIdx].Position = targetPos
+		targetIssue = m.BoardMode.Issues[targetIdx] // Refresh local variable
+	}
+
+	// Now handle current issue
+	if !currentIssue.HasPosition {
+		// Current is unpositioned - insert relative to target
 		var insertPos int
-		if targetIssue.HasPosition {
-			if direction < 0 {
-				// Moving up: insert just above target
-				insertPos = targetIssue.Position
-			} else {
-				// Moving down: insert just below target
-				insertPos = targetIssue.Position + 1
-			}
+		if direction < 0 {
+			insertPos = targetIssue.Position + 1 // Current goes after target (moving up means current ends below target)
 		} else {
-			// Target also unpositioned, find nearest positioned neighbor or use 1
-			insertPos = 1
-			for i := targetIdx; i >= 0; i-- {
-				if m.BoardMode.Issues[i].HasPosition {
-					if direction < 0 {
-						insertPos = m.BoardMode.Issues[i].Position
-					} else {
-						insertPos = m.BoardMode.Issues[i].Position + 1
-					}
-					break
-				}
-			}
+			insertPos = targetIssue.Position // Current goes at target's position (moving down)
 		}
 		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
@@ -1255,8 +1261,13 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 		}
 		m.BoardMode.Cursor = targetIdx
 	} else {
-		// Current is positioned but target is not - can't swap with unpositioned
-		return m, nil
+		// Both now positioned - swap positions
+		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentIssue.Issue.ID, targetIssue.Issue.ID); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		m.BoardMode.Cursor = targetIdx
 	}
 
 	return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
@@ -1304,26 +1315,38 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Both must be positioned for swap, or we need to position the current issue
-	if currentBIV.HasPosition && targetBIV.HasPosition {
-		// Both positioned - swap positions
-		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentBIV.Issue.ID, targetBIV.Issue.ID); err != nil {
+	// Position-on-demand: ensure both issues are positioned before swapping
+	// First, position target if needed
+	if !targetBIV.HasPosition {
+		var targetPos int
+		if currentBIV.HasPosition {
+			// Place target relative to current's position
+			if direction < 0 {
+				targetPos = currentBIV.Position // Target goes at current's position (will shift current down)
+			} else {
+				targetPos = currentBIV.Position + 1
+			}
+		} else {
+			// Neither positioned - start fresh
+			targetPos = 1
+		}
+		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetBIV.Issue.ID, targetPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
 			m.StatusIsError = true
 			return m, nil
 		}
-		m.BoardMode.SwimlaneCursor = targetIdx
-	} else if !currentBIV.HasPosition {
-		// Current issue is unpositioned - insert at target position
+		targetBIV.HasPosition = true
+		targetBIV.Position = targetPos
+	}
+
+	// Now handle current issue
+	if !currentBIV.HasPosition {
+		// Current is unpositioned - insert relative to target
 		var insertPos int
-		if targetBIV.HasPosition {
-			if direction < 0 {
-				insertPos = targetBIV.Position
-			} else {
-				insertPos = targetBIV.Position + 1
-			}
+		if direction < 0 {
+			insertPos = targetBIV.Position + 1 // Current goes after target (moving up means current ends below target)
 		} else {
-			insertPos = 1
+			insertPos = targetBIV.Position // Current goes at target's position (moving down)
 		}
 		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
@@ -1332,8 +1355,13 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 		}
 		m.BoardMode.SwimlaneCursor = targetIdx
 	} else {
-		// Current is positioned but target is not - can't swap with unpositioned
-		return m, nil
+		// Both now positioned - swap positions
+		if err := m.DB.SwapIssuePositions(m.BoardMode.Board.ID, currentBIV.Issue.ID, targetBIV.Issue.ID); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+			return m, nil
+		}
+		m.BoardMode.SwimlaneCursor = targetIdx
 	}
 
 	return m, m.fetchBoardIssues(m.BoardMode.Board.ID)

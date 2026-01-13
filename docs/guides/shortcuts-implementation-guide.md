@@ -534,6 +534,8 @@ Shortcuts are context-aware. Each binding specifies which context it applies to:
 | `ContextParentEpicFocused` | Parent epic row focused in modal |
 | `ContextHandoffs` | Handoffs modal open |
 | `ContextForm` | Form modal (create/edit) open |
+| `ContextBoard` | Board mode active (swimlanes/backlog view) |
+| `ContextBoardPicker` | Board picker modal open |
 
 ## Implementing a New Shortcut
 
@@ -805,9 +807,10 @@ If your command uses a new context, add it to `contextToSidecar`:
 
 ```go
 var contextToSidecar = map[Context]string{
-    ContextMain:   "td-monitor",
-    ContextModal:  "td-modal",
-    ContextBoard:  "td-board",  // Board-specific context
+    ContextMain:        "td-monitor",
+    ContextModal:       "td-modal",
+    ContextBoard:       "td-board",        // Board mode (swimlanes/backlog)
+    ContextBoardPicker: "td-board-picker", // Board selection modal
     // Add new contexts here
 }
 ```

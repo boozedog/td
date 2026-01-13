@@ -59,8 +59,15 @@ var commandMetadata = map[Command]struct {
 	CmdCycleTypeFilter: {"Type", "Cycle type filter", 2},
 
 	// Board mode controls (P2)
-	CmdToggleBoardView:   {"View", "Toggle swimlanes/backlog view", 2},
-	CmdToggleBoardClosed: {"Closed", "Toggle closed in board", 2},
+	CmdOpenBoardPicker:        {"Boards", "Open board picker", 2},
+	CmdSelectBoard:            {"Select", "Select board", 3},
+	CmdCloseBoardPicker:       {"Close", "Close board picker", 3},
+	CmdMoveIssueUp:            {"Move Up", "Move issue up in column", 3},
+	CmdMoveIssueDown:          {"Move Down", "Move issue down in column", 3},
+	CmdExitBoardMode:          {"Exit", "Exit board mode", 3},
+	CmdToggleBoardView:        {"View", "Toggle swimlanes/backlog view", 2},
+	CmdToggleBoardClosed:      {"Closed", "Toggle closed in board", 2},
+	CmdCycleBoardStatusFilter: {"Filter", "Cycle status filter", 2},
 
 	// Lower priority - palette only (P3+)
 	CmdToggleHelp:      {"Help", "Toggle help overlay", 3},
