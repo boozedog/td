@@ -120,7 +120,24 @@ var updateCmd = &cobra.Command{
 					output.Warning("cannot update %s: invalid transition from %s to %s", issueID, issue.Status, newStatus)
 					continue
 				}
+				oldStatus := issue.Status
 				issue.Status = newStatus
+
+				// Record session action for bypass prevention based on transition type
+				var sessionAction models.IssueSessionAction
+				switch {
+				case oldStatus == models.StatusOpen && newStatus == models.StatusInProgress:
+					sessionAction = models.ActionSessionStarted
+				case oldStatus == models.StatusInProgress && newStatus == models.StatusOpen:
+					sessionAction = models.ActionSessionUnstarted
+				case oldStatus == models.StatusInReview && newStatus == models.StatusClosed:
+					sessionAction = models.ActionSessionReviewed
+				}
+				if sessionAction != "" {
+					if err := database.RecordSessionAction(issueID, sess.ID, sessionAction); err != nil {
+						output.Warning("failed to record session history: %v", err)
+					}
+				}
 			}
 
 			// Update dependencies

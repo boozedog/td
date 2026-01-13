@@ -71,6 +71,13 @@ func LogCommandUsage(baseDir string, event CommandUsageEvent) error {
 		return err
 	}
 
+	// Acquire write lock to prevent JSONL corruption from concurrent writes
+	locker := newWriteLocker(baseDir)
+	if err := locker.acquire(defaultTimeout); err != nil {
+		return err
+	}
+	defer locker.release()
+
 	f, err := os.OpenFile(usagePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
@@ -202,6 +209,14 @@ func ComputeAnalyticsSummary(events []CommandUsageEvent, allCommands []string) *
 // ClearCommandUsage removes the usage file
 func ClearCommandUsage(baseDir string) error {
 	usagePath := filepath.Join(baseDir, commandUsageFile)
+
+	// Acquire write lock to prevent race with concurrent writes
+	locker := newWriteLocker(baseDir)
+	if err := locker.acquire(defaultTimeout); err != nil {
+		return err
+	}
+	defer locker.release()
+
 	err := os.Remove(usagePath)
 	if os.IsNotExist(err) {
 		return nil
