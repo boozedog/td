@@ -178,7 +178,12 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		newQuery := m.SearchInput.Value()
 		if newQuery != m.SearchQuery {
 			m.SearchQuery = newQuery
-			return m, tea.Batch(inputCmd, m.fetchData())
+			cmds := []tea.Cmd{inputCmd, m.fetchData()}
+			// Also refresh board issues if in board mode
+			if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+				cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+			}
+			return m, tea.Batch(cmds...)
 		}
 		return m, inputCmd
 	}
@@ -657,9 +662,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.SearchMode = true
 		m.SearchQuery = ""
 		m.SearchInput.SetValue("")
-		m.SearchInput.Focus()
 		m.updatePanelBounds() // Recalc bounds for search bar
-		return m, m.SearchInput.Cursor.BlinkCmd()
+		return m, m.SearchInput.Focus()
 
 	case keymap.CmdToggleClosed:
 		m.IncludeClosed = !m.IncludeClosed

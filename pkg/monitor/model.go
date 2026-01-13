@@ -494,13 +494,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case BoardIssuesMsg:
 		if m.BoardMode.Board != nil && m.BoardMode.Board.ID == msg.BoardID {
-			m.BoardMode.Issues = msg.Issues
 			if msg.Error != nil {
 				m.StatusMessage = "Error loading board issues: " + msg.Error.Error()
 				m.StatusIsError = true
 			}
-			// Build swimlane data for swimlanes view
-			m.BoardMode.SwimlaneData = CategorizeBoardIssues(m.DB, msg.Issues, m.SessionID, m.SortMode)
+			// Apply search filter to board issues (for both backlog and swimlanes)
+			filteredIssues := filterBoardIssuesByQuery(msg.Issues, m.SearchQuery)
+			m.BoardMode.Issues = filteredIssues
+			// Build swimlane data using filtered issues
+			m.BoardMode.SwimlaneData = CategorizeBoardIssues(m.DB, filteredIssues, m.SessionID, m.SortMode)
 			m.BoardMode.SwimlaneRows = BuildSwimlaneRows(m.BoardMode.SwimlaneData)
 		}
 		return m, nil

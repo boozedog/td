@@ -510,6 +510,24 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 	return data
 }
 
+// filterBoardIssuesByQuery filters BoardIssueView slices by search query.
+// Matches against issue ID, title, and type (case-insensitive).
+func filterBoardIssuesByQuery(issues []models.BoardIssueView, query string) []models.BoardIssueView {
+	if query == "" {
+		return issues
+	}
+	query = strings.ToLower(query)
+	var filtered []models.BoardIssueView
+	for _, biv := range issues {
+		if strings.Contains(strings.ToLower(biv.Issue.ID), query) ||
+			strings.Contains(strings.ToLower(biv.Issue.Title), query) ||
+			strings.Contains(strings.ToLower(string(biv.Issue.Type)), query) {
+			filtered = append(filtered, biv)
+		}
+	}
+	return filtered
+}
+
 // getSortFunc returns a sort.Slice less function for the given sort mode
 func getSortFunc(sortMode SortMode) func(issues []models.Issue) func(i, j int) bool {
 	return func(issues []models.Issue) func(i, j int) bool {
