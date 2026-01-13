@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 
+	"regexp"
+
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -14,6 +16,9 @@ import (
 	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
+
+// issueIDPattern matches valid issue IDs like "td-a1b2c3d4"
+var issueIDPattern = regexp.MustCompile(`^td-[0-9a-f]{8}$`)
 
 var logCmd = &cobra.Command{
 	Use:   "log [issue-id] <message>",
@@ -60,8 +65,8 @@ Supports stdin input for multi-line messages or piped input:
 			message = args[1]
 		} else if len(args) == 1 {
 			// One arg: check if it's an issue ID or message
-			// Issue IDs start with "td-", otherwise it's a message
-			if strings.HasPrefix(args[0], "td-") {
+			// Issue IDs match pattern "td-[8 hex chars]", otherwise it's a message
+			if issueIDPattern.MatchString(args[0]) {
 				// It's an issue ID, get message from stdin
 				issueID = args[0]
 				// Check if stdin has data
@@ -90,8 +95,12 @@ Supports stdin input for multi-line messages or piped input:
 			if issueID == "" {
 				issueID, err = config.GetFocus(baseDir)
 				if err != nil || issueID == "" {
-					output.Error("no focused issue. Use --issue or td focus <issue-id>")
-					return fmt.Errorf("no focused issue")
+					output.Error("no issue specified and no focused issue")
+					fmt.Fprintf(os.Stderr, "\nUsage:\n")
+					fmt.Fprintf(os.Stderr, "  td log \"message\"              # Log to focused issue\n")
+					fmt.Fprintf(os.Stderr, "  td log -i <id> \"message\"      # Log to specific issue\n")
+					fmt.Fprintf(os.Stderr, "  td start <id>                 # Focus an issue first\n")
+					return fmt.Errorf("no issue specified")
 				}
 			}
 		}
@@ -169,7 +178,7 @@ Supports stdin input for multi-line messages or piped input:
 func init() {
 	rootCmd.AddCommand(logCmd)
 
-	logCmd.Flags().String("issue", "", "Issue ID (default: focused issue)")
+	logCmd.Flags().StringP("issue", "i", "", "Issue ID (default: focused issue)")
 	logCmd.Flags().Bool("blocker", false, "Mark as blocker")
 	logCmd.Flags().Bool("decision", false, "Mark as decision")
 	logCmd.Flags().Bool("hypothesis", false, "Mark as hypothesis")

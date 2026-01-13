@@ -49,7 +49,7 @@ var createCmd = &cobra.Command{
 		if t, _ := cmd.Flags().GetString("type"); t != "" {
 			issue.Type = models.NormalizeType(t)
 			if !models.IsValidType(issue.Type) {
-				output.Error("invalid type: %s", t)
+				output.Error("invalid type: %s (valid: bug, feature, task, epic, chore)", t)
 				return fmt.Errorf("invalid type: %s", t)
 			}
 		}
@@ -58,7 +58,7 @@ var createCmd = &cobra.Command{
 		if p, _ := cmd.Flags().GetString("priority"); p != "" {
 			issue.Priority = models.NormalizePriority(p)
 			if !models.IsValidPriority(issue.Priority) {
-				output.Error("invalid priority: %s", p)
+				output.Error("invalid priority: %s (valid: P0, P1, P2, P3, P4)", p)
 				return fmt.Errorf("invalid priority: %s", p)
 			}
 		}

@@ -3,11 +3,13 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/suggest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -55,6 +57,11 @@ func Execute() {
 
 		// Log agent error for analysis
 		logAgentError(args, err.Error())
+
+		// Check if this is an unknown flag error and provide suggestions
+		if handleUnknownFlagError(err.Error(), args) {
+			os.Exit(1)
+		}
 
 		// Check if this is an unknown command that we can provide workflow hints for
 		if len(args) > 0 && handleWorkflowHint(args[0]) {
@@ -120,6 +127,72 @@ func logAgentError(args []string, errMsg string) {
 
 	// Log the error (silently fails if project not initialized)
 	db.LogAgentError(dir, args, errMsg, sessionID)
+}
+
+// handleUnknownFlagError checks if error is an unknown flag and suggests alternatives
+// Returns true if handled (printed suggestion)
+func handleUnknownFlagError(errMsg string, args []string) bool {
+	// Match "unknown flag: --foo" or "unknown shorthand flag: 'f'"
+	unknownFlagRe := regexp.MustCompile(`unknown (?:shorthand )?flag: ['\-]*([a-zA-Z0-9\-_]+)`)
+	matches := unknownFlagRe.FindStringSubmatch(errMsg)
+	if len(matches) < 2 {
+		return false
+	}
+
+	unknownFlag := matches[1]
+
+	// Check for common alias hint first
+	if hint := suggest.GetFlagHint(unknownFlag); hint != "" {
+		fmt.Fprintf(os.Stderr, "Error: unknown flag: --%s\n", unknownFlag)
+		fmt.Fprintf(os.Stderr, "  Hint: %s\n", hint)
+		return true
+	}
+
+	// Find the command being run to get its valid flags
+	cmdName := ""
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			cmdName = arg
+			break
+		}
+	}
+
+	// Get valid flags for the command
+	validFlags := getValidFlagsForCommand(cmdName)
+	if len(validFlags) == 0 {
+		return false
+	}
+
+	// Find suggestions
+	suggestions := suggest.Flag(unknownFlag, validFlags)
+
+	fmt.Fprintf(os.Stderr, "Error: unknown flag: --%s\n", unknownFlag)
+	if len(suggestions) > 0 {
+		fmt.Fprintf(os.Stderr, "  Did you mean: %s\n", strings.Join(suggestions, ", "))
+	}
+	fmt.Fprintf(os.Stderr, "  Run 'td %s --help' to see available flags.\n", cmdName)
+	return true
+}
+
+// getValidFlagsForCommand returns the valid flag names for a command
+func getValidFlagsForCommand(cmdName string) []string {
+	var flags []string
+
+	// Find the command
+	cmd, _, err := rootCmd.Find([]string{cmdName})
+	if err != nil || cmd == nil {
+		return flags
+	}
+
+	// Collect all flag names
+	cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		flags = append(flags, "--"+f.Name)
+		if f.Shorthand != "" {
+			flags = append(flags, "-"+f.Shorthand)
+		}
+	})
+
+	return flags
 }
 
 // handleWorkflowHint checks if the command is a common workflow alias and shows a hint

@@ -247,59 +247,182 @@ case "tab":
 
 ### Mouse Support
 
-Register hit regions for buttons during render:
+TD uses inline bounds calculation in mouse handlers rather than a hit region registry. Add mouse support by:
 
+1. **Add hover state field** to Model:
 ```go
-// Register hit regions (calculate positions based on modal layout)
-mouseHandler.AddRect(regionConfirm, x, y, 10, 1, nil)
-mouseHandler.AddRect(regionCancel, x+15, y, 10, 1, nil)
+// In model.go
+MyModalButtonHover int // 0=none, 1=confirm, 2=cancel
 ```
 
-Handle clicks in the mouse handler:
-
+2. **Create click handler** following the confirmation dialog pattern:
 ```go
-case regionConfirm:
-    return m.executeAction()
-case regionCancel:
-    return m.cancelAction()
-```
+// In input.go
+func (m Model) handleMyModalClick(x, y int) (Model, tea.Cmd) {
+    // Calculate modal dimensions (match your render function)
+    modalWidth := 40
+    modalHeight := 10
 
-### Hover State
+    // Center modal
+    modalX := (m.Width - modalWidth) / 2
+    modalY := (m.Height - modalHeight) / 2
 
-Add hover state for visual feedback when mouse moves over buttons:
-
-```go
-// In model struct:
-buttonHover int // 0=none, 1=confirm, 2=cancel
-
-// Handle hover in mouse handler:
-case mouse.ActionHover:
-    return m.handleMouseHover(action)
-
-func (m Model) handleMouseHover(action mouse.MouseAction) (Model, tea.Cmd) {
-    if action.Region == nil {
-        m.buttonHover = 0
+    // Check if click is inside modal
+    if x < modalX || x >= modalX+modalWidth || y < modalY || y >= modalY+modalHeight {
+        // Click outside - close modal
+        m.MyModalOpen = false
         return m, nil
     }
-    switch action.Region.ID {
-    case regionConfirm:
-        m.buttonHover = 1
-    case regionCancel:
-        m.buttonHover = 2
-    default:
-        m.buttonHover = 0
+
+    // Calculate content bounds (account for border + padding)
+    contentStartY := modalY + 2  // border(1) + padding(1)
+    buttonY := contentStartY + 5 // lines before buttons
+
+    // Check button row
+    if y == buttonY {
+        confirmX := modalX + 3
+        cancelX := confirmX + 12
+        if x >= confirmX && x < confirmX+10 {
+            return m.executeConfirm()
+        }
+        if x >= cancelX && x < cancelX+10 {
+            return m.executeCancel()
+        }
+    }
+
+    return m, nil
+}
+```
+
+3. **Create hover handler**:
+```go
+func (m Model) handleMyModalHover(x, y int) (Model, tea.Cmd) {
+    // Same bounds calculation as click handler
+    modalWidth, modalHeight := 40, 10
+    modalX := (m.Width - modalWidth) / 2
+    modalY := (m.Height - modalHeight) / 2
+
+    contentStartY := modalY + 2
+    buttonY := contentStartY + 5
+
+    m.MyModalButtonHover = 0
+    if y == buttonY {
+        confirmX := modalX + 3
+        cancelX := confirmX + 12
+        if x >= confirmX && x < confirmX+10 {
+            m.MyModalButtonHover = 1
+        } else if x >= cancelX && x < cancelX+10 {
+            m.MyModalButtonHover = 2
+        }
     }
     return m, nil
 }
+```
 
-// In modal render, focus takes precedence over hover:
-confirmStyle := styles.Button
-if m.buttonFocus == 1 {
-    confirmStyle = styles.ButtonFocused
-} else if m.buttonHover == 1 {
-    confirmStyle = styles.ButtonHover
+4. **Integrate into handleMouse()** in input.go:
+```go
+// In handleMouse(), add after other modal handlers:
+
+// My modal click
+if m.MyModalOpen && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+    return m.handleMyModalClick(msg.X, msg.Y)
+}
+
+// My modal hover
+if m.MyModalOpen && msg.Action == tea.MouseActionMotion {
+    return m.handleMyModalHover(msg.X, msg.Y)
+}
+
+// Add to the "ignore all events" condition:
+if m.ModalOpen() || m.FormOpen || m.ConfirmOpen || m.MyModalOpen || ... {
+    return m, nil
 }
 ```
+
+### Hover State Rendering
+
+Apply hover styling in render (focus takes precedence over hover):
+
+```go
+// In modal render function:
+confirmStyle := buttonStyle
+cancelStyle := buttonStyle
+
+if m.buttonFocus == 1 {
+    confirmStyle = buttonFocusedStyle
+} else if m.MyModalButtonHover == 1 {
+    confirmStyle = buttonHoverStyle
+}
+
+if m.buttonFocus == 2 {
+    cancelStyle = buttonFocusedStyle
+} else if m.MyModalButtonHover == 2 {
+    cancelStyle = buttonHoverStyle
+}
+```
+
+### List Item Click Support
+
+For modals with clickable list items (like board picker):
+
+```go
+func (m Model) handleListModalClick(x, y int) (Model, tea.Cmd) {
+    // Calculate modal bounds
+    modalWidth := m.Width * 60 / 100
+    modalHeight := m.Height * 60 / 100
+    modalX := (m.Width - modalWidth) / 2
+    modalY := (m.Height - modalHeight) / 2
+
+    // Click outside closes
+    if x < modalX || x >= modalX+modalWidth || y < modalY || y >= modalY+modalHeight {
+        m.ListModalOpen = false
+        return m, nil
+    }
+
+    // Calculate item bounds
+    contentStartY := modalY + 2  // border + padding
+    headerLines := 2             // title + blank line
+    itemStartY := contentStartY + headerLines
+
+    // Convert click to item index
+    clickedIdx := y - itemStartY
+    if clickedIdx >= 0 && clickedIdx < len(m.ListItems) {
+        m.ListCursor = clickedIdx
+        return m.selectListItem()
+    }
+
+    return m, nil
+}
+```
+
+### Scroll Wheel Support
+
+Add scroll wheel handling in handleMouse():
+
+```go
+// In handleMouse(), scroll handling section:
+if m.ListModalOpen {
+    delta := -3
+    if msg.Button == tea.MouseButtonWheelDown {
+        delta = 3
+    }
+    newCursor := m.ListCursor + delta
+    m.ListCursor = clamp(newCursor, 0, len(m.ListItems)-1)
+    return m, nil
+}
+```
+
+### Mouse Support Checklist
+
+When adding mouse support to a modal:
+
+1. **Add hover state field** to Model (e.g., `MyModalButtonHover int`)
+2. **Create click handler** with bounds calculation matching render
+3. **Create hover handler** using same bounds logic
+4. **Integrate into handleMouse()** for click, hover, and scroll
+5. **Add to ignore condition** to block panel clicks when modal is open
+6. **Update render** to apply hover styles (focus > hover > normal)
+7. **Initialize hover state** when opening modal (set to 0 or -1)
 
 ## Core Functions
 
