@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 10
+const SchemaVersion = 11
 
 const schema = `
 -- Issues table
@@ -284,5 +284,10 @@ ON CONFLICT(name) DO UPDATE SET
     is_builtin = 1,
     updated_at = CURRENT_TIMESTAMP;
 `,
+	},
+	{
+		Version:     11,
+		Description: "Add view_mode to boards for swimlanes/backlog toggle",
+		SQL:         `ALTER TABLE boards ADD COLUMN view_mode TEXT NOT NULL DEFAULT 'swimlanes';`,
 	},
 }

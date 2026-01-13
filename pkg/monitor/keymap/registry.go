@@ -117,14 +117,15 @@ const (
 	CmdPrevButton Command = "prev-button"
 
 	// Board commands
-	CmdOpenBoardPicker       Command = "open-board-picker"
-	CmdSelectBoard           Command = "select-board"
-	CmdCloseBoardPicker      Command = "close-board-picker"
-	CmdMoveIssueUp           Command = "move-issue-up"
-	CmdMoveIssueDown         Command = "move-issue-down"
-	CmdExitBoardMode         Command = "exit-board-mode"
-	CmdToggleBoardClosed     Command = "toggle-board-closed"
+	CmdOpenBoardPicker        Command = "open-board-picker"
+	CmdSelectBoard            Command = "select-board"
+	CmdCloseBoardPicker       Command = "close-board-picker"
+	CmdMoveIssueUp            Command = "move-issue-up"
+	CmdMoveIssueDown          Command = "move-issue-down"
+	CmdExitBoardMode          Command = "exit-board-mode"
+	CmdToggleBoardClosed      Command = "toggle-board-closed"
 	CmdCycleBoardStatusFilter Command = "cycle-board-status-filter"
+	CmdToggleBoardView        Command = "toggle-board-view"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

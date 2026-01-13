@@ -378,6 +378,9 @@ func (m Model) renderActivityPanel(height int) string {
 func (m Model) renderTaskListPanel(height int) string {
 	// If in board mode, render board view in this panel
 	if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+		if m.BoardMode.ViewMode == BoardViewSwimlanes {
+			return m.renderBoardSwimlanesView(height)
+		}
 		return m.renderTaskListBoardView(height)
 	}
 
@@ -529,7 +532,7 @@ func (m Model) renderTaskListBoardView(height int) string {
 		if m.BoardMode.Board != nil {
 			boardName = m.BoardMode.Board.Name
 		}
-		panelTitle := fmt.Sprintf("BOARD: %s (0)", boardName)
+		panelTitle := fmt.Sprintf("BOARD: %s [backlog] (0)", boardName)
 		content.WriteString(subtleStyle.Render("No issues match the board query"))
 		content.WriteString("\n\n")
 		content.WriteString(subtleStyle.Render("Try adjusting the status filter with 'c' or 'F'"))
@@ -574,7 +577,7 @@ func (m Model) renderTaskListBoardView(height int) string {
 		effectiveMaxLines--
 	}
 
-	// Build title with board name and position info
+	// Build title with board name, view mode indicator, and position info
 	boardName := "Board"
 	if m.BoardMode.Board != nil {
 		boardName = m.BoardMode.Board.Name
@@ -585,9 +588,9 @@ func (m Model) renderTaskListBoardView(height int) string {
 		if endPos > totalRows {
 			endPos = totalRows
 		}
-		panelTitle = fmt.Sprintf("BOARD: %s (%d-%d of %d)", boardName, offset+1, endPos, totalRows)
+		panelTitle = fmt.Sprintf("BOARD: %s [backlog] (%d-%d of %d)", boardName, offset+1, endPos, totalRows)
 	} else {
-		panelTitle = fmt.Sprintf("BOARD: %s (%d)", boardName, totalRows)
+		panelTitle = fmt.Sprintf("BOARD: %s [backlog] (%d)", boardName, totalRows)
 	}
 
 	// Show up indicator if scrolled down
@@ -654,6 +657,174 @@ func (m Model) renderTaskListBoardView(height int) string {
 	}
 
 	return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)
+}
+
+// renderBoardSwimlanesView renders board issues grouped by status category (swimlanes view)
+func (m Model) renderBoardSwimlanesView(height int) string {
+	var content strings.Builder
+
+	totalRows := len(m.BoardMode.SwimlaneRows)
+
+	// Build sort indicator
+	sortIndicator := ""
+	switch m.SortMode {
+	case SortByCreatedDesc:
+		sortIndicator = " [by:created]"
+	case SortByUpdatedDesc:
+		sortIndicator = " [by:updated]"
+	}
+
+	// Empty state
+	if totalRows == 0 {
+		boardName := "Board"
+		if m.BoardMode.Board != nil {
+			boardName = m.BoardMode.Board.Name
+		}
+		panelTitle := fmt.Sprintf("BOARD: %s [swimlanes]%s (0)", boardName, sortIndicator)
+		content.WriteString(subtleStyle.Render("No issues match the board query"))
+		content.WriteString("\n\n")
+		content.WriteString(subtleStyle.Render("Try adjusting the status filter with 'c' or 'F'"))
+		return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)
+	}
+
+	cursor := m.BoardMode.SwimlaneCursor
+	isActive := m.ActivePanel == PanelTaskList
+	offset := m.BoardMode.SwimlaneScroll
+	maxLines := height - 3 // Account for title + border
+
+	// Determine scroll indicators needed BEFORE clamping
+	needsScroll := totalRows > maxLines
+	showUpIndicator := needsScroll && offset > 0
+
+	// Calculate effective maxLines with indicators
+	effectiveMaxLines := maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	// Reserve space for down indicator if content exceeds visible area
+	if needsScroll && offset+effectiveMaxLines < totalRows {
+		effectiveMaxLines--
+	}
+
+	// Clamp offset using effective maxLines (accounts for indicators)
+	if offset > totalRows-effectiveMaxLines && totalRows > effectiveMaxLines {
+		offset = totalRows - effectiveMaxLines
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Recalculate indicators after clamping
+	showUpIndicator = needsScroll && offset > 0
+	effectiveMaxLines = maxLines
+	if showUpIndicator {
+		effectiveMaxLines--
+	}
+	hasMoreBelow := needsScroll && offset+effectiveMaxLines < totalRows
+	if hasMoreBelow {
+		effectiveMaxLines--
+	}
+
+	// Build title with board name, view mode indicator, and position info
+	boardName := "Board"
+	if m.BoardMode.Board != nil {
+		boardName = m.BoardMode.Board.Name
+	}
+	var panelTitle string
+	if needsScroll {
+		endPos := offset + effectiveMaxLines
+		if endPos > totalRows {
+			endPos = totalRows
+		}
+		panelTitle = fmt.Sprintf("BOARD: %s [swimlanes]%s (%d-%d of %d)", boardName, sortIndicator, offset+1, endPos, totalRows)
+	} else {
+		panelTitle = fmt.Sprintf("BOARD: %s [swimlanes]%s (%d)", boardName, sortIndicator, totalRows)
+	}
+
+	// Show up indicator if scrolled down
+	if showUpIndicator {
+		content.WriteString(subtleStyle.Render("  ▲ more above"))
+		content.WriteString("\n")
+	}
+
+	// Track current category for section headers
+	var currentCategory TaskListCategory
+	linesWritten := 0
+
+	for i, row := range m.BoardMode.SwimlaneRows {
+		if linesWritten >= effectiveMaxLines {
+			break
+		}
+
+		// Skip rows before offset
+		if i < offset {
+			currentCategory = row.Category // Track category even when skipping
+			continue
+		}
+
+		// Add category header when category changes
+		if row.Category != currentCategory {
+			if linesWritten > 0 && linesWritten < effectiveMaxLines {
+				content.WriteString("\n")
+				linesWritten++
+				if linesWritten >= effectiveMaxLines {
+					break
+				}
+			}
+			header := m.formatSwimlaneCategoryHeader(row.Category)
+			content.WriteString(header)
+			content.WriteString("\n")
+			linesWritten++
+			currentCategory = row.Category
+			if linesWritten >= effectiveMaxLines {
+				break
+			}
+		}
+
+		// Format row with category tag and selection highlight
+		tag := m.formatCategoryTag(row.Category)
+		issueStr := m.formatIssueShort(&row.Issue)
+		line := fmt.Sprintf("  %s %s", tag, issueStr)
+
+		if isActive && cursor == i {
+			line = highlightRow(line, m.Width-4)
+		}
+
+		content.WriteString(line)
+		content.WriteString("\n")
+		linesWritten++
+	}
+
+	// Show down indicator if more content below
+	if hasMoreBelow {
+		content.WriteString(subtleStyle.Render("  ▼ more below"))
+		content.WriteString("\n")
+	}
+
+	return m.wrapPanel(panelTitle, content.String(), height, PanelTaskList)
+}
+
+// formatSwimlaneCategoryHeader returns the section header for a swimlane category
+func (m Model) formatSwimlaneCategoryHeader(cat TaskListCategory) string {
+	count := 0
+	switch cat {
+	case CategoryReviewable:
+		count = len(m.BoardMode.SwimlaneData.Reviewable)
+		return reviewAlertStyle.Render("★ REVIEWABLE") + fmt.Sprintf(" (%d):", count)
+	case CategoryNeedsRework:
+		count = len(m.BoardMode.SwimlaneData.NeedsRework)
+		return reworkColor.Render("⚠ NEEDS REWORK") + fmt.Sprintf(" (%d):", count)
+	case CategoryReady:
+		count = len(m.BoardMode.SwimlaneData.Ready)
+		return readyColor.Render("READY") + fmt.Sprintf(" (%d):", count)
+	case CategoryBlocked:
+		count = len(m.BoardMode.SwimlaneData.Blocked)
+		return blockedColor.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
+	case CategoryClosed:
+		count = len(m.BoardMode.SwimlaneData.Closed)
+		return subtleStyle.Render("CLOSED") + fmt.Sprintf(" (%d):", count)
+	}
+	return ""
 }
 
 // formatCategoryHeader returns the section header for a category

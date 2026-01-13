@@ -499,6 +499,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.StatusMessage = "Error loading board issues: " + msg.Error.Error()
 				m.StatusIsError = true
 			}
+			// Build swimlane data for swimlanes view
+			m.BoardMode.SwimlaneData = CategorizeBoardIssues(m.DB, msg.Issues, m.SessionID, m.SortMode)
+			m.BoardMode.SwimlaneRows = BuildSwimlaneRows(m.BoardMode.SwimlaneData)
 		}
 		return m, nil
 
@@ -509,7 +512,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.BoardMode.Board = msg.Board
 			m.BoardMode.Cursor = 0
 			m.BoardMode.ScrollOffset = 0
+			m.BoardMode.SwimlaneCursor = 0
+			m.BoardMode.SwimlaneScroll = 0
 			m.BoardMode.StatusFilter = DefaultBoardStatusFilter()
+			m.BoardMode.ViewMode = BoardViewModeFromString(msg.Board.ViewMode)
 			return m, m.fetchBoardIssues(msg.Board.ID)
 		}
 		return m, nil
@@ -640,6 +646,11 @@ func (m Model) fetchHandoffs() tea.Cmd {
 
 // ensureBoardCursorVisible adjusts the board scroll offset to keep the cursor visible
 func (m *Model) ensureBoardCursorVisible() {
+	if m.BoardMode.ViewMode == BoardViewSwimlanes {
+		m.ensureSwimlaneCursorVisible()
+		return
+	}
+
 	// Estimate visible height (will be calculated more precisely in view)
 	visibleHeight := m.Height - 6 // Rough estimate: header + footer + borders
 	if visibleHeight < 1 {
@@ -664,5 +675,34 @@ func (m *Model) ensureBoardCursorVisible() {
 	}
 	if m.BoardMode.ScrollOffset < 0 {
 		m.BoardMode.ScrollOffset = 0
+	}
+}
+
+// ensureSwimlaneCursorVisible adjusts the swimlane scroll offset to keep the cursor visible
+func (m *Model) ensureSwimlaneCursorVisible() {
+	// Estimate visible height (will be calculated more precisely in view)
+	visibleHeight := m.Height - 6 // Rough estimate: header + footer + borders
+	if visibleHeight < 1 {
+		visibleHeight = 10
+	}
+
+	// Ensure cursor is within visible range
+	if m.BoardMode.SwimlaneCursor < m.BoardMode.SwimlaneScroll {
+		m.BoardMode.SwimlaneScroll = m.BoardMode.SwimlaneCursor
+	}
+	if m.BoardMode.SwimlaneCursor >= m.BoardMode.SwimlaneScroll+visibleHeight {
+		m.BoardMode.SwimlaneScroll = m.BoardMode.SwimlaneCursor - visibleHeight + 1
+	}
+
+	// Clamp scroll offset to valid range
+	maxScroll := len(m.BoardMode.SwimlaneRows) - visibleHeight
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	if m.BoardMode.SwimlaneScroll > maxScroll {
+		m.BoardMode.SwimlaneScroll = maxScroll
+	}
+	if m.BoardMode.SwimlaneScroll < 0 {
+		m.BoardMode.SwimlaneScroll = 0
 	}
 }

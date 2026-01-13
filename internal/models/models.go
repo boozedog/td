@@ -178,6 +178,7 @@ type Board struct {
 	Name         string     `json:"name"`
 	Query        string     `json:"query"`      // TDQ query defining which issues appear
 	IsBuiltin    bool       `json:"is_builtin"` // Cannot delete builtin boards
+	ViewMode     string     `json:"view_mode"`  // "swimlanes" or "backlog"
 	LastViewedAt *time.Time `json:"last_viewed_at,omitempty"`
 	CreatedAt    time.Time  `json:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at"`
