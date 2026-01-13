@@ -13,7 +13,7 @@ import (
 
 var showCmd = &cobra.Command{
 	Use:     "show [issue-id...]",
-	Aliases: []string{"context"},
+	Aliases: []string{"context", "view", "get"},
 	Short:   "Display full details of one or more issues",
 	Long: `Display full details of one or more issues.
 

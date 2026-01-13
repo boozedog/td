@@ -1,6 +1,7 @@
 package models
 
 import (
+	"strings"
 	"time"
 )
 
@@ -304,21 +305,23 @@ func IsValidPriority(p Priority) bool {
 }
 
 // NormalizePriority converts alternate priority formats to canonical form
-// Accepts: "0", "1", "2", "3", "4" as aliases for "P0", "P1", "P2", "P3", "P4"
+// Accepts: "0"-"4" as aliases, case-insensitive "p0"-"p4" or "P0"-"P4"
 func NormalizePriority(p string) Priority {
-	switch p {
-	case "0":
+	// Normalize to uppercase for comparison
+	upper := strings.ToUpper(p)
+	switch upper {
+	case "0", "P0":
 		return PriorityP0
-	case "1":
+	case "1", "P1":
 		return PriorityP1
-	case "2":
+	case "2", "P2":
 		return PriorityP2
-	case "3":
+	case "3", "P3":
 		return PriorityP3
-	case "4":
+	case "4", "P4":
 		return PriorityP4
 	default:
-		return Priority(p)
+		return Priority(upper) // Return uppercase for consistent error messages
 	}
 }
 
@@ -334,13 +337,16 @@ func NormalizeType(t string) Type {
 }
 
 // NormalizeStatus converts alternate status names to canonical form
-// Accepts: "review" as alias for "in_review"
+// Accepts: "review" as alias for "in_review", hyphens converted to underscores
 func NormalizeStatus(s string) Status {
-	switch s {
+	// Convert hyphens to underscores (in-progress → in_progress)
+	normalized := strings.ReplaceAll(s, "-", "_")
+
+	switch normalized {
 	case "review":
 		return StatusInReview
 	default:
-		return Status(s)
+		return Status(normalized)
 	}
 }
 
