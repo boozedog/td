@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/marcus/td/internal/models"
 )
@@ -2250,7 +2251,7 @@ func (m Model) visibleItems(total, offset, height int) int {
 	return remaining
 }
 
-// truncateString truncates a string to maxLen with ellipsis
+// truncateString truncates a string to maxLen with ellipsis (ANSI-aware)
 func truncateString(s string, maxLen int) string {
 	if maxLen <= 3 {
 		return s
@@ -2258,11 +2259,8 @@ func truncateString(s string, maxLen int) string {
 	if lipgloss.Width(s) <= maxLen {
 		return s
 	}
-	// Simple truncation - could be improved for multi-byte chars
-	if len(s) > maxLen-3 {
-		return s[:maxLen-3] + "..."
-	}
-	return s
+	// Use ANSI-aware truncation to handle styled text properly
+	return ansi.Truncate(s, maxLen-3, "...")
 }
 
 // truncateSession shortens a session ID for display
