@@ -31,6 +31,10 @@ func (m Model) currentContext() keymap.Context {
 	if m.StatsOpen {
 		return keymap.ContextStats
 	}
+	// Search mode takes priority - it's an overlay that captures input
+	if m.SearchMode {
+		return keymap.ContextSearch
+	}
 	// Board mode context when Task List is active and in board mode
 	if m.ActivePanel == PanelTaskList && m.TaskListMode == TaskListModeBoard {
 		return keymap.ContextBoard
@@ -55,9 +59,6 @@ func (m Model) currentContext() keymap.Context {
 			}
 		}
 		return keymap.ContextModal
-	}
-	if m.SearchMode {
-		return keymap.ContextSearch
 	}
 	return keymap.ContextMain
 }
@@ -741,6 +742,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.SearchInput.SetValue("")
 		m.SearchInput.Blur()
 		m.updatePanelBounds() // Recalc bounds after search bar closes
+		// Refresh appropriate data based on mode
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
+		}
 		return m, m.fetchData()
 
 	case keymap.CmdSearchClear:
@@ -752,6 +757,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		// Recalc bounds since search bar disappears when query is empty
 		if !m.SearchMode {
 			m.updatePanelBounds()
+		}
+		// Refresh appropriate data based on mode
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
 		}
 		return m, m.fetchData()
 
