@@ -618,7 +618,7 @@ func (m Model) renderTaskListBoardView(height int) string {
 		}
 
 		// Status tag, type, ID, priority (matching swimlanes format)
-		tag := m.formatCategoryTag(m.getCategoryForIssue(issue.ID))
+		tag := m.formatCategoryTag(TaskListCategory(biv.Category))
 		typeStr := formatTypeIcon(issue.Type)
 		idStr := subtleStyle.Render(issue.ID)
 		priStr := formatPriority(issue.Priority)
@@ -867,20 +867,6 @@ func (m Model) formatCategoryTag(cat TaskListCategory) string {
 		return subtleStyle.Render("[CLS]")
 	}
 	return ""
-}
-
-// getCategoryForIssue returns the category for an issue from SwimlaneRows (which
-// properly considers dependency blocking). Falls back to status-based category
-// if not found.
-func (m Model) getCategoryForIssue(issueID string) TaskListCategory {
-	// Look up from SwimlaneRows which has correct dependency-aware categories
-	for _, row := range m.BoardMode.SwimlaneRows {
-		if row.Issue.ID == issueID {
-			return row.Category
-		}
-	}
-	// Fallback if not found (shouldn't happen in board mode)
-	return CategoryReady
 }
 
 // renderModal renders the centered issue details modal

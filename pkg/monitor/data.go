@@ -437,14 +437,12 @@ func FetchStats(database *db.DB) StatsDataMsg {
 	}
 }
 
-// CategorizeBoardIssues takes board issues and groups them by status category
-// for the swimlanes view. Issues are sorted within each category by the
-// provided sort mode (not by position).
-func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sessionID string, sortMode SortMode) TaskListData {
-	var data TaskListData
-
+// ComputeBoardIssueCategories sets the Category field on each BoardIssueView.
+// This is the single source of truth for issue categorization, considering
+// dependency blocking, rejection status, and reviewability.
+func ComputeBoardIssueCategories(database *db.DB, issues []models.BoardIssueView, sessionID string) {
 	if len(issues) == 0 {
-		return data
+		return
 	}
 
 	// Get rejected in_progress issue IDs for "needs rework" detection
@@ -472,30 +470,68 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 		return false
 	}
 
-	// Categorize issues
-	for _, biv := range issues {
-		issue := biv.Issue
+	// Set category on each issue
+	for i := range issues {
+		issue := &issues[i].Issue
+		var category TaskListCategory
+
 		switch issue.Status {
 		case models.StatusOpen:
 			if isBlockedByDeps(issue.ID) {
-				data.Blocked = append(data.Blocked, issue)
+				category = CategoryBlocked
 			} else {
-				data.Ready = append(data.Ready, issue)
+				category = CategoryReady
 			}
 		case models.StatusInProgress:
 			if rejectedIDs[issue.ID] {
-				data.NeedsRework = append(data.NeedsRework, issue)
+				category = CategoryNeedsRework
 			} else {
-				data.Ready = append(data.Ready, issue)
+				category = CategoryReady
 			}
 		case models.StatusBlocked:
-			data.Blocked = append(data.Blocked, issue)
+			category = CategoryBlocked
 		case models.StatusInReview:
 			if issue.ImplementerSession != sessionID {
-				data.Reviewable = append(data.Reviewable, issue)
+				category = CategoryReviewable
+			} else {
+				category = CategoryReady // Own issues in review show as ready
 			}
 		case models.StatusClosed:
-			data.Closed = append(data.Closed, issue)
+			category = CategoryClosed
+		default:
+			category = CategoryReady
+		}
+
+		issues[i].Category = string(category)
+	}
+}
+
+// CategorizeBoardIssues takes board issues and groups them by status category
+// for the swimlanes view. Issues are sorted within each category by the
+// provided sort mode (not by position). Also sets Category on each BoardIssueView.
+func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sessionID string, sortMode SortMode) TaskListData {
+	var data TaskListData
+
+	if len(issues) == 0 {
+		return data
+	}
+
+	// Compute categories (sets Category field on each issue)
+	ComputeBoardIssueCategories(database, issues, sessionID)
+
+	// Group by category
+	for _, biv := range issues {
+		switch TaskListCategory(biv.Category) {
+		case CategoryReady:
+			data.Ready = append(data.Ready, biv.Issue)
+		case CategoryNeedsRework:
+			data.NeedsRework = append(data.NeedsRework, biv.Issue)
+		case CategoryBlocked:
+			data.Blocked = append(data.Blocked, biv.Issue)
+		case CategoryReviewable:
+			data.Reviewable = append(data.Reviewable, biv.Issue)
+		case CategoryClosed:
+			data.Closed = append(data.Closed, biv.Issue)
 		}
 	}
 

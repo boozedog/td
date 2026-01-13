@@ -198,6 +198,7 @@ type BoardIssueView struct {
 	Position    int    `json:"position"`     // Valid only when HasPosition is true
 	HasPosition bool   `json:"has_position"` // True if explicitly positioned
 	Issue       Issue  `json:"issue"`
+	Category    string `json:"category"` // Computed category (ready/blocked/reviewable/etc)
 }
 
 // Comment represents a comment on an issue
