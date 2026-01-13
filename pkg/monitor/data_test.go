@@ -213,14 +213,24 @@ func TestFilterBoardIssuesByQuery(t *testing.T) {
 			wantIDs: []string{"td-abc123", "td-def456", "td-ghi789"},
 		},
 		{
-			name:    "type filter only returns all",
+			name:    "type filter bug",
 			query:   "type=bug",
-			wantIDs: []string{"td-abc123", "td-def456", "td-ghi789"},
+			wantIDs: []string{"td-abc123"},
 		},
 		{
-			name:    "sort and type combined returns all",
+			name:    "type filter task with sort",
 			query:   "sort:priority type=task",
-			wantIDs: []string{"td-abc123", "td-def456", "td-ghi789"},
+			wantIDs: []string{"td-ghi789"},
+		},
+		{
+			name:    "type filter feature",
+			query:   "type=feature",
+			wantIDs: []string{"td-def456"},
+		},
+		{
+			name:    "type filter no matches",
+			query:   "type=epic",
+			wantIDs: []string{},
 		},
 		{
 			name:    "search term filters correctly",
@@ -234,8 +244,8 @@ func TestFilterBoardIssuesByQuery(t *testing.T) {
 		},
 		{
 			name:    "search term with type filter",
-			query:   "feature type=bug",
-			wantIDs: []string{"td-def456"},
+			query:   "login type=bug",
+			wantIDs: []string{"td-abc123"},
 		},
 		{
 			name:    "search by ID",

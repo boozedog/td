@@ -561,33 +561,53 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 
 // filterBoardIssuesByQuery filters BoardIssueView slices by search query.
 // Matches against issue ID, title, and type (case-insensitive).
-// Sort clauses (sort:xxx) and type filters (type=xxx) are stripped before filtering.
+// Sort clauses (sort:xxx) are stripped. Type filters (type=xxx) are applied.
 func filterBoardIssuesByQuery(issues []models.BoardIssueView, query string) []models.BoardIssueView {
 	if query == "" {
 		return issues
 	}
-	// Strip sort clauses and type filters from query - they're not search terms
+
 	words := strings.Fields(query)
 	var searchTerms []string
+	var typeFilter string
+
 	for _, word := range words {
 		lower := strings.ToLower(word)
-		if !strings.HasPrefix(lower, "sort:") && !strings.HasPrefix(lower, "type=") {
+		if t, found := strings.CutPrefix(lower, "type="); found {
+			typeFilter = t
+		} else if !strings.HasPrefix(lower, "sort:") {
 			searchTerms = append(searchTerms, word)
 		}
 	}
-	if len(searchTerms) == 0 {
-		return issues // No actual search terms, return all issues
-	}
-	query = strings.ToLower(strings.Join(searchTerms, " "))
+
+	// Apply type filter first
 	var filtered []models.BoardIssueView
-	for _, biv := range issues {
+	if typeFilter != "" {
+		for _, biv := range issues {
+			if strings.EqualFold(string(biv.Issue.Type), typeFilter) {
+				filtered = append(filtered, biv)
+			}
+		}
+	} else {
+		filtered = issues
+	}
+
+	// Return if no text search needed
+	if len(searchTerms) == 0 {
+		return filtered
+	}
+
+	// Apply text search on filtered results
+	query = strings.ToLower(strings.Join(searchTerms, " "))
+	var result []models.BoardIssueView
+	for _, biv := range filtered {
 		if strings.Contains(strings.ToLower(biv.Issue.ID), query) ||
 			strings.Contains(strings.ToLower(biv.Issue.Title), query) ||
 			strings.Contains(strings.ToLower(string(biv.Issue.Type)), query) {
-			filtered = append(filtered, biv)
+			result = append(result, biv)
 		}
 	}
-	return filtered
+	return result
 }
 
 // getSortFuncWithPosition returns a sort function that respects backlog positions.
