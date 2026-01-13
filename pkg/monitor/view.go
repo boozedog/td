@@ -1181,7 +1181,8 @@ func (m Model) renderModal() string {
 func (m Model) wrapStatsModal(content string, width, height int) string {
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
-		return m.ModalRenderer(content, width, height, ModalTypeStats, 1)
+		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
+		return m.ModalRenderer(content, width+2, height+2, ModalTypeStats, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1460,7 +1461,8 @@ func (m Model) wrapHandoffsModal(content string, width, height int) string {
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
-		return m.ModalRenderer(inner, width, height, ModalTypeHandoffs, 1)
+		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
+		return m.ModalRenderer(inner, width+2, height+2, ModalTypeHandoffs, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1543,7 +1545,8 @@ func (m Model) wrapBoardPickerModal(content string, width, height int) string {
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
-		return m.ModalRenderer(inner, width, height, ModalTypeBoardPicker, 1)
+		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
+		return m.ModalRenderer(inner, width+2, height+2, ModalTypeBoardPicker, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1591,7 +1594,8 @@ func (m Model) renderFormModal() string {
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
-		return m.ModalRenderer(inner, modalWidth, modalHeight, ModalTypeForm, 1)
+		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
+		return m.ModalRenderer(inner, modalWidth+2, modalHeight+2, ModalTypeForm, 1)
 	}
 
 	// Default lipgloss rendering
@@ -1755,7 +1759,8 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
-		return m.ModalRenderer(inner, width, height, ModalTypeIssue, depth)
+		// Add 2 to width/height: lipgloss Width/Height = content area, renderer expects outer with borders
+		return m.ModalRenderer(inner, width+2, height+2, ModalTypeIssue, depth)
 	}
 
 	// Default lipgloss rendering
@@ -1784,7 +1789,8 @@ func (m Model) wrapModalWithDepth(content string, width, height int) string {
 func (m Model) wrapConfirmationModal(content string, width int) string {
 	// Use custom renderer if provided (for embedded mode with custom theming)
 	if m.ModalRenderer != nil {
-		return m.ModalRenderer(content, width, 0, ModalTypeConfirmation, 1)
+		// Add 2 to width: lipgloss Width = content area, renderer expects outer with borders
+		return m.ModalRenderer(content, width+2, 0, ModalTypeConfirmation, 1)
 	}
 
 	// Default lipgloss rendering
@@ -2214,7 +2220,8 @@ func (m Model) wrapPanel(title, content string, height int, panel Panel) string 
 		body := strings.Join(lines, "\n")
 		// Combine title and body
 		inner := lipgloss.JoinVertical(lipgloss.Left, titleStr, body)
-		return m.PanelRenderer(inner, m.Width-2, height, state)
+		// Pass outer width (m.Width) - renderer expects outer dimensions including borders
+		return m.PanelRenderer(inner, m.Width, height, state)
 	}
 
 	// Default lipgloss rendering
