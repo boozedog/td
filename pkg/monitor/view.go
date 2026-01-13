@@ -609,12 +609,12 @@ func (m Model) renderTaskListBoardView(height int) string {
 		biv := m.BoardMode.Issues[i]
 		issue := biv.Issue
 
-		// Position indicator
+		// Position indicator (muted color like timestamps)
 		var posIndicator string
 		if biv.HasPosition {
-			posIndicator = fmt.Sprintf("%3d ", biv.Position)
+			posIndicator = timestampStyle.Render(fmt.Sprintf("%3d", biv.Position)) + " "
 		} else {
-			posIndicator = "  • "
+			posIndicator = timestampStyle.Render("  •") + " "
 		}
 
 		// Status, type, priority
