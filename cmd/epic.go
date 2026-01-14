@@ -49,9 +49,23 @@ var epicListCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		issues, err := database.ListIssues(db.ListIssuesOptions{
+		showAll, _ := cmd.Flags().GetBool("all")
+
+		opts := db.ListIssuesOptions{
 			Type: []models.Type{models.TypeEpic},
-		})
+		}
+
+		// Default: exclude closed epics unless --all is specified
+		if !showAll {
+			opts.Status = []models.Status{
+				models.StatusOpen,
+				models.StatusInProgress,
+				models.StatusBlocked,
+				models.StatusInReview,
+			}
+		}
+
+		issues, err := database.ListIssues(opts)
 		if err != nil {
 			output.Error("%v", err)
 			return err
@@ -82,4 +96,7 @@ func init() {
 	// Hidden type flag - set programmatically to "epic"
 	epicCreateCmd.Flags().StringP("type", "t", "", "")
 	epicCreateCmd.Flags().MarkHidden("type")
+
+	// epicListCmd flags
+	epicListCmd.Flags().BoolP("all", "a", false, "Show all epics including closed")
 }
