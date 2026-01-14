@@ -592,48 +592,48 @@ func TestMinorTaskSelfApprove(t *testing.T) {
 // TestIntegration_SkipReviewNotAllowed verifies cannot skip review workflow step
 func TestIntegration_SkipReviewNotAllowed(t *testing.T) {
 	tests := []struct {
-		name                 string
-		initialStatus        models.Status
-		attemptedStatus      models.Status
-		creatorSession       string
-		implementerSession   string
-		reviewerSession      string
-		attemptingSession    string
-		shouldBeAllowed      bool
-		description          string
+		name               string
+		initialStatus      models.Status
+		attemptedStatus    models.Status
+		creatorSession     string
+		implementerSession string
+		reviewerSession    string
+		attemptingSession  string
+		shouldBeAllowed    bool
+		description        string
 	}{
 		{
-			name:                "Open to Closed directly - bypass review",
-			initialStatus:       models.StatusOpen,
-			attemptedStatus:     models.StatusClosed,
-			creatorSession:      "ses_creator",
-			implementerSession:  "",
-			reviewerSession:     "",
-			attemptingSession:   "ses_other",
-			shouldBeAllowed:     false,
-			description:         "Cannot skip from open directly to closed without review",
+			name:               "Open to Closed directly - bypass review",
+			initialStatus:      models.StatusOpen,
+			attemptedStatus:    models.StatusClosed,
+			creatorSession:     "ses_creator",
+			implementerSession: "",
+			reviewerSession:    "",
+			attemptingSession:  "ses_other",
+			shouldBeAllowed:    false,
+			description:        "Cannot skip from open directly to closed without review",
 		},
 		{
-			name:                "InProgress to Closed directly - bypass review",
-			initialStatus:       models.StatusInProgress,
-			attemptedStatus:     models.StatusClosed,
-			creatorSession:      "ses_creator",
-			implementerSession:  "ses_impl",
-			reviewerSession:     "",
-			attemptingSession:   "ses_impl",
-			shouldBeAllowed:     false,
-			description:         "Cannot skip from in_progress directly to closed without review",
+			name:               "InProgress to Closed directly - bypass review",
+			initialStatus:      models.StatusInProgress,
+			attemptedStatus:    models.StatusClosed,
+			creatorSession:     "ses_creator",
+			implementerSession: "ses_impl",
+			reviewerSession:    "",
+			attemptingSession:  "ses_impl",
+			shouldBeAllowed:    false,
+			description:        "Cannot skip from in_progress directly to closed without review",
 		},
 		{
-			name:                "Must go through InReview first",
-			initialStatus:       models.StatusOpen,
-			attemptedStatus:     models.StatusInReview,
-			creatorSession:      "ses_creator",
-			implementerSession:  "",
-			reviewerSession:     "",
-			attemptingSession:   "ses_other",
-			shouldBeAllowed:     true,
-			description:         "Can move to review from open",
+			name:               "Must go through InReview first",
+			initialStatus:      models.StatusOpen,
+			attemptedStatus:    models.StatusInReview,
+			creatorSession:     "ses_creator",
+			implementerSession: "",
+			reviewerSession:    "",
+			attemptingSession:  "ses_other",
+			shouldBeAllowed:    true,
+			description:        "Can move to review from open",
 		},
 	}
 
@@ -796,28 +796,28 @@ func TestIntegration_ImplementerCannotApprove(t *testing.T) {
 // TestIntegration_HandoffValidatesWorkflow verifies handoff is recorded in workflow
 func TestIntegration_HandoffValidatesWorkflow(t *testing.T) {
 	tests := []struct {
-		name            string
-		status          models.Status
-		implementerSet  bool
-		description     string
+		name           string
+		status         models.Status
+		implementerSet bool
+		description    string
 	}{
 		{
-			name:            "Handoff at open status",
-			status:          models.StatusOpen,
-			implementerSet:  false,
-			description:     "Handoff can be recorded at open status",
+			name:           "Handoff at open status",
+			status:         models.StatusOpen,
+			implementerSet: false,
+			description:    "Handoff can be recorded at open status",
 		},
 		{
-			name:            "Handoff at in_progress",
-			status:          models.StatusInProgress,
-			implementerSet:  true,
-			description:     "Handoff recorded when in_progress with implementer set",
+			name:           "Handoff at in_progress",
+			status:         models.StatusInProgress,
+			implementerSet: true,
+			description:    "Handoff recorded when in_progress with implementer set",
 		},
 		{
-			name:            "Handoff at in_review",
-			status:          models.StatusInReview,
-			implementerSet:  true,
-			description:     "Handoff recorded when in_review",
+			name:           "Handoff at in_review",
+			status:         models.StatusInReview,
+			implementerSet: true,
+			description:    "Handoff recorded when in_review",
 		},
 	}
 
@@ -1212,12 +1212,12 @@ func TestCommand_DBErrorHandlingApprove(t *testing.T) {
 	// On DB error, assume involvement (conservative approach)
 
 	tests := []struct {
-		name           string
-		dbError        bool
-		sessionID      string
-		isCreator      bool
-		isImplementer  bool
-		isMinor        bool
+		name             string
+		dbError          bool
+		sessionID        string
+		isCreator        bool
+		isImplementer    bool
+		isMinor          bool
 		expectCanApprove bool
 	}{
 		{
@@ -1295,13 +1295,13 @@ func TestCommand_DBErrorHandlingApprove(t *testing.T) {
 // TestCommand_DBErrorHandlingClose verifies conservative behavior on DB errors for close
 func TestCommand_DBErrorHandlingClose(t *testing.T) {
 	tests := []struct {
-		name            string
-		dbError         bool
-		isCreator       bool
-		isImplementer   bool
-		hasOtherImpl    bool
-		isMinor         bool
-		expectCanClose  bool
+		name           string
+		dbError        bool
+		isCreator      bool
+		isImplementer  bool
+		hasOtherImpl   bool
+		isMinor        bool
+		expectCanClose bool
 	}{
 		{
 			name:           "DB error assumes involvement - blocks close",
@@ -1459,10 +1459,10 @@ func TestCommand_ImplementerOnlyCannotApprove(t *testing.T) {
 // TestCommand_StatusValidationBeforeApprove verifies status must be in_review before approve
 func TestCommand_StatusValidationBeforeApprove(t *testing.T) {
 	tests := []struct {
-		name                string
-		status              models.Status
-		shouldAllowApprove  bool
-		description         string
+		name               string
+		status             models.Status
+		shouldAllowApprove bool
+		description        string
 	}{
 		{
 			name:               "Open status - should not approve",
@@ -1650,9 +1650,9 @@ func TestCommand_MinorTaskBypassesAllChecks(t *testing.T) {
 // TestCommand_PreviousInvolvementPreventsApprove verifies that any prior involvement blocks approval
 func TestCommand_PreviousInvolvementPreventsApprove(t *testing.T) {
 	tests := []struct {
-		name         string
-		actions      []models.IssueSessionAction
-		shouldBlock  bool
+		name        string
+		actions     []models.IssueSessionAction
+		shouldBlock bool
 	}{
 		{
 			name:        "Created only blocks",

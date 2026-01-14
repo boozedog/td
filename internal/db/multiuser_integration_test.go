@@ -22,11 +22,11 @@ func TestMultiUserIssueIndependence(t *testing.T) {
 	// Simulate User A
 	userASession := "ses_user_a"
 	issueA := &models.Issue{
-		Title:           "Task for User A",
-		Status:          models.StatusOpen,
-		CreatorSession:  userASession,
-		Type:            models.TypeTask,
-		Priority:        models.PriorityP1,
+		Title:          "Task for User A",
+		Status:         models.StatusOpen,
+		CreatorSession: userASession,
+		Type:           models.TypeTask,
+		Priority:       models.PriorityP1,
 	}
 	if err := db.CreateIssue(issueA); err != nil {
 		t.Fatalf("User A: CreateIssue failed: %v", err)
@@ -35,11 +35,11 @@ func TestMultiUserIssueIndependence(t *testing.T) {
 	// Simulate User B
 	userBSession := "ses_user_b"
 	issueB := &models.Issue{
-		Title:           "Task for User B",
-		Status:          models.StatusOpen,
-		CreatorSession:  userBSession,
-		Type:            models.TypeTask,
-		Priority:        models.PriorityP2,
+		Title:          "Task for User B",
+		Status:         models.StatusOpen,
+		CreatorSession: userBSession,
+		Type:           models.TypeTask,
+		Priority:       models.PriorityP2,
 	}
 	if err := db.CreateIssue(issueB); err != nil {
 		t.Fatalf("User B: CreateIssue failed: %v", err)
@@ -129,11 +129,11 @@ func TestIssuesVisibleAcrossUsers(t *testing.T) {
 	// User A creates an issue
 	userASession := "ses_creator_a"
 	issue := &models.Issue{
-		Title:           "Shared task",
-		Status:          models.StatusOpen,
-		CreatorSession:  userASession,
-		Type:            models.TypeFeature,
-		Priority:        models.PriorityP1,
+		Title:          "Shared task",
+		Status:         models.StatusOpen,
+		CreatorSession: userASession,
+		Type:           models.TypeFeature,
+		Priority:       models.PriorityP1,
 	}
 	if err := db.CreateIssue(issue); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
@@ -386,9 +386,9 @@ func TestReviewableByLogic(t *testing.T) {
 	}
 
 	testCases := []struct {
-		issueID         string
+		issueID          string
 		shouldReviewable bool
-		description     string
+		description      string
 	}{
 		{issue1.ID, true, "Clean task should be reviewable"},
 		{issue2.ID, false, "Creator should not be able to review"},
@@ -419,11 +419,11 @@ func TestMultipleIssuesPerUser(t *testing.T) {
 	issueIDs := make([]string, issueCount)
 	for i := 0; i < issueCount; i++ {
 		issue := &models.Issue{
-			Title:           "Issue " + string(rune('A'+i)),
-			Status:          models.StatusOpen,
-			CreatorSession:  userSession,
-			Type:            models.TypeTask,
-			Priority:        models.PriorityP2,
+			Title:          "Issue " + string(rune('A'+i)),
+			Status:         models.StatusOpen,
+			CreatorSession: userSession,
+			Type:           models.TypeTask,
+			Priority:       models.PriorityP2,
 		}
 		if err := db.CreateIssue(issue); err != nil {
 			t.Fatalf("CreateIssue %d failed: %v", i, err)
@@ -1412,10 +1412,10 @@ func TestMultiUserIssueListFiltering(t *testing.T) {
 
 	// Create issues with different creators and statuses
 	scenarios := []struct {
-		title     string
-		creator   string
-		status    models.Status
-		priority  models.Priority
+		title       string
+		creator     string
+		status      models.Status
+		priority    models.Priority
 		implementer string
 	}{
 		{"Issue A1", "ses_user_a", models.StatusOpen, models.PriorityP1, ""},
@@ -1446,18 +1446,18 @@ func TestMultiUserIssueListFiltering(t *testing.T) {
 		expected int
 	}{
 		{
-			name: "All open issues",
-			opts: ListIssuesOptions{Status: []models.Status{models.StatusOpen}},
+			name:     "All open issues",
+			opts:     ListIssuesOptions{Status: []models.Status{models.StatusOpen}},
 			expected: 2,
 		},
 		{
-			name: "P1 priority",
-			opts: ListIssuesOptions{Priority: "P1"},
+			name:     "P1 priority",
+			opts:     ListIssuesOptions{Priority: "P1"},
 			expected: 2,
 		},
 		{
-			name: "All issues",
-			opts: ListIssuesOptions{},
+			name:     "All issues",
+			opts:     ListIssuesOptions{},
 			expected: 5,
 		},
 	}

@@ -109,8 +109,8 @@ func TestReadAgentErrors(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		logErrors  []struct {
+		name      string
+		logErrors []struct {
 			args      []string
 			errMsg    string
 			sessionID string
@@ -118,7 +118,7 @@ func TestReadAgentErrors(t *testing.T) {
 		wantCount int
 	}{
 		{
-			name:      "single error",
+			name: "single error",
 			logErrors: []struct {
 				args      []string
 				errMsg    string
@@ -142,7 +142,7 @@ func TestReadAgentErrors(t *testing.T) {
 			wantCount: 3,
 		},
 		{
-			name:      "no errors",
+			name: "no errors",
 			logErrors: []struct {
 				args      []string
 				errMsg    string

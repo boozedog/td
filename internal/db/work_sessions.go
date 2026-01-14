@@ -1,0 +1,139 @@
+package db
+
+import (
+	"database/sql"
+	"fmt"
+	"time"
+
+	"github.com/marcus/td/internal/models"
+)
+
+// CreateWorkSession creates a new work session
+func (db *DB) CreateWorkSession(ws *models.WorkSession) error {
+	return db.withWriteLock(func() error {
+		id, err := generateWSID()
+		if err != nil {
+			return err
+		}
+		ws.ID = id
+		ws.StartedAt = time.Now()
+
+		_, err = db.conn.Exec(`
+			INSERT INTO work_sessions (id, name, session_id, started_at, start_sha)
+			VALUES (?, ?, ?, ?, ?)
+		`, ws.ID, ws.Name, ws.SessionID, ws.StartedAt, ws.StartSHA)
+
+		return err
+	})
+}
+
+// GetWorkSession retrieves a work session
+func (db *DB) GetWorkSession(id string) (*models.WorkSession, error) {
+	var ws models.WorkSession
+	var endedAt sql.NullTime
+
+	err := db.conn.QueryRow(`
+		SELECT id, name, session_id, started_at, ended_at, start_sha, end_sha
+		FROM work_sessions WHERE id = ?
+	`, id).Scan(&ws.ID, &ws.Name, &ws.SessionID, &ws.StartedAt, &endedAt, &ws.StartSHA, &ws.EndSHA)
+
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("work session not found: %s", id)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if endedAt.Valid {
+		ws.EndedAt = &endedAt.Time
+	}
+
+	return &ws, nil
+}
+
+// UpdateWorkSession updates a work session
+func (db *DB) UpdateWorkSession(ws *models.WorkSession) error {
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`
+			UPDATE work_sessions SET name = ?, ended_at = ?, end_sha = ?
+			WHERE id = ?
+		`, ws.Name, ws.EndedAt, ws.EndSHA, ws.ID)
+		return err
+	})
+}
+
+// TagIssueToWorkSession links an issue to a work session
+func (db *DB) TagIssueToWorkSession(wsID, issueID string) error {
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`
+			INSERT OR IGNORE INTO work_session_issues (work_session_id, issue_id, tagged_at)
+			VALUES (?, ?, ?)
+		`, wsID, issueID, time.Now())
+		return err
+	})
+}
+
+// UntagIssueFromWorkSession removes an issue from a work session
+func (db *DB) UntagIssueFromWorkSession(wsID, issueID string) error {
+	return db.withWriteLock(func() error {
+		_, err := db.conn.Exec(`DELETE FROM work_session_issues WHERE work_session_id = ? AND issue_id = ?`, wsID, issueID)
+		return err
+	})
+}
+
+// GetWorkSessionIssues returns issues tagged to a work session
+func (db *DB) GetWorkSessionIssues(wsID string) ([]string, error) {
+	rows, err := db.conn.Query(`
+		SELECT issue_id FROM work_session_issues WHERE work_session_id = ? ORDER BY tagged_at
+	`, wsID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
+// ListWorkSessions returns recent work sessions
+func (db *DB) ListWorkSessions(limit int) ([]models.WorkSession, error) {
+	query := `SELECT id, name, session_id, started_at, ended_at, start_sha, end_sha
+	          FROM work_sessions ORDER BY started_at DESC`
+	args := []interface{}{}
+
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := db.conn.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []models.WorkSession
+	for rows.Next() {
+		var ws models.WorkSession
+		var endedAt sql.NullTime
+
+		if err := rows.Scan(&ws.ID, &ws.Name, &ws.SessionID, &ws.StartedAt, &endedAt, &ws.StartSHA, &ws.EndSHA); err != nil {
+			return nil, err
+		}
+
+		if endedAt.Valid {
+			ws.EndedAt = &endedAt.Time
+		}
+
+		sessions = append(sessions, ws)
+	}
+
+	return sessions, nil
+}
