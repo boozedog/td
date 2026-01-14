@@ -649,7 +649,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if m.HandoffsOpen {
 			return m.openIssueFromHandoffs()
 		}
-		if m.TaskListMode == TaskListModeBoard {
+		if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
 			return m.openIssueFromBoard()
 		}
 		return m.openModal()
