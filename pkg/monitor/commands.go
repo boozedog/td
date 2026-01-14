@@ -395,7 +395,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			modal.Scroll = 0
 		} else if m.BoardPickerOpen {
 			m.BoardPickerCursor = 0
-		} else if m.TaskListMode == TaskListModeBoard {
+		} else if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
 			if m.BoardMode.ViewMode == BoardViewSwimlanes {
 				m.BoardMode.SwimlaneCursor = 0
 				m.BoardMode.SwimlaneScroll = 0
@@ -426,7 +426,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if len(m.AllBoards) > 0 {
 				m.BoardPickerCursor = len(m.AllBoards) - 1
 			}
-		} else if m.TaskListMode == TaskListModeBoard {
+		} else if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
 			if m.BoardMode.ViewMode == BoardViewSwimlanes {
 				if len(m.BoardMode.SwimlaneRows) > 0 {
 					m.BoardMode.SwimlaneCursor = len(m.BoardMode.SwimlaneRows) - 1
@@ -474,7 +474,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if modal.Scroll > maxScroll {
 				modal.Scroll = maxScroll
 			}
-		} else if m.TaskListMode == TaskListModeBoard {
+		} else if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
 			if m.BoardMode.ViewMode == BoardViewSwimlanes {
 				m.BoardMode.SwimlaneCursor += pageSize
 				if m.BoardMode.SwimlaneCursor >= len(m.BoardMode.SwimlaneRows) {
@@ -529,7 +529,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			if modal.Scroll < 0 {
 				modal.Scroll = 0
 			}
-		} else if m.TaskListMode == TaskListModeBoard {
+		} else if m.TaskListMode == TaskListModeBoard && m.ActivePanel == PanelTaskList {
 			if m.BoardMode.ViewMode == BoardViewSwimlanes {
 				m.BoardMode.SwimlaneCursor -= pageSize
 				if m.BoardMode.SwimlaneCursor < 0 {
