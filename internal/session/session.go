@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/marcus/td/internal/git"
+	"github.com/marcus/td/internal/workdir"
 )
 
 const (
@@ -184,6 +185,8 @@ func getContextID() string {
 // Sessions are scoped by branch + agent fingerprint - same agent on same branch = same session.
 // Creates a new session if none exists for this branch/agent combination.
 func GetOrCreate(baseDir string) (*Session, error) {
+	// Check for worktree redirection via .td-root
+	baseDir = workdir.ResolveBaseDir(baseDir)
 	branch := getCurrentBranch()
 	fp := GetAgentFingerprint()
 	agentPath := sessionPathForAgent(baseDir, branch, fp)
@@ -432,6 +435,8 @@ func saveToBranchPath(path string, sess *Session) error {
 
 // Save writes the session to disk as JSON (agent-scoped)
 func Save(baseDir string, sess *Session) error {
+	// Check for worktree redirection via .td-root
+	baseDir = workdir.ResolveBaseDir(baseDir)
 	// Ensure branch is set
 	if sess.Branch == "" {
 		sess.Branch = getCurrentBranch()
@@ -474,6 +479,8 @@ func SetName(baseDir string, name string) (*Session, error) {
 
 // Get returns the current session without creating one (agent-scoped)
 func Get(baseDir string) (*Session, error) {
+	// Check for worktree redirection via .td-root
+	baseDir = workdir.ResolveBaseDir(baseDir)
 	branch := getCurrentBranch()
 	fp := GetAgentFingerprint()
 	agentPath := sessionPathForAgent(baseDir, branch, fp)
@@ -541,6 +548,8 @@ func GetWithContextCheck(baseDir string) (*Session, error) {
 
 // ForceNewSession creates a new session on the current branch/agent, regardless of existing session
 func ForceNewSession(baseDir string) (*Session, error) {
+	// Check for worktree redirection via .td-root
+	baseDir = workdir.ResolveBaseDir(baseDir)
 	branch := getCurrentBranch()
 	fp := GetAgentFingerprint()
 
@@ -583,6 +592,8 @@ func ParseDuration(s string) (time.Duration, error) {
 
 // ListSessions returns all sessions (agent-scoped and legacy branch-scoped)
 func ListSessions(baseDir string) ([]Session, error) {
+	// Check for worktree redirection via .td-root
+	baseDir = workdir.ResolveBaseDir(baseDir)
 	sessionsPath := filepath.Join(baseDir, sessionsDir)
 
 	entries, err := os.ReadDir(sessionsPath)
@@ -637,6 +648,8 @@ func ListSessions(baseDir string) ([]Session, error) {
 
 // CleanupStaleSessions removes session files older than maxAge (handles nested structure)
 func CleanupStaleSessions(baseDir string, maxAge time.Duration) (int, error) {
+	// Check for worktree redirection via .td-root
+	baseDir = workdir.ResolveBaseDir(baseDir)
 	sessionsPath := filepath.Join(baseDir, sessionsDir)
 
 	entries, err := os.ReadDir(sessionsPath)

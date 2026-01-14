@@ -54,6 +54,8 @@ func AnalyticsEnabled() bool {
 
 // LogCommandUsage appends a usage event to the JSONL file
 func LogCommandUsage(baseDir string, event CommandUsageEvent) error {
+	// Check for worktree redirection via .td-root
+	baseDir = ResolveBaseDir(baseDir)
 	usagePath := filepath.Join(baseDir, commandUsageFile)
 
 	// Check if .todos directory exists - if not, project not initialized
@@ -98,6 +100,8 @@ func LogCommandUsageAsync(baseDir string, event CommandUsageEvent) {
 
 // ReadCommandUsage reads all usage events from the file
 func ReadCommandUsage(baseDir string) ([]CommandUsageEvent, error) {
+	// Check for worktree redirection via .td-root
+	baseDir = ResolveBaseDir(baseDir)
 	usagePath := filepath.Join(baseDir, commandUsageFile)
 
 	data, err := os.ReadFile(usagePath)
@@ -208,6 +212,8 @@ func ComputeAnalyticsSummary(events []CommandUsageEvent, allCommands []string) *
 
 // ClearCommandUsage removes the usage file
 func ClearCommandUsage(baseDir string) error {
+	// Check for worktree redirection via .td-root
+	baseDir = ResolveBaseDir(baseDir)
 	usagePath := filepath.Join(baseDir, commandUsageFile)
 
 	// Acquire write lock to prevent race with concurrent writes

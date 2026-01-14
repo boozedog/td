@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/marcus/td/internal/workdir"
 	_ "modernc.org/sqlite"
 )
 
@@ -23,8 +24,18 @@ type DB struct {
 	baseDir string
 }
 
+// ResolveBaseDir checks for a .td-root file in the given directory.
+// If found, it returns the path contained in that file (pointing to the main
+// worktree's root). Otherwise, returns the original baseDir unchanged.
+// This enables git worktrees to share a single td database with the main repo.
+func ResolveBaseDir(baseDir string) string {
+	return workdir.ResolveBaseDir(baseDir)
+}
+
 // Open opens the database and runs any pending migrations
 func Open(baseDir string) (*DB, error) {
+	// Check for worktree redirection via .td-root
+	baseDir = ResolveBaseDir(baseDir)
 	dbPath := filepath.Join(baseDir, dbFile)
 
 	// Check if db exists
@@ -64,6 +75,8 @@ func Open(baseDir string) (*DB, error) {
 
 // Initialize creates the database and runs migrations
 func Initialize(baseDir string) (*DB, error) {
+	// Check for worktree redirection via .td-root
+	baseDir = ResolveBaseDir(baseDir)
 	dbPath := filepath.Join(baseDir, dbFile)
 
 	// Ensure directory exists
