@@ -284,6 +284,7 @@ func (m Model) Init() tea.Cmd {
 		m.fetchData(),
 		m.scheduleTick(),
 		m.restoreLastViewedBoard(),
+		m.restoreFilterState(),
 	}
 
 	// Start async version check (non-blocking)
@@ -305,9 +306,37 @@ func (m Model) restoreLastViewedBoard() tea.Cmd {
 	}
 }
 
+// restoreFilterState returns a command that restores saved filter state on launch
+func (m Model) restoreFilterState() tea.Cmd {
+	return func() tea.Msg {
+		state, err := config.GetFilterState(m.BaseDir)
+		if err != nil || state == nil {
+			return nil
+		}
+		// Only restore if there's actual filter state
+		if state.SearchQuery == "" && state.SortMode == "" && state.TypeFilter == "" && !state.IncludeClosed {
+			return nil
+		}
+		return RestoreFilterMsg{
+			SearchQuery:    state.SearchQuery,
+			SortMode:       SortModeFromString(state.SortMode),
+			TypeFilterMode: TypeFilterModeFromString(state.TypeFilter),
+			IncludeClosed:  state.IncludeClosed,
+		}
+	}
+}
+
 // RestoreLastBoardMsg is sent when restoring the last viewed board on launch
 type RestoreLastBoardMsg struct {
 	Board *models.Board
+}
+
+// RestoreFilterMsg is sent when restoring saved filter state on launch
+type RestoreFilterMsg struct {
+	SearchQuery    string
+	SortMode       SortMode
+	TypeFilterMode TypeFilterMode
+	IncludeClosed  bool
 }
 
 // Update implements tea.Model
@@ -578,6 +607,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.fetchBoardIssues(msg.Board.ID)
 		}
 		return m, nil
+
+	case RestoreFilterMsg:
+		m.SearchQuery = msg.SearchQuery
+		m.SortMode = msg.SortMode
+		m.TypeFilterMode = msg.TypeFilterMode
+		m.IncludeClosed = msg.IncludeClosed
+		// Update the search input to show restored query
+		m.SearchInput.SetValue(msg.SearchQuery)
+		// Refresh data with restored filters
+		return m, m.fetchData()
 	}
 
 	return m, nil

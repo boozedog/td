@@ -2016,21 +2016,24 @@ func (m Model) renderSearchBar() string {
 
 	var sb strings.Builder
 
-	// Icon: triangle, pink when active, subtle when inactive
+	// Icon: triangle with color indicating state
+	// Pink when in search mode, orange when filter active, subtle otherwise
 	pinkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("205")) // Pink
 	if m.SearchMode {
 		sb.WriteString(pinkStyle.Render("▸"))
 		sb.WriteString(" ")
 	} else {
-		sb.WriteString(subtleStyle.Render("▸ "))
+		// Orange triangle to match the active filter query
+		sb.WriteString(searchQueryActiveStyle.Render("▸"))
+		sb.WriteString(" ")
 	}
 
 	// Render the textinput (includes cursor and query)
 	if m.SearchMode {
 		sb.WriteString(m.SearchInput.View())
 	} else {
-		// Not in search mode but have a query - show it without cursor
-		sb.WriteString(m.SearchQuery)
+		// Not in search mode but have a query - show it bright to indicate active filtering
+		sb.WriteString(searchQueryActiveStyle.Render(m.SearchQuery))
 	}
 
 	// Closed indicator

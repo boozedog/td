@@ -81,6 +81,18 @@ func (s SortMode) String() string {
 	}
 }
 
+// SortModeFromString parses a sort mode string
+func SortModeFromString(s string) SortMode {
+	switch s {
+	case "created":
+		return SortByCreatedDesc
+	case "updated":
+		return SortByUpdatedDesc
+	default:
+		return SortByPriority
+	}
+}
+
 // ToDBOptions returns SortBy and SortDesc for ListIssuesOptions
 func (s SortMode) ToDBOptions() (sortBy string, sortDesc bool) {
 	switch s {
@@ -154,6 +166,24 @@ func (t TypeFilterMode) String() string {
 		return "chore"
 	default:
 		return ""
+	}
+}
+
+// TypeFilterModeFromString parses a type filter mode string
+func TypeFilterModeFromString(s string) TypeFilterMode {
+	switch s {
+	case "epic":
+		return TypeFilterEpic
+	case "task":
+		return TypeFilterTask
+	case "bug":
+		return TypeFilterBug
+	case "feature":
+		return TypeFilterFeature
+	case "chore":
+		return TypeFilterChore
+	default:
+		return TypeFilterNone
 	}
 }
 

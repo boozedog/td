@@ -47,6 +47,11 @@ var (
 	helpStyle      = lipgloss.NewStyle().Foreground(mutedColor)
 	timestampStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("244"))
 
+	// Search/filter query style - bright to clearly indicate active filtering
+	searchQueryActiveStyle = lipgloss.NewStyle().
+				Foreground(warningColor). // Orange - stands out clearly
+				Bold(true)
+
 	// Status styles
 	statusStyles = map[models.Status]lipgloss.Style{
 		models.StatusOpen:       lipgloss.NewStyle().Foreground(lipgloss.Color("45")),

@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/query"
 	"github.com/marcus/td/pkg/monitor/keymap"
@@ -669,7 +670,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdToggleClosed:
 		m.IncludeClosed = !m.IncludeClosed
-		return m, m.fetchData()
+		return m, tea.Batch(m.fetchData(), m.saveFilterState())
 
 	case keymap.CmdCycleSortMode:
 		m.SortMode = (m.SortMode + 1) % 3
@@ -681,9 +682,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		// In board mode, also refresh board issues to apply new sort
 		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
-			return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
+			return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID), m.saveFilterState())
 		}
-		return m, m.fetchData()
+		return m, tea.Batch(m.fetchData(), m.saveFilterState())
 
 	case keymap.CmdCycleTypeFilter:
 		m.TypeFilterMode = (m.TypeFilterMode + 1) % 6 // 6 modes: none + 5 types
@@ -700,6 +701,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		cmds := []tea.Cmd{
 			m.fetchData(),
+			m.saveFilterState(),
 			tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
 		}
 		// In board mode, also refresh board issues to apply type filter
@@ -743,7 +745,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.ActivePanel = PanelTaskList
 		m.Cursor[PanelTaskList] = 0
 		m.ScrollOffset[PanelTaskList] = 0
-		return m, nil
+		return m, m.saveFilterState()
 
 	case keymap.CmdSearchCancel:
 		// If TDQ help is open, close it but stay in search mode
@@ -759,9 +761,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.updatePanelBounds() // Recalc bounds after search bar closes
 		// Refresh appropriate data based on mode
 		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
-			return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
+			return m, tea.Batch(m.fetchBoardIssues(m.BoardMode.Board.ID), m.saveFilterState())
 		}
-		return m, m.fetchData()
+		return m, tea.Batch(m.fetchData(), m.saveFilterState())
 
 	case keymap.CmdSearchClear:
 		if m.SearchQuery == "" {
@@ -775,9 +777,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		// Refresh appropriate data based on mode
 		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
-			return m, m.fetchBoardIssues(m.BoardMode.Board.ID)
+			return m, tea.Batch(m.fetchBoardIssues(m.BoardMode.Board.ID), m.saveFilterState())
 		}
-		return m, m.fetchData()
+		return m, tea.Batch(m.fetchData(), m.saveFilterState())
 
 	// Confirmation commands
 	case keymap.CmdConfirm:
@@ -1116,10 +1118,11 @@ func (m Model) exitBoardMode() (Model, tea.Cmd) {
 		if m.BoardMode.Board != nil {
 			return m, tea.Batch(
 				m.fetchBoardIssues(m.BoardMode.Board.ID),
+				m.saveFilterState(),
 				tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
 			)
 		}
-		return m, tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+		return m, tea.Batch(m.saveFilterState(), tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }))
 	}
 
 	// No filters active, exit board mode
@@ -1479,5 +1482,20 @@ func (m Model) fetchBoardIssues(boardID string) tea.Cmd {
 		}
 
 		return BoardIssuesMsg{BoardID: boardID, Issues: issues}
+	}
+}
+
+// saveFilterState returns a command that persists the current filter state to config
+func (m Model) saveFilterState() tea.Cmd {
+	return func() tea.Msg {
+		state := &config.FilterState{
+			SearchQuery:   m.SearchQuery,
+			SortMode:      m.SortMode.String(),
+			TypeFilter:    m.TypeFilterMode.String(),
+			IncludeClosed: m.IncludeClosed,
+		}
+		// Fire and forget - errors are not critical
+		_ = config.SetFilterState(m.BaseDir, state)
+		return nil
 	}
 }
