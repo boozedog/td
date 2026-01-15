@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
@@ -226,7 +227,8 @@ func validateTitle(title string) error {
 		"todo", "work", "item", "thing", "stuff", "test", "new", "add",
 	}
 
-	lower := strings.ToLower(strings.TrimSpace(title))
+	trimmed := strings.TrimSpace(title)
+	lower := strings.ToLower(trimmed)
 
 	// Check for exact match with generic titles
 	for _, generic := range genericTitles {
@@ -235,9 +237,11 @@ func validateTitle(title string) error {
 		}
 	}
 
-	// Check minimum length
-	if len(title) < minLength {
-		return fmt.Errorf("title must be at least %d characters (got %d) - please be more descriptive", minLength, len(title))
+	// Check minimum length using rune count (correct for unicode)
+	// Use trimmed length to prevent whitespace padding exploit
+	runeCount := utf8.RuneCountInString(trimmed)
+	if runeCount < minLength {
+		return fmt.Errorf("title must be at least %d characters (got %d) - please be more descriptive", minLength, runeCount)
 	}
 
 	return nil

@@ -282,6 +282,9 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 			for _, child := range descendants {
 				child.Status = models.StatusClosed
 				child.ClosedAt = &now
+				if child.ImplementerSession == "" {
+					child.ImplementerSession = m.SessionID
+				}
 				m.DB.UpdateIssue(child)
 				m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
@@ -377,6 +380,10 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 			for _, child := range descendants {
 				child.Status = models.StatusClosed
 				child.ClosedAt = &now
+				child.ReviewerSession = m.SessionID
+				if child.ImplementerSession == "" {
+					child.ImplementerSession = m.SessionID
+				}
 				m.DB.UpdateIssue(child)
 				m.DB.AddLog(&models.Log{
 					IssueID:   child.ID,
