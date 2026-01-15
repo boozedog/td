@@ -138,3 +138,39 @@ func SetPaneHeights(baseDir string, heights [3]float64) error {
 	cfg.PaneHeights = heights
 	return Save(baseDir, cfg)
 }
+
+// FilterState holds the current filter/search state for the monitor
+type FilterState struct {
+	SearchQuery   string
+	SortMode      string // "priority", "created", "updated"
+	TypeFilter    string // "", "epic", "task", "bug", "feature", "chore"
+	IncludeClosed bool
+}
+
+// GetFilterState returns the saved filter state
+func GetFilterState(baseDir string) (*FilterState, error) {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return nil, err
+	}
+	return &FilterState{
+		SearchQuery:   cfg.SearchQuery,
+		SortMode:      cfg.SortMode,
+		TypeFilter:    cfg.TypeFilter,
+		IncludeClosed: cfg.IncludeClosed,
+	}, nil
+}
+
+// SetFilterState saves the filter state to config
+func SetFilterState(baseDir string, state *FilterState) error {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return err
+	}
+
+	cfg.SearchQuery = state.SearchQuery
+	cfg.SortMode = state.SortMode
+	cfg.TypeFilter = state.TypeFilter
+	cfg.IncludeClosed = state.IncludeClosed
+	return Save(baseDir, cfg)
+}

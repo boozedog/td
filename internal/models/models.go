@@ -216,6 +216,11 @@ type Config struct {
 	FocusedIssueID    string     `json:"focused_issue_id,omitempty"`
 	ActiveWorkSession string     `json:"active_work_session,omitempty"`
 	PaneHeights       [3]float64 `json:"pane_heights,omitempty"` // Ratios for 3 horizontal panes (sum=1.0)
+	// Filter state for monitor
+	SearchQuery   string `json:"search_query,omitempty"`
+	SortMode      string `json:"sort_mode,omitempty"`   // "priority", "created", "updated"
+	TypeFilter    string `json:"type_filter,omitempty"` // "epic", "task", "bug", "feature", "chore", ""
+	IncludeClosed bool   `json:"include_closed,omitempty"`
 }
 
 // ActionType represents the type of action that was performed
