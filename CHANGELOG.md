@@ -2,6 +2,15 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.13.0] - 2026-01-17
+
+### Features
+- Add send-to-worktree command for sidecar integration
+- Add ctrl+K/ctrl+J shortcuts for move to top/bottom in board mode
+
+### Bug Fixes
+- ws handoff --review now uses proper review flow
+
 ## [v0.12.3] - 2026-01-14
 
 ### Features
