@@ -528,20 +528,15 @@ Flags support values, stdin (-), or file (@path):
 
 		// Submit for review if requested
 		if submitReview {
-			sm := workflow.DefaultMachine()
 			for _, issueID := range issueIDs {
 				issue, _ := database.GetIssue(issueID)
 				if issue != nil && issue.Status == models.StatusInProgress {
-					// Validate transition with state machine
-					if !sm.IsValidTransition(issue.Status, models.StatusInReview) {
-						output.Warning("cannot auto-review %s: invalid transition from %s", issueID, issue.Status)
+					result := submitIssueForReview(database, issue, sess, baseDir, "Submitted for review via ws handoff --review")
+					if !result.Success {
+						output.Warning("%s", result.Message)
 						continue
 					}
-					issue.Status = models.StatusInReview
-					database.UpdateIssue(issue)
-					// Clear focus if this was the focused issue
-					clearFocusIfNeeded(baseDir, issueID)
-					fmt.Printf("REVIEW REQUESTED %s\n", issueID)
+					fmt.Printf("REVIEW REQUESTED %s (session: %s)\n", issueID, sess.ID)
 				}
 			}
 		}

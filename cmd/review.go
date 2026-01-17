@@ -21,6 +21,87 @@ func clearFocusIfNeeded(baseDir, issueID string) {
 	}
 }
 
+// SubmitReviewResult holds the result of a review submission
+type SubmitReviewResult struct {
+	Success bool
+	Message string
+}
+
+// submitIssueForReview submits a single issue for review with proper validation,
+// logging, and undo support. This is the shared logic for both reviewCmd and
+// ws handoff --review.
+func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Session, baseDir string, logMsg string) SubmitReviewResult {
+	// Validate transition with state machine
+	sm := workflow.DefaultMachine()
+	ctx := &workflow.TransitionContext{
+		Issue:      issue,
+		FromStatus: issue.Status,
+		ToStatus:   models.StatusInReview,
+		SessionID:  sess.ID,
+		Context:    workflow.ContextCLI,
+	}
+	_, err := sm.Validate(ctx)
+	if err != nil {
+		return SubmitReviewResult{
+			Success: false,
+			Message: fmt.Sprintf("cannot review %s: %v", issue.ID, err),
+		}
+	}
+	if !sm.IsValidTransition(issue.Status, models.StatusInReview) {
+		return SubmitReviewResult{
+			Success: false,
+			Message: fmt.Sprintf("cannot review %s: invalid transition from %s", issue.ID, issue.Status),
+		}
+	}
+
+	// Capture previous state for undo
+	prevData, _ := json.Marshal(issue)
+
+	// Update issue
+	issue.Status = models.StatusInReview
+	if issue.ImplementerSession == "" {
+		issue.ImplementerSession = sess.ID
+	}
+
+	if err := database.UpdateIssue(issue); err != nil {
+		return SubmitReviewResult{
+			Success: false,
+			Message: fmt.Sprintf("failed to update %s: %v", issue.ID, err),
+		}
+	}
+
+	// Log action for undo
+	newData, _ := json.Marshal(issue)
+	if err := database.LogAction(&models.ActionLog{
+		SessionID:    sess.ID,
+		ActionType:   models.ActionReview,
+		EntityType:   "issue",
+		EntityID:     issue.ID,
+		PreviousData: string(prevData),
+		NewData:      string(newData),
+	}); err != nil {
+		output.Warning("log action failed: %v", err)
+	}
+
+	// Add session log
+	if logMsg == "" {
+		logMsg = "Submitted for review"
+	}
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: sess.ID,
+		Message:   logMsg,
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		output.Warning("add log failed: %v", err)
+	}
+
+	// Clear focus if this was the focused issue
+	clearFocusIfNeeded(baseDir, issue.ID)
+
+	return SubmitReviewResult{Success: true}
+}
+
 var reviewCmd = &cobra.Command{
 	Use:     "review [issue-id...]",
 	Aliases: []string{"submit"},
@@ -104,64 +185,24 @@ Supports bulk operations:
 				issue.Minor = true
 			}
 
-			// Validate transition with state machine
-			sm := workflow.DefaultMachine()
-			if !sm.IsValidTransition(issue.Status, models.StatusInReview) {
-				if jsonOutput {
-					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot review %s: invalid transition from %s", issueID, issue.Status))
-				} else {
-					output.Warning("cannot review %s: invalid transition from %s", issueID, issue.Status)
-				}
-				skipped++
-				continue
-			}
-
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
-
-			// Update issue
-			issue.Status = models.StatusInReview
-			if issue.ImplementerSession == "" {
-				issue.ImplementerSession = sess.ID
-			}
-
-			if err := database.UpdateIssue(issue); err != nil {
-				output.Warning("failed to update %s: %v", issueID, err)
-				skipped++
-				continue
-			}
-
-			// Log action for undo
-			newData, _ := json.Marshal(issue)
-			if err := database.LogAction(&models.ActionLog{
-				SessionID:    sess.ID,
-				ActionType:   models.ActionReview,
-				EntityType:   "issue",
-				EntityID:     issueID,
-				PreviousData: string(prevData),
-				NewData:      string(newData),
-			}); err != nil {
-				output.Warning("log action failed: %v", err)
-			}
-
-			// Log
+			// Prepare log message
 			reason, _ := cmd.Flags().GetString("reason")
 			logMsg := "Submitted for review"
 			if reason != "" {
 				logMsg = reason
 			}
 
-			if err := database.AddLog(&models.Log{
-				IssueID:   issueID,
-				SessionID: sess.ID,
-				Message:   logMsg,
-				Type:      models.LogTypeProgress,
-			}); err != nil {
-				output.Warning("add log failed: %v", err)
+			// Use shared function for consistent validation, logging, and undo support
+			result := submitIssueForReview(database, issue, sess, baseDir, logMsg)
+			if !result.Success {
+				if jsonOutput {
+					output.JSONError(output.ErrCodeDatabaseError, result.Message)
+				} else {
+					output.Warning("%s", result.Message)
+				}
+				skipped++
+				continue
 			}
-
-			// Clear focus if this was the focused issue
-			clearFocusIfNeeded(baseDir, issueID)
 
 			fmt.Printf("REVIEW REQUESTED %s (session: %s)\n", issueID, sess.ID)
 
@@ -175,39 +216,11 @@ Supports bulk operations:
 				if err == nil && len(descendants) > 0 {
 					cascaded := 0
 					for _, child := range descendants {
-						childPrevData, _ := json.Marshal(child)
-
-						child.Status = models.StatusInReview
-						if child.ImplementerSession == "" {
-							child.ImplementerSession = sess.ID
-						}
-
-						if err := database.UpdateIssue(child); err != nil {
-							output.Warning("failed to cascade review to %s: %v", child.ID, err)
+						cascadeResult := submitIssueForReview(database, child, sess, baseDir, fmt.Sprintf("Cascaded review from %s", issueID))
+						if !cascadeResult.Success {
+							output.Warning("failed to cascade review to %s: %s", child.ID, cascadeResult.Message)
 							continue
 						}
-
-						// Log action for undo
-						childNewData, _ := json.Marshal(child)
-						if err := database.LogAction(&models.ActionLog{
-							SessionID:    sess.ID,
-							ActionType:   models.ActionReview,
-							EntityType:   "issue",
-							EntityID:     child.ID,
-							PreviousData: string(childPrevData),
-							NewData:      string(childNewData),
-						}); err != nil {
-							output.Warning("failed to log undo for %s: %v", child.ID, err)
-						}
-
-						// Add log entry
-						database.AddLog(&models.Log{
-							IssueID:   child.ID,
-							SessionID: sess.ID,
-							Message:   fmt.Sprintf("Cascaded review from %s", issueID),
-							Type:      models.LogTypeProgress,
-						})
-
 						cascaded++
 					}
 
