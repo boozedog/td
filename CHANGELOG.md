@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.15.0] - 2026-01-17
+
+### Bug Fixes
+- Make SyntaxTheme actually apply Chroma themes in sidecar
+
 ## [v0.14.0] - 2026-01-17
 
 ### Features
