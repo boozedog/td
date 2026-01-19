@@ -112,6 +112,9 @@ var CommonFlagAliases = map[string]string{
 
 	// Status aliases
 	"state": "--status, -s",
+
+	// Workflow hints
+	"review": "use: td review <issue-id> (after td handoff)",
 }
 
 // GetFlagHint returns a hint for a commonly misused flag

@@ -71,7 +71,15 @@ var boardListCmd = &cobra.Command{
 var boardCreateCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create a new board",
-	Args:  cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 {
+			return fmt.Errorf("requires board name")
+		}
+		if len(args) > 1 {
+			return fmt.Errorf("too many arguments\n  Use: td board create \"%s\" --query '%s'", args[0], strings.Join(args[1:], " "))
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
 		name := args[0]

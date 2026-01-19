@@ -41,6 +41,13 @@ var createCmd = &cobra.Command{
 			return fmt.Errorf("title is required")
 		}
 
+		// Parse type prefix from title if --type not explicitly provided
+		var extractedType models.Type
+		typeFlag, _ := cmd.Flags().GetString("type")
+		if typeFlag == "" {
+			extractedType, title = parseTypeFromTitle(title)
+		}
+
 		// Validate title quality
 		if err := validateTitle(title); err != nil {
 			output.Error("%v", err)
@@ -52,8 +59,13 @@ var createCmd = &cobra.Command{
 			Title: title,
 		}
 
+		// Apply extracted type if no explicit --type
+		if extractedType != "" {
+			issue.Type = extractedType
+		}
+
 		// Type (supports "story" as alias for "feature")
-		if t, _ := cmd.Flags().GetString("type"); t != "" {
+		if t := typeFlag; t != "" {
 			issue.Type = models.NormalizeType(t)
 			if !models.IsValidType(issue.Type) {
 				output.Error("invalid type: %s (valid: bug, feature, task, epic, chore)", t)
@@ -217,9 +229,29 @@ func init() {
 	createCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
 }
 
+// parseTypeFromTitle extracts type prefix from title (e.g., "epic: Title" → "epic", "Title")
+// Returns the extracted type (or empty Type) and the cleaned title
+func parseTypeFromTitle(title string) (models.Type, string) {
+	// Check for "type: title" pattern
+	if idx := strings.Index(title, ":"); idx > 0 && idx < len(title)-1 {
+		prefix := strings.TrimSpace(title[:idx])
+		prefixLower := strings.ToLower(prefix)
+
+		// Only extract if prefix is a valid type
+		normalizedType := models.NormalizeType(prefixLower)
+		if models.IsValidType(normalizedType) {
+			rest := strings.TrimSpace(title[idx+1:])
+			if rest != "" {
+				return normalizedType, rest
+			}
+		}
+	}
+	return "", title
+}
+
 // validateTitle checks that the title is descriptive enough
 func validateTitle(title string) error {
-	const minLength = 20
+	const minLength = 15
 
 	// Generic titles that should be rejected (case-insensitive)
 	genericTitles := []string{
@@ -233,7 +265,7 @@ func validateTitle(title string) error {
 	// Check for exact match with generic titles
 	for _, generic := range genericTitles {
 		if lower == generic {
-			return fmt.Errorf("title '%s' is too generic - please provide a descriptive title (min %d chars)", title, minLength)
+			return fmt.Errorf("title '%s' is too generic - describe what it does or fixes", title)
 		}
 	}
 
@@ -241,7 +273,7 @@ func validateTitle(title string) error {
 	// Use trimmed length to prevent whitespace padding exploit
 	runeCount := utf8.RuneCountInString(trimmed)
 	if runeCount < minLength {
-		return fmt.Errorf("title must be at least %d characters (got %d) - please be more descriptive", minLength, runeCount)
+		return fmt.Errorf("title too short (%d chars, need %d) - e.g. 'Fix login timeout' not 'Fix bug'", runeCount, minLength)
 	}
 
 	return nil

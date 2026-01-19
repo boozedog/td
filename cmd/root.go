@@ -208,6 +208,16 @@ func handleWorkflowHint(cmd string) bool {
 		showWorkflowHint(cmd, "close",
 			"Use 'td close <id>' for direct close, or 'td review' → 'td approve' for reviewed completion.")
 		return true
+	case "story":
+		// "story" is an alias for "feature" type - provide helpful hint
+		fmt.Fprintf(os.Stderr, "\nUnknown command: 'story'\n\n")
+		fmt.Fprintf(os.Stderr, "In td, 'story' maps to type 'feature'. Use:\n")
+		fmt.Fprintf(os.Stderr, "  td create --type feature \"Title\"   Create a feature/story\n")
+		fmt.Fprintf(os.Stderr, "  td list --type feature             List all features/stories\n\n")
+		fmt.Fprintf(os.Stderr, "Or use 'td task' for tasks:\n")
+		fmt.Fprintf(os.Stderr, "  td task create \"Title\"             Create a task\n")
+		fmt.Fprintf(os.Stderr, "  td task list                       List all tasks\n")
+		return true
 	}
 	return false
 }

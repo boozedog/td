@@ -96,10 +96,7 @@ Supports stdin input for multi-line messages or piped input:
 				issueID, err = config.GetFocus(baseDir)
 				if err != nil || issueID == "" {
 					output.Error("no issue specified and no focused issue")
-					fmt.Fprintf(os.Stderr, "\nUsage:\n")
-					fmt.Fprintf(os.Stderr, "  td log \"message\"              # Log to focused issue\n")
-					fmt.Fprintf(os.Stderr, "  td log -i <id> \"message\"      # Log to specific issue\n")
-					fmt.Fprintf(os.Stderr, "  td start <id>                 # Focus an issue first\n")
+					fmt.Fprintln(os.Stderr, "  Use: td log <id> \"message\"  OR  td start <id> first")
 					return fmt.Errorf("no issue specified")
 				}
 			}

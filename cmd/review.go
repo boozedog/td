@@ -185,8 +185,8 @@ Supports bulk operations:
 				issue.Minor = true
 			}
 
-			// Prepare log message
-			reason, _ := cmd.Flags().GetString("reason")
+			// Prepare log message (supports --reason, --message, --comment, --note, --notes)
+			reason := approvalReason(cmd)
 			logMsg := "Submitted for review"
 			if reason != "" {
 				logMsg = reason
@@ -768,6 +768,10 @@ func init() {
 	rootCmd.AddCommand(closeCmd)
 
 	reviewCmd.Flags().StringP("reason", "m", "", "Reason for submitting")
+	reviewCmd.Flags().String("message", "", "Reason for submitting (alias for --reason)")
+	reviewCmd.Flags().String("comment", "", "Reason for submitting (alias for --reason)")
+	reviewCmd.Flags().String("note", "", "Reason for submitting (alias for --reason)")
+	reviewCmd.Flags().String("notes", "", "Reason for submitting (alias for --reason)")
 	reviewCmd.Flags().Bool("json", false, "JSON output")
 	reviewCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
 	approveCmd.Flags().StringP("reason", "m", "", "Reason for approval")
@@ -782,5 +786,7 @@ func init() {
 	closeCmd.Flags().StringP("reason", "m", "", "Reason for closing")
 	closeCmd.Flags().String("comment", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("message", "", "Reason for closing (alias for --reason)")
+	closeCmd.Flags().StringP("note", "n", "", "Reason for closing (alias for --reason)")
+	closeCmd.Flags().String("notes", "", "Reason for closing (alias for --reason)")
 	closeCmd.Flags().String("self-close-exception", "", "Override review requirement when closing own work (requires reason)")
 }

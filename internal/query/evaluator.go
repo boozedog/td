@@ -307,6 +307,15 @@ func (e *Evaluator) functionToSQL(node *FunctionCall) ([]SQLCondition, error) {
 		// These require joins, handle in memory
 		return nil, nil
 
+	case "label", "labels":
+		if len(node.Args) < 1 {
+			return nil, fmt.Errorf("label() requires 1 argument")
+		}
+		label := fmt.Sprintf("%v", node.Args[0])
+		// Use LIKE for comma-separated labels field
+		return []SQLCondition{{Clause: "(labels LIKE ? OR labels LIKE ? OR labels LIKE ? OR labels = ?)",
+			Args: []interface{}{label + ",%", "%," + label + ",%", "%," + label, label}}}, nil
+
 	default:
 		return nil, fmt.Errorf("unknown function: %s", node.Name)
 	}
@@ -743,6 +752,20 @@ func (e *Evaluator) functionToMatcher(node *FunctionCall) (func(models.Issue) bo
 	case "blocks", "blocked_by", "linked_to", "rework":
 		// These require database lookups, handled via cross-entity filter
 		return func(models.Issue) bool { return true }, nil
+
+	case "label", "labels":
+		if len(node.Args) < 1 {
+			return nil, fmt.Errorf("label() requires 1 argument")
+		}
+		label := strings.ToLower(fmt.Sprintf("%v", node.Args[0]))
+		return func(i models.Issue) bool {
+			for _, l := range i.Labels {
+				if strings.ToLower(l) == label {
+					return true
+				}
+			}
+			return false
+		}, nil
 
 	default:
 		return nil, fmt.Errorf("unknown function: %s", node.Name)

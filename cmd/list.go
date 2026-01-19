@@ -8,6 +8,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
+	"github.com/marcus/td/internal/query"
 	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +27,72 @@ var listCmd = &cobra.Command{
 			return err
 		}
 		defer database.Close()
+
+		// Handle --filter flag (TDQ query expression)
+		filterQuery, _ := cmd.Flags().GetString("filter")
+		positionalQuery := ""
+		if len(args) > 0 {
+			positionalQuery = strings.Join(args, " ")
+		}
+
+		if filterQuery != "" && positionalQuery != "" {
+			output.Error("cannot use both --filter and positional query")
+			return fmt.Errorf("cannot use both --filter and positional query")
+		}
+
+		queryStr := filterQuery
+		if positionalQuery != "" {
+			queryStr = positionalQuery
+		}
+
+		if queryStr != "" {
+			// Use TDQ query engine
+			sess, _ := session.GetOrCreate(baseDir)
+			sessionID := ""
+			if sess != nil {
+				sessionID = sess.ID
+			}
+
+			limit, _ := cmd.Flags().GetInt("limit")
+			sortBy, _ := cmd.Flags().GetString("sort")
+			sortDesc, _ := cmd.Flags().GetBool("reverse")
+
+			results, err := query.Execute(database, queryStr, sessionID, query.ExecuteOptions{
+				Limit:    limit,
+				SortBy:   sortBy,
+				SortDesc: sortDesc,
+			})
+			if err != nil {
+				output.Error("Query error: %v", err)
+				return err
+			}
+
+			// Output format
+			format, _ := cmd.Flags().GetString("format")
+			jsonOutput, _ := cmd.Flags().GetBool("json")
+			if format == "json" || jsonOutput {
+				return output.JSON(results)
+			}
+
+			long, _ := cmd.Flags().GetBool("long")
+			if format == "long" || long {
+				for _, issue := range results {
+					logs, _ := database.GetLogs(issue.ID, 5)
+					handoff, _ := database.GetLatestHandoff(issue.ID)
+					fmt.Print(output.FormatIssueLong(&issue, logs, handoff))
+					fmt.Println("---")
+				}
+				return nil
+			}
+
+			for _, issue := range results {
+				fmt.Println(output.FormatIssueShort(&issue))
+			}
+			if len(results) == 0 {
+				fmt.Println("No issues found")
+			}
+			return nil
+		}
 
 		opts := db.ListIssuesOptions{}
 
@@ -507,4 +574,6 @@ func init() {
 	deletedCmd.Flags().Bool("json", false, "JSON output")
 
 	listCmd.Flags().String("format", "", "Output format (short, long, json)")
+	listCmd.Flags().Bool("no-pager", false, "Disable paging (no-op, td list does not page)")
+	listCmd.Flags().StringP("filter", "f", "", "TDQ query expression (e.g., 'status=open AND type=bug')")
 }
