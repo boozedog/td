@@ -2,6 +2,13 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.15.1] - 2026-01-19
+
+### Bug Fixes
+- Fix `--filter` flag validation: error if provided but empty
+- Escape SQL wildcards in label() queries to prevent injection
+- Use actual function name in label()/labels() error messages
+
 ## [v0.15.0] - 2026-01-17
 
 ### Bug Fixes

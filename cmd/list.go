@@ -30,9 +30,16 @@ var listCmd = &cobra.Command{
 
 		// Handle --filter flag (TDQ query expression)
 		filterQuery, _ := cmd.Flags().GetString("filter")
+		filterFlagProvided := cmd.Flags().Changed("filter")
 		positionalQuery := ""
 		if len(args) > 0 {
-			positionalQuery = strings.Join(args, " ")
+			positionalQuery = strings.TrimSpace(strings.Join(args, " "))
+		}
+
+		// Error if --filter provided but empty
+		if filterFlagProvided && filterQuery == "" {
+			output.Error("--filter requires a non-empty query expression")
+			return fmt.Errorf("--filter requires a non-empty query expression")
 		}
 
 		if filterQuery != "" && positionalQuery != "" {

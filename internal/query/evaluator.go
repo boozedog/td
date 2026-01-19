@@ -309,9 +309,9 @@ func (e *Evaluator) functionToSQL(node *FunctionCall) ([]SQLCondition, error) {
 
 	case "label", "labels":
 		if len(node.Args) < 1 {
-			return nil, fmt.Errorf("label() requires 1 argument")
+			return nil, fmt.Errorf("%s() requires 1 argument", node.Name)
 		}
-		label := fmt.Sprintf("%v", node.Args[0])
+		label := escapeSQLWildcards(fmt.Sprintf("%v", node.Args[0]))
 		// Use LIKE for comma-separated labels field
 		return []SQLCondition{{Clause: "(labels LIKE ? OR labels LIKE ? OR labels LIKE ? OR labels = ?)",
 			Args: []interface{}{label + ",%", "%," + label + ",%", "%," + label, label}}}, nil
@@ -755,7 +755,7 @@ func (e *Evaluator) functionToMatcher(node *FunctionCall) (func(models.Issue) bo
 
 	case "label", "labels":
 		if len(node.Args) < 1 {
-			return nil, fmt.Errorf("label() requires 1 argument")
+			return nil, fmt.Errorf("%s() requires 1 argument", node.Name)
 		}
 		label := strings.ToLower(fmt.Sprintf("%v", node.Args[0]))
 		return func(i models.Issue) bool {
