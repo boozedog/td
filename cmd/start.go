@@ -15,8 +15,9 @@ import (
 )
 
 var startCmd = &cobra.Command{
-	Use:   "start [issue-id...]",
-	Short: "Begin work on issue(s)",
+	Use:     "start [issue-id...]",
+	Aliases: []string{"begin"},
+	Short:   "Begin work on issue(s)",
 	Long: `Records current session as implementer and captures git state.
 
 Examples:

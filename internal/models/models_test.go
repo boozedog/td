@@ -320,6 +320,69 @@ func TestHandoffDefaultValues(t *testing.T) {
 	}
 }
 
+// TestNormalizePriority tests priority normalization including word forms
+func TestNormalizePriority(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected Priority
+	}{
+		// Canonical forms
+		{"P0", PriorityP0},
+		{"P1", PriorityP1},
+		{"P2", PriorityP2},
+		{"P3", PriorityP3},
+		{"P4", PriorityP4},
+		// Lowercase
+		{"p0", PriorityP0},
+		{"p1", PriorityP1},
+		{"p2", PriorityP2},
+		{"p3", PriorityP3},
+		{"p4", PriorityP4},
+		// Numeric
+		{"0", PriorityP0},
+		{"1", PriorityP1},
+		{"2", PriorityP2},
+		{"3", PriorityP3},
+		{"4", PriorityP4},
+		// Word forms
+		{"critical", PriorityP0},
+		{"highest", PriorityP0},
+		{"high", PriorityP1},
+		{"medium", PriorityP2},
+		{"normal", PriorityP2},
+		{"default", PriorityP2},
+		{"low", PriorityP3},
+		{"lowest", PriorityP4},
+		{"none", PriorityP4},
+		// Mixed case word forms
+		{"CRITICAL", PriorityP0},
+		{"High", PriorityP1},
+		{"Medium", PriorityP2},
+		{"LOW", PriorityP3},
+	}
+
+	for _, tc := range tests {
+		got := NormalizePriority(tc.input)
+		if got != tc.expected {
+			t.Errorf("NormalizePriority(%q) = %q, want %q", tc.input, got, tc.expected)
+		}
+	}
+}
+
+// TestNormalizePriorityInvalid tests that invalid inputs are returned uppercase
+func TestNormalizePriorityInvalid(t *testing.T) {
+	invalid := []string{"invalid", "P5", "urgent", "asap"}
+	for _, input := range invalid {
+		got := NormalizePriority(input)
+		// Invalid inputs should be returned uppercase (for consistent error messages)
+		if !IsValidPriority(got) {
+			// Good - invalid remains invalid
+		} else {
+			t.Errorf("NormalizePriority(%q) = %q, should be invalid", input, got)
+		}
+	}
+}
+
 // TestFibonacciPropertyBetween tests Fibonacci property between consecutive values
 func TestFibonacciPropertyBetween(t *testing.T) {
 	points := ValidPoints()

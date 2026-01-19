@@ -52,7 +52,15 @@ var updateCmd = &cobra.Command{
 
 			appendMode, _ := cmd.Flags().GetBool("append")
 
-			if desc, _ := cmd.Flags().GetString("description"); desc != "" {
+			// Check description and its aliases (--desc, --body, -d)
+			desc, _ := cmd.Flags().GetString("description")
+			if desc == "" {
+				desc, _ = cmd.Flags().GetString("desc")
+			}
+			if desc == "" {
+				desc, _ = cmd.Flags().GetString("body")
+			}
+			if desc != "" {
 				if appendMode && issue.Description != "" {
 					issue.Description = issue.Description + "\n\n" + desc
 				} else {
@@ -237,7 +245,9 @@ func init() {
 	rootCmd.AddCommand(updateCmd)
 
 	updateCmd.Flags().String("title", "", "New title")
-	updateCmd.Flags().String("description", "", "New description")
+	updateCmd.Flags().StringP("description", "d", "", "New description")
+	updateCmd.Flags().String("desc", "", "Alias for --description")
+	updateCmd.Flags().String("body", "", "Alias for --description")
 	updateCmd.Flags().String("acceptance", "", "New acceptance criteria")
 	updateCmd.Flags().String("type", "", "New type")
 	updateCmd.Flags().String("priority", "", "New priority")

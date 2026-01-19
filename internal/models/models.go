@@ -311,22 +311,23 @@ func IsValidPriority(p Priority) bool {
 
 // NormalizePriority converts alternate priority formats to canonical form
 // Accepts: "0"-"4" as aliases, case-insensitive "p0"-"p4" or "P0"-"P4"
+// Also accepts word forms: critical/highest→P0, high→P1, medium/normal→P2, low→P3, lowest/none→P4
 func NormalizePriority(p string) Priority {
-	// Normalize to uppercase for comparison
-	upper := strings.ToUpper(p)
-	switch upper {
-	case "0", "P0":
+	// Normalize to lowercase for comparison
+	lower := strings.ToLower(p)
+	switch lower {
+	case "0", "p0", "critical", "highest":
 		return PriorityP0
-	case "1", "P1":
+	case "1", "p1", "high":
 		return PriorityP1
-	case "2", "P2":
+	case "2", "p2", "medium", "normal", "default":
 		return PriorityP2
-	case "3", "P3":
+	case "3", "p3", "low":
 		return PriorityP3
-	case "4", "P4":
+	case "4", "p4", "lowest", "none":
 		return PriorityP4
 	default:
-		return Priority(upper) // Return uppercase for consistent error messages
+		return Priority(strings.ToUpper(p)) // Return uppercase for consistent error messages
 	}
 }
 

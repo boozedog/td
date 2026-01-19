@@ -92,6 +92,7 @@ func init() {
 	rootCmd.AddCommand(deleteCmd)
 	rootCmd.AddCommand(restoreCmd)
 
-	// Accept --force as no-op for LLM compatibility
+	// Accept --force and --yes as no-ops for LLM compatibility
 	deleteCmd.Flags().BoolP("force", "f", false, "No-op (delete always succeeds)")
+	deleteCmd.Flags().BoolP("yes", "y", false, "No-op (delete always succeeds, alias for --force)")
 }

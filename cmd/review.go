@@ -576,11 +576,23 @@ Self-closing issues you implemented requires --self-close-exception "reason".
 Examples:
   td close td-abc1                                       # Close (fails if you implemented it)
   td close td-abc1 -m "duplicate of td-xyz"              # Close unworked issue with reason
-  td close td-abc1 --self-close-exception "trivial fix"  # Override for implemented work`,
+  td close td-abc1 --self-close-exception "trivial fix"  # Override for implemented work
+  td done                                                # Close focused issue (if set)`,
 	GroupID: "workflow",
-	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()
+
+		// If no args provided, try to use focused issue
+		if len(args) == 0 {
+			focusedID, err := config.GetFocus(baseDir)
+			if err != nil || focusedID == "" {
+				output.Error("no issue specified and no focused issue")
+				fmt.Println("  Usage: td close <issue-id>")
+				fmt.Println("  Or set focus first: td focus <issue-id>")
+				return fmt.Errorf("no issue specified")
+			}
+			args = []string{focusedID}
+		}
 
 		database, err := db.Open(baseDir)
 		if err != nil {
