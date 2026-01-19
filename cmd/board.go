@@ -92,15 +92,17 @@ var boardCreateCmd = &cobra.Command{
 		}
 
 		// Log action for undo
-		sess, _ := session.Get(baseDir)
-		newData, _ := json.Marshal(board)
-		database.LogAction(&models.ActionLog{
-			SessionID:  sess.ID,
-			ActionType: models.ActionBoardCreate,
-			EntityType: "board",
-			EntityID:   board.ID,
-			NewData:    string(newData),
-		})
+		sess, _ := session.GetOrCreate(baseDir)
+		if sess != nil {
+			newData, _ := json.Marshal(board)
+			database.LogAction(&models.ActionLog{
+				SessionID:  sess.ID,
+				ActionType: models.ActionBoardCreate,
+				EntityType: "board",
+				EntityID:   board.ID,
+				NewData:    string(newData),
+			})
+		}
 
 		output.Success("Created board %s (%s)", board.Name, board.ID)
 		return nil
@@ -129,15 +131,17 @@ var boardDeleteCmd = &cobra.Command{
 		}
 
 		// Log action for undo
-		sess, _ := session.Get(baseDir)
-		prevData, _ := json.Marshal(board)
-		database.LogAction(&models.ActionLog{
-			SessionID:    sess.ID,
-			ActionType:   models.ActionBoardDelete,
-			EntityType:   "board",
-			EntityID:     board.ID,
-			PreviousData: string(prevData),
-		})
+		sess, _ := session.GetOrCreate(baseDir)
+		if sess != nil {
+			prevData, _ := json.Marshal(board)
+			database.LogAction(&models.ActionLog{
+				SessionID:    sess.ID,
+				ActionType:   models.ActionBoardDelete,
+				EntityType:   "board",
+				EntityID:     board.ID,
+				PreviousData: string(prevData),
+			})
+		}
 
 		if err := database.DeleteBoard(board.ID); err != nil {
 			output.Error("%v", err)
@@ -170,7 +174,11 @@ var boardShowCmd = &cobra.Command{
 			return err
 		}
 
-		sess, _ := session.Get(baseDir)
+		sess, _ := session.GetOrCreate(baseDir)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
 
 		// Parse status filter
 		var statusFilter []models.Status
@@ -202,7 +210,7 @@ var boardShowCmd = &cobra.Command{
 		var issues []models.BoardIssueView
 		if board.Query != "" {
 			// Execute TDQ query, then apply positions
-			queryResults, err := query.Execute(database, board.Query, sess.ID, query.ExecuteOptions{})
+			queryResults, err := query.Execute(database, board.Query, sessionID, query.ExecuteOptions{})
 			if err != nil {
 				output.Error("Query error: %v", err)
 				return err
@@ -225,7 +233,7 @@ var boardShowCmd = &cobra.Command{
 			}
 		} else {
 			// Empty query - use GetBoardIssues which handles this case
-			issues, err = database.GetBoardIssues(board.ID, sess.ID, statusFilter)
+			issues, err = database.GetBoardIssues(board.ID, sessionID, statusFilter)
 			if err != nil {
 				output.Error("%v", err)
 				return err
@@ -293,8 +301,7 @@ var boardEditCmd = &cobra.Command{
 			return err
 		}
 
-		// Log action for undo
-		sess, _ := session.Get(baseDir)
+		// Capture previous state for undo
 		prevData, _ := json.Marshal(board)
 
 		// Apply updates
@@ -310,15 +317,19 @@ var boardEditCmd = &cobra.Command{
 			return err
 		}
 
-		newData, _ := json.Marshal(board)
-		database.LogAction(&models.ActionLog{
-			SessionID:    sess.ID,
-			ActionType:   models.ActionBoardUpdate,
-			EntityType:   "board",
-			EntityID:     board.ID,
-			PreviousData: string(prevData),
-			NewData:      string(newData),
-		})
+		// Log action for undo
+		sess, _ := session.GetOrCreate(baseDir)
+		if sess != nil {
+			newData, _ := json.Marshal(board)
+			database.LogAction(&models.ActionLog{
+				SessionID:    sess.ID,
+				ActionType:   models.ActionBoardUpdate,
+				EntityType:   "board",
+				EntityID:     board.ID,
+				PreviousData: string(prevData),
+				NewData:      string(newData),
+			})
+		}
 
 		output.Success("Updated board %s", board.Name)
 		return nil
@@ -361,18 +372,20 @@ var boardMoveCmd = &cobra.Command{
 			return err
 		}
 
-		// Log action for undo
-		sess, _ := session.Get(baseDir)
-		database.LogAction(&models.ActionLog{
-			SessionID:  sess.ID,
-			ActionType: models.ActionBoardSetPosition,
-			EntityType: "board_position",
-			EntityID:   fmt.Sprintf("%s:%s", board.ID, issue.ID),
-		})
-
 		if err := database.SetIssuePosition(board.ID, issue.ID, position); err != nil {
 			output.Error("%v", err)
 			return err
+		}
+
+		// Log action for undo
+		sess, _ := session.GetOrCreate(baseDir)
+		if sess != nil {
+			database.LogAction(&models.ActionLog{
+				SessionID:  sess.ID,
+				ActionType: models.ActionBoardSetPosition,
+				EntityType: "board_position",
+				EntityID:   fmt.Sprintf("%s:%s", board.ID, issue.ID),
+			})
 		}
 
 		output.Success("Set %s to position %d on %s", issue.ID, position, board.Name)
@@ -409,18 +422,20 @@ var boardUnpositionCmd = &cobra.Command{
 			return err
 		}
 
-		// Log action for undo
-		sess, _ := session.Get(baseDir)
-		database.LogAction(&models.ActionLog{
-			SessionID:  sess.ID,
-			ActionType: models.ActionBoardUnposition,
-			EntityType: "board_position",
-			EntityID:   fmt.Sprintf("%s:%s", board.ID, issue.ID),
-		})
-
 		if err := database.RemoveIssuePosition(board.ID, issue.ID); err != nil {
 			output.Error("%v", err)
 			return err
+		}
+
+		// Log action for undo
+		sess, _ := session.GetOrCreate(baseDir)
+		if sess != nil {
+			database.LogAction(&models.ActionLog{
+				SessionID:  sess.ID,
+				ActionType: models.ActionBoardUnposition,
+				EntityType: "board_position",
+				EntityID:   fmt.Sprintf("%s:%s", board.ID, issue.ID),
+			})
 		}
 
 		output.Success("Removed explicit position for %s on %s", issue.ID, board.Name)
