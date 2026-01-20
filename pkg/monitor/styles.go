@@ -14,7 +14,7 @@ const (
 	activityColTimeWidth    = 5  // "15:04" format
 	activityColSessionWidth = 10 // truncated session ID
 	activityColTypeWidth    = 5  // "[LOG]", "[ACT]", "[CMT]"
-	activityColIssueWidth   = 8  // Issue ID like "td-abc123"
+	activityColIssueWidth   = 11 // Issue ID like "td-abc123" + common suffix
 )
 
 var (
@@ -144,9 +144,9 @@ var (
 				Foreground(lipgloss.Color("255"))
 
 	blocksSectionFocusedStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("45")). // Cyan when focused
-				MarginTop(1)
+					Bold(true).
+					Foreground(lipgloss.Color("45")). // Cyan when focused
+					MarginTop(1)
 
 	blocksSelectedStyle = lipgloss.NewStyle().
 				Background(lipgloss.Color("237")).

@@ -328,7 +328,7 @@ func (m Model) formatActivityRow(item ActivityItem, messageWidth int) []string {
 	badge := formatActivityBadge(item.Type) // existing function with styling
 	issueID := ""
 	if item.IssueID != "" {
-		issueID = titleStyle.Render(item.IssueID)
+		issueID = titleStyle.Render(truncateString(item.IssueID, activityColIssueWidth))
 	}
 
 	// Build message with optional title suffix (use bullet instead of pipe)
@@ -394,18 +394,22 @@ func (m Model) renderActivityPanel(height int) string {
 	}
 
 	// Calculate message column width
-	// Fixed columns: Time(5) + Session(10) + Type(5) + Issue(8) = 28
+	// Fixed columns: base widths + 1 space each for separation
 	contentWidth := m.Width - 4 // panel border + padding
-	fixedWidth := activityColTimeWidth + activityColSessionWidth + activityColTypeWidth + activityColIssueWidth
+	timeWidth := activityColTimeWidth + 1
+	sessionWidth := activityColSessionWidth + 1
+	typeWidth := activityColTypeWidth + 1
+	issueWidth := activityColIssueWidth + 1
+	fixedWidth := timeWidth + sessionWidth + typeWidth + issueWidth
 	messageWidth := contentWidth - fixedWidth
 	if messageWidth < 15 {
 		messageWidth = 15
 	}
 	colWidths := []int{
-		activityColTimeWidth,
-		activityColSessionWidth,
-		activityColTypeWidth,
-		activityColIssueWidth,
+		timeWidth,
+		sessionWidth,
+		typeWidth,
+		issueWidth,
 		0, // message column expands to fill
 	}
 
