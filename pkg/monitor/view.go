@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/cellbuf"
 	"github.com/marcus/td/internal/models"
@@ -290,85 +291,168 @@ func (m Model) renderCurrentWorkPanel(height int) string {
 	return m.wrapPanel(panelTitle, content.String(), height, PanelCurrentWork)
 }
 
-// renderActivityPanel renders the activity log panel (Panel 2)
-func (m Model) renderActivityPanel(height int) string {
-	var content strings.Builder
+// activityTableStyleFunc returns a StyleFunc for the activity table
+// that highlights the selected row when the panel is active.
+// visibleCursor is the cursor position relative to visible rows (cursor - offset).
+func (m Model) activityTableStyleFunc(visibleCursor int, isActive bool, colWidths []int) table.StyleFunc {
+	return func(row, col int) lipgloss.Style {
+		style := lipgloss.NewStyle()
 
+		// Header row (row == -1 in lipgloss/table)
+		if row == table.HeaderRow {
+			style = activityTableHeaderStyle
+		}
+
+		// Selected row highlight (only when panel is active)
+		if isActive && row == visibleCursor && row != table.HeaderRow {
+			style = activityTableSelectedStyle
+		}
+
+		if col >= 0 && col < len(colWidths) && colWidths[col] > 0 {
+			style = style.Width(colWidths[col])
+		}
+
+		return style
+	}
+}
+
+// formatActivityRow formats an activity item as table columns.
+// Returns: [Time, Session, Type, Issue, Message+Title]
+// Cells are pre-styled with ANSI codes for colors.
+// Note: Add trailing space to cells to ensure proper column separation
+// when ANSI codes affect width calculation.
+func (m Model) formatActivityRow(item ActivityItem, messageWidth int) []string {
+	// Pre-styled cells using existing style functions
+	timestamp := timestampStyle.Render(item.Timestamp.Format("15:04"))
+	session := subtleStyle.Render(truncateSession(item.SessionID))
+	badge := formatActivityBadge(item.Type) // existing function with styling
+	issueID := ""
+	if item.IssueID != "" {
+		issueID = titleStyle.Render(truncateString(item.IssueID, activityColIssueWidth))
+	}
+
+	// Build message with optional title suffix (use bullet instead of pipe)
+	message := item.Message
+	if item.IssueTitle != "" {
+		availableForTitle := messageWidth - len(message) - 3 // " • "
+		if availableForTitle > 10 {
+			message = message + " " + subtleStyle.Render("• "+truncateString(item.IssueTitle, availableForTitle))
+		} else {
+			// Truncate message to fit some title
+			msgWidth := messageWidth - 13 // " • " + 10 char title
+			if msgWidth > 0 {
+				message = truncateString(message, msgWidth) + " " + subtleStyle.Render("• "+truncateString(item.IssueTitle, 10))
+			}
+		}
+	}
+	message = truncateString(message, messageWidth)
+
+	return []string{timestamp, session, badge, issueID, message}
+}
+
+// renderActivityPanel renders the activity log panel (Panel 2) using lipgloss/table
+func (m Model) renderActivityPanel(height int) string {
 	totalRows := len(m.Activity)
 	if totalRows == 0 {
-		content.WriteString(subtleStyle.Render("No recent activity"))
-		return m.wrapPanel("ACTIVITY LOG", content.String(), height, PanelActivity)
+		content := subtleStyle.Render("No recent activity")
+		return m.wrapPanel("ACTIVITY LOG", content, height, PanelActivity)
 	}
 
 	cursor := m.Cursor[PanelActivity]
 	isActive := m.ActivePanel == PanelActivity
 	offset := m.ScrollOffset[PanelActivity]
-	maxLines := height - 3 // Account for title + border
 
-	// Determine scroll indicators needed BEFORE clamping
-	needsScroll := totalRows > maxLines
-	showUpIndicator := needsScroll && offset > 0
+	layout := activityTableMetrics(height)
+	dataRowsVisible := layout.dataRowsVisible
 
-	// Calculate effective maxLines with indicators
-	effectiveMaxLines := maxLines
-	if showUpIndicator {
-		effectiveMaxLines--
+	// Clamp offset
+	maxOffset := totalRows - dataRowsVisible
+	if maxOffset < 0 {
+		maxOffset = 0
 	}
-	// Reserve space for down indicator if content exceeds visible area
-	if needsScroll && offset+effectiveMaxLines < totalRows {
-		effectiveMaxLines--
-	}
-
-	// Clamp offset using effective maxLines (accounts for indicators)
-	if offset > totalRows-effectiveMaxLines && totalRows > effectiveMaxLines {
-		offset = totalRows - effectiveMaxLines
+	if offset > maxOffset {
+		offset = maxOffset
 	}
 	if offset < 0 {
 		offset = 0
 	}
 
-	// Recalculate indicators after clamping
-	showUpIndicator = needsScroll && offset > 0
-	effectiveMaxLines = maxLines
-	if showUpIndicator {
-		effectiveMaxLines--
+	endIdx := offset + dataRowsVisible
+	if endIdx > totalRows {
+		endIdx = totalRows
 	}
-	hasMoreBelow := needsScroll && offset+effectiveMaxLines < totalRows
-	if hasMoreBelow {
-		effectiveMaxLines--
-	}
+	hasMoreBelow := endIdx < totalRows
 
-	// Build title with position if scrollable
+	// Build table title with position indicator
 	panelTitle := "ACTIVITY LOG"
-	if needsScroll {
-		endPos := offset + effectiveMaxLines
+	if totalRows > dataRowsVisible {
+		endPos := offset + dataRowsVisible
 		if endPos > totalRows {
 			endPos = totalRows
 		}
 		panelTitle = fmt.Sprintf("ACTIVITY LOG (%d-%d of %d)", offset+1, endPos, totalRows)
 	}
 
-	// Show up indicator if scrolled down
-	if showUpIndicator {
-		content.WriteString(subtleStyle.Render("  ▲ more above"))
-		content.WriteString("\n")
+	// Calculate message column width
+	// Fixed columns: base widths + 1 space each for separation
+	contentWidth := m.Width - 4 // panel border + padding
+	timeWidth := activityColTimeWidth + 1
+	sessionWidth := activityColSessionWidth + 1
+	typeWidth := activityColTypeWidth + 1
+	issueWidth := activityColIssueWidth + 1
+	fixedWidth := timeWidth + sessionWidth + typeWidth + issueWidth
+	messageWidth := contentWidth - fixedWidth
+	if messageWidth < 15 {
+		messageWidth = 15
+	}
+	colWidths := []int{
+		timeWidth,
+		sessionWidth,
+		typeWidth,
+		issueWidth,
+		0, // message column expands to fill
 	}
 
-	visible := m.visibleItems(totalRows, offset, effectiveMaxLines)
-	for i := offset; i < offset+visible && i < totalRows; i++ {
-		item := m.Activity[i]
-		line := m.formatActivityItem(item)
-		if isActive && cursor == i {
-			line = highlightRow(line, m.Width-4)
-		}
-		content.WriteString(line)
-		content.WriteString("\n")
+	// Create table with headers
+	t := table.New().
+		Headers("Time", "Sess", "Type", "Issue", "Message").
+		Width(contentWidth).
+		StyleFunc(m.activityTableStyleFunc(cursor-offset, isActive, colWidths)).
+		Border(lipgloss.HiddenBorder()).
+		BorderHeader(false).
+		BorderRow(false).
+		BorderColumn(false).
+		BorderTop(false).
+		BorderBottom(false).
+		BorderLeft(false).
+		BorderRight(false)
+
+	startIdx := offset
+	if startIdx < 0 {
+		startIdx = 0
+	}
+	endIdx = offset + dataRowsVisible
+	if endIdx > totalRows {
+		endIdx = totalRows
+	}
+	visibleRows := endIdx - startIdx
+	if visibleRows < 0 {
+		visibleRows = 0
 	}
 
-	// Show down indicator if more content below
+	rows := make([][]string, visibleRows)
+	for i := 0; i < visibleRows; i++ {
+		rows[i] = m.formatActivityRow(m.Activity[startIdx+i], messageWidth)
+	}
+	t.Rows(rows...)
+
+	// Build content with table and scroll indicator
+	var content strings.Builder
+	content.WriteString(t.Render())
 	if hasMoreBelow {
-		content.WriteString(subtleStyle.Render("  ▼ more below"))
+		moreCount := totalRows - endIdx
 		content.WriteString("\n")
+		content.WriteString(subtleStyle.Render(fmt.Sprintf("  ↓ %d more below", moreCount)))
 	}
 
 	return m.wrapPanel(panelTitle, content.String(), height, PanelActivity)
@@ -500,7 +584,7 @@ func (m Model) renderTaskListPanel(height int) string {
 		// Format row with category tag and selection highlight
 		tag := m.formatCategoryTag(row.Category)
 		issueStr := m.formatIssueShort(&row.Issue)
-		line := fmt.Sprintf("  %s %s", tag, issueStr)
+		line := fmt.Sprintf("%s %s", tag, issueStr)
 
 		if isActive && cursor == i {
 			line = highlightRow(line, m.Width-4)
@@ -787,7 +871,7 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 		// Format row with category tag and selection highlight
 		tag := m.formatCategoryTag(row.Category)
 		issueStr := m.formatIssueShort(&row.Issue)
-		line := fmt.Sprintf("  %s %s", tag, issueStr)
+		line := fmt.Sprintf("%s %s", tag, issueStr)
 
 		if isActive && cursor == i {
 			line = highlightRow(line, m.Width-4)
@@ -819,10 +903,10 @@ func (m Model) formatSwimlaneCategoryHeader(cat TaskListCategory) string {
 		return reworkColor.Render("⚠ NEEDS REWORK") + fmt.Sprintf(" (%d):", count)
 	case CategoryReady:
 		count = len(m.BoardMode.SwimlaneData.Ready)
-		return readyColor.Render("READY") + fmt.Sprintf(" (%d):", count)
+		return readyHeaderStyle.Render("READY") + fmt.Sprintf(" (%d):", count)
 	case CategoryBlocked:
 		count = len(m.BoardMode.SwimlaneData.Blocked)
-		return blockedColor.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
+		return blockedHeaderStyle.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
 	case CategoryClosed:
 		count = len(m.BoardMode.SwimlaneData.Closed)
 		return subtleStyle.Render("CLOSED") + fmt.Sprintf(" (%d):", count)
@@ -842,10 +926,10 @@ func (m Model) formatCategoryHeader(cat TaskListCategory) string {
 		return reworkColor.Render("⚠ NEEDS REWORK") + fmt.Sprintf(" (%d):", count)
 	case CategoryReady:
 		count = len(m.TaskList.Ready)
-		return readyColor.Render("READY") + fmt.Sprintf(" (%d):", count)
+		return readyHeaderStyle.Render("READY") + fmt.Sprintf(" (%d):", count)
 	case CategoryBlocked:
 		count = len(m.TaskList.Blocked)
-		return blockedColor.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
+		return blockedHeaderStyle.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
 	case CategoryClosed:
 		count = len(m.TaskList.Closed)
 		return subtleStyle.Render("CLOSED") + fmt.Sprintf(" (%d):", count)
@@ -2355,56 +2439,6 @@ func (m Model) formatIssueShort(issue *models.Issue) string {
 	return fmt.Sprintf("%s %s %s %s", typeIcon, idStr, priorityStr, truncateString(issue.Title, titleWidth))
 }
 
-// formatActivityItem formats a single activity item
-func (m Model) formatActivityItem(item ActivityItem) string {
-	timestamp := timestampStyle.Render(item.Timestamp.Format("15:04"))
-	session := subtleStyle.Render(truncateSession(item.SessionID))
-	badge := formatActivityBadge(item.Type)
-	issueID := ""
-	if item.IssueID != "" {
-		issueID = titleStyle.Render(item.IssueID) + " "
-	}
-
-	// Calculate fixed width: timestamp + session + badge + issueID + spaces + border
-	fixedWidth := lipgloss.Width(timestamp) + lipgloss.Width(session) + lipgloss.Width(badge) + lipgloss.Width(issueID) + 4 + 4 // 4 spaces + 4 border
-
-	// Calculate available space for message + title
-	availableWidth := m.Width - fixedWidth
-	msgWidth := lipgloss.Width(item.Message)
-
-	// Format title with remaining space after message
-	title := ""
-	if item.IssueTitle != "" {
-		separatorWidth := 3 // " | "
-		minTitleWidth := 10 // minimum useful title width
-		remainingWidth := availableWidth - msgWidth - separatorWidth
-
-		if remainingWidth >= minTitleWidth {
-			// Enough space - use full message, fill rest with title
-			title = " " + subtleStyle.Render("| "+truncateString(item.IssueTitle, remainingWidth))
-			return fmt.Sprintf("%s %s %s %s%s%s", timestamp, session, badge, issueID, item.Message, title)
-		}
-		// Not enough space - truncate message to make room for title
-		titleWidth := minTitleWidth + separatorWidth
-		msg := truncateString(item.Message, availableWidth-titleWidth)
-		title = " " + subtleStyle.Render("| "+truncateString(item.IssueTitle, minTitleWidth))
-		return fmt.Sprintf("%s %s %s %s%s%s", timestamp, session, badge, issueID, msg, title)
-	}
-
-	// No title - give all space to message
-	msg := truncateString(item.Message, availableWidth)
-	return fmt.Sprintf("%s %s %s %s%s", timestamp, session, badge, issueID, msg)
-}
-
-// visibleItems calculates how many items can be shown given scroll offset and height
-func (m Model) visibleItems(total, offset, height int) int {
-	remaining := total - offset
-	if remaining > height {
-		return height
-	}
-	return remaining
-}
-
 // truncateString truncates a string to maxLen with ellipsis (ANSI-aware)
 func truncateString(s string, maxLen int) string {
 	if maxLen <= 3 {
@@ -2437,6 +2471,17 @@ var (
 				Bold(true).
 				Foreground(lipgloss.Color("0")).
 				Background(lipgloss.Color("141"))
+
+	// Header styles for category sections (matching reviewAlertStyle pattern)
+	readyHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("0")).
+				Background(lipgloss.Color("42")) // Green bg
+
+	blockedHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("255")).
+				Background(lipgloss.Color("196")) // Red bg
 
 	// Prominent style for handoff alert - green background
 	handoffAlertStyle = lipgloss.NewStyle().
