@@ -135,7 +135,15 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 
 		// Refresh modal if open
 		if modal := m.CurrentModal(); modal != nil && modal.IssueID == existingIssue.ID {
+			if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+				return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID), m.fetchIssueDetails(existingIssue.ID))
+			}
 			return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(existingIssue.ID))
+		}
+
+		// Refresh board data if in board mode
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
 		}
 
 		return m, m.fetchData()

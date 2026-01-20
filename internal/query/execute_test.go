@@ -255,6 +255,248 @@ func TestExecuteDescendantOf(t *testing.T) {
 	}
 }
 
+func TestExecuteEpicLabels(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	// Create an epic with labels
+	epic := &models.Issue{
+		Title:    "Parent Epic",
+		Status:   models.StatusOpen,
+		Type:     models.TypeEpic,
+		Priority: models.PriorityP1,
+		Labels:   []string{"deferred", "backend"},
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("failed to create epic: %v", err)
+	}
+
+	// Create a task under the epic
+	taskUnderEpic := &models.Issue{
+		Title:    "Task under deferred epic",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(taskUnderEpic); err != nil {
+		t.Fatalf("failed to create task: %v", err)
+	}
+
+	// Create a standalone task (no epic)
+	standaloneTask := &models.Issue{
+		Title:    "Standalone task",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(standaloneTask); err != nil {
+		t.Fatalf("failed to create standalone task: %v", err)
+	}
+
+	// Create another epic without deferred label
+	epicNoDeferred := &models.Issue{
+		Title:    "Active Epic",
+		Status:   models.StatusOpen,
+		Type:     models.TypeEpic,
+		Priority: models.PriorityP1,
+		Labels:   []string{"frontend"},
+	}
+	if err := database.CreateIssue(epicNoDeferred); err != nil {
+		t.Fatalf("failed to create active epic: %v", err)
+	}
+
+	// Create task under non-deferred epic
+	taskUnderActiveEpic := &models.Issue{
+		Title:    "Task under active epic",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+		ParentID: epicNoDeferred.ID,
+	}
+	if err := database.CreateIssue(taskUnderActiveEpic); err != nil {
+		t.Fatalf("failed to create task under active epic: %v", err)
+	}
+
+	t.Run("epic.labels matches task under epic with label", func(t *testing.T) {
+		results, err := Execute(database, `epic.labels ~ "deferred"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		// Should find only taskUnderEpic (the task under the deferred epic)
+		if len(results) != 1 {
+			t.Errorf("Execute() returned %d results, want 1", len(results))
+		}
+		if len(results) > 0 && results[0].ID != taskUnderEpic.ID {
+			t.Errorf("Expected %s, got %s", taskUnderEpic.ID, results[0].ID)
+		}
+	})
+
+	t.Run("NOT epic.labels excludes tasks under epic with label", func(t *testing.T) {
+		results, err := Execute(database, `NOT epic.labels ~ "deferred"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		// Should find: epic, standaloneTask, epicNoDeferred, taskUnderActiveEpic (4 total)
+		// Should NOT find: taskUnderEpic
+		if len(results) != 4 {
+			t.Errorf("Execute() returned %d results, want 4", len(results))
+		}
+		for _, r := range results {
+			if r.ID == taskUnderEpic.ID {
+				t.Errorf("NOT epic.labels should not include task under deferred epic")
+			}
+		}
+	})
+
+	t.Run("epic.labels with no matching label", func(t *testing.T) {
+		results, err := Execute(database, `epic.labels ~ "nonexistent"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(results) != 0 {
+			t.Errorf("Execute() returned %d results, want 0", len(results))
+		}
+	})
+
+	t.Run("combined query with epic.labels", func(t *testing.T) {
+		results, err := Execute(database, `type = task AND NOT epic.labels ~ "deferred"`, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		// Should find: standaloneTask, taskUnderActiveEpic (2 tasks not under deferred epic)
+		if len(results) != 2 {
+			t.Errorf("Execute() returned %d results, want 2", len(results))
+		}
+	})
+}
+
+func TestExecuteIsReadyAndHasOpenDeps(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	// Create standalone issue (no dependencies) - should be ready
+	standalone := &models.Issue{
+		Title:    "Standalone task",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(standalone); err != nil {
+		t.Fatalf("failed to create standalone: %v", err)
+	}
+
+	// Create a blocker issue (open)
+	blocker := &models.Issue{
+		Title:    "Blocker task",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP1,
+	}
+	if err := database.CreateIssue(blocker); err != nil {
+		t.Fatalf("failed to create blocker: %v", err)
+	}
+
+	// Create issue that depends on blocker (has open deps)
+	blockedIssue := &models.Issue{
+		Title:    "Blocked task",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(blockedIssue); err != nil {
+		t.Fatalf("failed to create blocked issue: %v", err)
+	}
+
+	// Add dependency: blockedIssue depends on blocker
+	if err := database.AddDependency(blockedIssue.ID, blocker.ID, "depends_on"); err != nil {
+		t.Fatalf("failed to add dependency: %v", err)
+	}
+
+	// Create closed blocker
+	closedBlocker := &models.Issue{
+		Title:    "Closed blocker",
+		Status:   models.StatusClosed,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(closedBlocker); err != nil {
+		t.Fatalf("failed to create closed blocker: %v", err)
+	}
+
+	// Create issue with only closed dependencies (should be ready)
+	issueWithClosedDeps := &models.Issue{
+		Title:    "Task with closed deps",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(issueWithClosedDeps); err != nil {
+		t.Fatalf("failed to create issue with closed deps: %v", err)
+	}
+	if err := database.AddDependency(issueWithClosedDeps.ID, closedBlocker.ID, "depends_on"); err != nil {
+		t.Fatalf("failed to add closed dependency: %v", err)
+	}
+
+	t.Run("is_ready() returns issues with no open deps", func(t *testing.T) {
+		results, err := Execute(database, "is_ready()", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		// Should find: standalone, blocker, closedBlocker, issueWithClosedDeps (4 total)
+		// Should NOT find: blockedIssue (has open dep)
+		if len(results) != 4 {
+			t.Errorf("is_ready() returned %d results, want 4", len(results))
+		}
+		for _, r := range results {
+			if r.ID == blockedIssue.ID {
+				t.Errorf("is_ready() should not include blocked issue")
+			}
+		}
+	})
+
+	t.Run("has_open_deps() returns issues with open deps", func(t *testing.T) {
+		results, err := Execute(database, "has_open_deps()", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		// Should find only blockedIssue
+		if len(results) != 1 {
+			t.Errorf("has_open_deps() returned %d results, want 1", len(results))
+		}
+		if len(results) > 0 && results[0].ID != blockedIssue.ID {
+			t.Errorf("Expected %s, got %s", blockedIssue.ID, results[0].ID)
+		}
+	})
+
+	t.Run("NOT is_ready() equals has_open_deps()", func(t *testing.T) {
+		notReadyResults, err := Execute(database, "NOT is_ready()", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		openDepsResults, err := Execute(database, "has_open_deps()", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(notReadyResults) != len(openDepsResults) {
+			t.Errorf("NOT is_ready() returned %d, has_open_deps() returned %d, should be equal",
+				len(notReadyResults), len(openDepsResults))
+		}
+	})
+
+	t.Run("combined with status filter", func(t *testing.T) {
+		results, err := Execute(database, "status = open AND is_ready()", "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		// Should find: standalone, blocker, issueWithClosedDeps (3 open + ready)
+		// NOT: closedBlocker (closed), blockedIssue (has open deps)
+		if len(results) != 3 {
+			t.Errorf("combined query returned %d results, want 3", len(results))
+		}
+	})
+}
+
 func TestExecuteWithLogs(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()

@@ -109,12 +109,15 @@ func applyCrossEntityFilters(database *db.DB, issues []models.Issue, query *Quer
 		return issues, nil
 	}
 
-	// Pre-fetch rework IDs if needed (for efficiency - call once, not per issue)
+	// Pre-fetch data for efficiency - call once, not per issue
 	var reworkIDs map[string]bool
+	var issuesWithOpenDeps map[string]bool
 	for _, filter := range crossFilters {
-		if filter.field == "rework" {
+		if filter.field == "rework" && reworkIDs == nil {
 			reworkIDs, _ = database.GetRejectedInProgressIssueIDs()
-			break
+		}
+		if (filter.field == "is_ready" || filter.field == "has_open_deps") && issuesWithOpenDeps == nil {
+			issuesWithOpenDeps, _ = database.GetIssuesWithOpenDeps()
 		}
 	}
 
@@ -122,9 +125,13 @@ func applyCrossEntityFilters(database *db.DB, issues []models.Issue, query *Quer
 	for _, issue := range issues {
 		matches := true
 		for _, filter := range crossFilters {
-			match, err := applyCrossEntityFilter(database, issue, filter, ctx, reworkIDs)
+			match, err := applyCrossEntityFilter(database, issue, filter, ctx, reworkIDs, issuesWithOpenDeps)
 			if err != nil {
 				return nil, err
+			}
+			// Apply negation if the filter was wrapped in NOT
+			if filter.negated {
+				match = !match
 			}
 			if !match {
 				matches = false
@@ -139,41 +146,49 @@ func applyCrossEntityFilters(database *db.DB, issues []models.Issue, query *Quer
 }
 
 type crossEntityFilter struct {
-	entity   string // log, comment, handoff, file, dep
+	entity   string // log, comment, handoff, file, dep, epic
 	field    string // message, type, text, etc.
 	operator string
 	value    interface{}
+	negated  bool // true if wrapped in NOT
 }
 
 func extractCrossEntityConditions(n Node) []crossEntityFilter {
+	return extractCrossEntityConditionsWithNegation(n, false)
+}
+
+func extractCrossEntityConditionsWithNegation(n Node, negated bool) []crossEntityFilter {
 	var filters []crossEntityFilter
 
 	switch node := n.(type) {
 	case *BinaryExpr:
-		filters = append(filters, extractCrossEntityConditions(node.Left)...)
-		filters = append(filters, extractCrossEntityConditions(node.Right)...)
+		filters = append(filters, extractCrossEntityConditionsWithNegation(node.Left, negated)...)
+		filters = append(filters, extractCrossEntityConditionsWithNegation(node.Right, negated)...)
 	case *UnaryExpr:
-		filters = append(filters, extractCrossEntityConditions(node.Expr)...)
+		// NOT flips the negation state
+		filters = append(filters, extractCrossEntityConditionsWithNegation(node.Expr, !negated)...)
 	case *FieldExpr:
 		parts := strings.Split(node.Field, ".")
 		if len(parts) > 1 {
 			prefix := parts[0]
-			if prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" {
+			if prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" || prefix == "epic" {
 				filters = append(filters, crossEntityFilter{
 					entity:   prefix,
 					field:    parts[1],
 					operator: node.Operator,
 					value:    node.Value,
+					negated:  negated,
 				})
 			}
 		}
 	case *FunctionCall:
-		if node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" || node.Name == "rework" {
+		if node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" || node.Name == "rework" || node.Name == "is_ready" || node.Name == "has_open_deps" {
 			filters = append(filters, crossEntityFilter{
 				entity:   "function",
 				field:    node.Name,
 				operator: "",
 				value:    node.Args,
+				negated:  negated,
 			})
 		}
 	}
@@ -181,7 +196,7 @@ func extractCrossEntityConditions(n Node) []crossEntityFilter {
 	return filters
 }
 
-func applyCrossEntityFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, ctx *EvalContext, reworkIDs map[string]bool) (bool, error) {
+func applyCrossEntityFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, ctx *EvalContext, reworkIDs, issuesWithOpenDeps map[string]bool) (bool, error) {
 	switch filter.entity {
 	case "log":
 		logs, err := database.GetLogs(issue.ID, 0) // 0 = no limit
@@ -215,8 +230,11 @@ func applyCrossEntityFilter(database *db.DB, issue models.Issue, filter crossEnt
 		}
 		return matchFiles(files, filter, ctx), nil
 
+	case "epic":
+		return matchEpicAncestor(database, issue, filter, ctx)
+
 	case "function":
-		return applyFunctionFilter(database, issue, filter, reworkIDs)
+		return applyFunctionFilter(database, issue, filter, reworkIDs, issuesWithOpenDeps)
 
 	default:
 		return true, nil
@@ -300,6 +318,58 @@ func matchFiles(files []models.IssueFile, filter crossEntityFilter, ctx *EvalCon
 	return false
 }
 
+// matchEpicAncestor traverses up the parent chain to find an epic ancestor
+// and checks if the epic's field matches the filter condition.
+// Returns (true, nil) if an epic ancestor matches, (false, nil) if no match or no epic.
+func matchEpicAncestor(database *db.DB, issue models.Issue, filter crossEntityFilter, ctx *EvalContext) (bool, error) {
+	// Traverse up the parent chain looking for an epic
+	current := issue.ParentID
+	visited := make(map[string]bool)
+	depth := 0
+
+	for current != "" && !visited[current] && depth < MaxDescendantDepth {
+		visited[current] = true
+		depth++
+
+		parent, err := database.GetIssue(current)
+		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				break
+			}
+			return false, fmt.Errorf("matchEpicAncestor: failed to get parent %s: %w", current, err)
+		}
+
+		// Check if this ancestor is an epic
+		if parent.Type == models.TypeEpic {
+			// Found an epic - check if it matches the filter
+			var fieldValue string
+			switch filter.field {
+			case "labels":
+				fieldValue = strings.Join(parent.Labels, ",")
+			case "title":
+				fieldValue = parent.Title
+			case "status":
+				fieldValue = string(parent.Status)
+			case "priority":
+				fieldValue = string(parent.Priority)
+			default:
+				// Unknown field - no match
+				return false, nil
+			}
+
+			if matchValue(fieldValue, filter.operator, filter.value, ctx) {
+				return true, nil
+			}
+			// Continue up the chain - there might be nested epics
+		}
+
+		current = parent.ParentID
+	}
+
+	// No matching epic found
+	return false, nil
+}
+
 func matchValue(fieldValue, operator string, value interface{}, ctx *EvalContext) bool {
 	// Resolve special values
 	strValue := fmt.Sprintf("%v", value)
@@ -323,12 +393,20 @@ func matchValue(fieldValue, operator string, value interface{}, ctx *EvalContext
 	}
 }
 
-func applyFunctionFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, reworkIDs map[string]bool) (bool, error) {
-	// Handle rework() which takes no args
-	if filter.field == "rework" {
+func applyFunctionFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, reworkIDs, issuesWithOpenDeps map[string]bool) (bool, error) {
+	// Handle no-arg functions first
+	switch filter.field {
+	case "rework":
 		return reworkIDs[issue.ID], nil
+	case "is_ready":
+		// is_ready() returns true if the issue has NO open dependencies
+		return !issuesWithOpenDeps[issue.ID], nil
+	case "has_open_deps":
+		// has_open_deps() returns true if the issue has at least one open dependency
+		return issuesWithOpenDeps[issue.ID], nil
 	}
 
+	// Functions that require arguments
 	args, ok := filter.value.([]interface{})
 	if !ok || len(args) == 0 {
 		return false, nil

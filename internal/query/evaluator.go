@@ -123,11 +123,29 @@ func (e *Evaluator) hasCrossEntity(n Node) bool {
 		parts := strings.Split(node.Field, ".")
 		if len(parts) > 1 {
 			prefix := parts[0]
-			return prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" || prefix == "dep"
+			return prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" || prefix == "dep" || prefix == "epic"
 		}
 		return false
 	case *FunctionCall:
-		return node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" || node.Name == "rework"
+		return node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" || node.Name == "rework" || node.Name == "is_ready" || node.Name == "has_open_deps"
+	default:
+		return false
+	}
+}
+
+// isCrossEntityNode checks if a node is a cross-entity field expression
+// Used to skip in-memory negation for cross-entity conditions
+func (e *Evaluator) isCrossEntityNode(n Node) bool {
+	switch node := n.(type) {
+	case *FieldExpr:
+		parts := strings.Split(node.Field, ".")
+		if len(parts) > 1 {
+			prefix := parts[0]
+			return prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" || prefix == "dep" || prefix == "epic"
+		}
+		return false
+	case *FunctionCall:
+		return node.Name == "blocks" || node.Name == "blocked_by" || node.Name == "linked_to" || node.Name == "descendant_of" || node.Name == "rework" || node.Name == "is_ready" || node.Name == "has_open_deps"
 	default:
 		return false
 	}
@@ -202,7 +220,7 @@ func (e *Evaluator) fieldExprToSQL(node *FieldExpr) ([]SQLCondition, error) {
 	parts := strings.Split(node.Field, ".")
 	if len(parts) > 1 {
 		prefix := parts[0]
-		if prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" || prefix == "dep" {
+		if prefix == "log" || prefix == "comment" || prefix == "handoff" || prefix == "file" || prefix == "dep" || prefix == "epic" {
 			return nil, nil // Will be handled in-memory
 		}
 	}
@@ -482,6 +500,11 @@ func (e *Evaluator) nodeToMatcher(n Node) (func(models.Issue) bool, error) {
 		}, nil
 
 	case *UnaryExpr:
+		// If the inner expression is a cross-entity condition, don't apply NOT here
+		// The negation will be handled by the cross-entity filter in execute.go
+		if e.isCrossEntityNode(node.Expr) {
+			return func(i models.Issue) bool { return true }, nil
+		}
 		matcher, err := e.nodeToMatcher(node.Expr)
 		if err != nil {
 			return nil, err
@@ -749,7 +772,7 @@ func (e *Evaluator) functionToMatcher(node *FunctionCall) (func(models.Issue) bo
 		// Return placeholder that allows issue through (will be filtered in Execute)
 		return func(models.Issue) bool { return true }, nil
 
-	case "blocks", "blocked_by", "linked_to", "rework":
+	case "blocks", "blocked_by", "linked_to", "rework", "is_ready", "has_open_deps":
 		// These require database lookups, handled via cross-entity filter
 		return func(models.Issue) bool { return true }, nil
 

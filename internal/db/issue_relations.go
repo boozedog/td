@@ -326,6 +326,33 @@ func (db *DB) GetAllDependencies() (map[string][]string, error) {
 	return deps, nil
 }
 
+// GetIssuesWithOpenDeps returns a set of issue IDs that have at least one open (non-closed) dependency.
+// This is used by the is_ready() and has_open_deps() query functions.
+func (db *DB) GetIssuesWithOpenDeps() (map[string]bool, error) {
+	rows, err := db.conn.Query(`
+		SELECT DISTINCT d.issue_id
+		FROM issue_dependencies d
+		JOIN issues i ON d.depends_on_id = i.id
+		WHERE d.relation_type = 'depends_on'
+		  AND i.status != 'closed'
+		  AND i.deleted_at IS NULL
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]bool)
+	for rows.Next() {
+		var issueID string
+		if err := rows.Scan(&issueID); err != nil {
+			return nil, err
+		}
+		result[issueID] = true
+	}
+	return result, nil
+}
+
 // GetIssueStatuses fetches statuses for multiple issues in a single query
 func (db *DB) GetIssueStatuses(ids []string) (map[string]models.Status, error) {
 	if len(ids) == 0 {
