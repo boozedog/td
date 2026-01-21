@@ -2,6 +2,14 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.19.0] - 2026-01-21
+
+### Features
+- Include full task markdown when yanking epics (copies epic + all child stories)
+
+### Bug Fixes
+- Fix database connection leak in embedded monitor (connection pool singleton prevents FD accumulation)
+
 ## [v0.18.0] - 2026-01-20
 
 ### Features

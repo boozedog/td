@@ -124,6 +124,13 @@ func (db *DB) Close() error {
 	return db.conn.Close()
 }
 
+// SetMaxOpenConns sets the maximum number of open connections to the database.
+// For SQLite with single-writer semantics, this should typically be set to 1
+// to prevent connection pool growth in long-running applications.
+func (db *DB) SetMaxOpenConns(n int) {
+	db.conn.SetMaxOpenConns(n)
+}
+
 // BaseDir returns the base directory for the database
 func (db *DB) BaseDir() string {
 	return db.baseDir

@@ -189,17 +189,19 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 }
 
 // NewEmbedded creates a monitor model for embedding in external applications.
-// It opens the database and creates/gets a session automatically.
+// It uses a shared database connection pool to prevent connection leaks when
+// Model values are copied in Update().
 // The caller must call Close() when done to release resources.
 func NewEmbedded(baseDir string, interval time.Duration, ver string) (*Model, error) {
-	database, err := db.Open(baseDir)
+	// Use shared DB to prevent connection leaks on Model value copies
+	database, err := getSharedDB(baseDir)
 	if err != nil {
 		return nil, err
 	}
 
 	sess, err := session.GetOrCreate(baseDir)
 	if err != nil {
-		database.Close()
+		releaseSharedDB(baseDir)
 		return nil, err
 	}
 
@@ -223,17 +225,19 @@ type EmbeddedOptions struct {
 }
 
 // NewEmbeddedWithOptions creates a monitor model with custom options.
-// It opens the database and creates/gets a session automatically.
+// It uses a shared database connection pool to prevent connection leaks when
+// Model values are copied in Update().
 // The caller must call Close() when done to release resources.
 func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
-	database, err := db.Open(opts.BaseDir)
+	// Use shared DB to prevent connection leaks on Model value copies
+	database, err := getSharedDB(opts.BaseDir)
 	if err != nil {
 		return nil, err
 	}
 
 	sess, err := session.GetOrCreate(opts.BaseDir)
 	if err != nil {
-		database.Close()
+		releaseSharedDB(opts.BaseDir)
 		return nil, err
 	}
 
@@ -246,9 +250,14 @@ func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
 }
 
 // Close releases resources held by an embedded monitor.
-// Only call this if the model was created with NewEmbedded.
+// Only call this if the model was created with NewEmbedded or NewEmbeddedWithOptions.
+// For embedded monitors, this releases the reference to the shared database pool.
+// The actual connection is only closed when all references are released.
 func (m *Model) Close() error {
-	if m.DB != nil {
+	if m.DB != nil && m.Embedded && m.BaseDir != "" {
+		return releaseSharedDB(m.BaseDir)
+	} else if m.DB != nil {
+		// Non-embedded model: close directly
 		return m.DB.Close()
 	}
 	return nil
