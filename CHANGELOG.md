@@ -2,6 +2,12 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.20.0] - 2026-01-21
+
+### Features
+- Shorten issue IDs from 8 to 6 hex characters for easier typing
+- Add collision retry logic for ID generation
+
 ## [v0.19.0] - 2026-01-21
 
 ### Features
