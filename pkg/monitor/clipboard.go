@@ -109,21 +109,29 @@ func formatEpicAsMarkdown(epic *models.Issue, children []models.Issue) string {
 		sb.WriteString("\n")
 	}
 
-	// Child stories/tasks
+	// Child stories/tasks with full details
 	if len(children) > 0 {
-		sb.WriteString("\n## Stories\n\n")
-		for _, child := range children {
+		sb.WriteString("\n## Tasks\n\n")
+		for i, child := range children {
+			if i > 0 {
+				sb.WriteString("\n---\n\n")
+			}
 			statusIcon := statusIcon(child.Status)
-			sb.WriteString(fmt.Sprintf("- %s **%s** `%s` [%s]\n",
-				statusIcon, child.Title, child.ID, child.Status))
+			sb.WriteString(fmt.Sprintf("### %s %s\n", statusIcon, child.Title))
+			sb.WriteString(fmt.Sprintf("**ID:** `%s`\n", child.ID))
+			sb.WriteString(fmt.Sprintf("**Type:** %s | **Priority:** %s | **Status:** %s\n",
+				child.Type, child.Priority, child.Status))
+
 			if child.Description != "" {
-				// Indent description as sub-content
-				lines := strings.Split(child.Description, "\n")
-				for _, line := range lines {
-					if strings.TrimSpace(line) != "" {
-						sb.WriteString(fmt.Sprintf("  %s\n", line))
-					}
-				}
+				sb.WriteString("\n#### Description\n\n")
+				sb.WriteString(child.Description)
+				sb.WriteString("\n")
+			}
+
+			if child.Acceptance != "" {
+				sb.WriteString("\n#### Acceptance Criteria\n\n")
+				sb.WriteString(child.Acceptance)
+				sb.WriteString("\n")
 			}
 		}
 	}

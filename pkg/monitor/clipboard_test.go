@@ -162,18 +162,25 @@ func TestFormatEpicAsMarkdown(t *testing.T) {
 				{
 					ID:          "td-1",
 					Title:       "Login page",
+					Type:        models.TypeTask,
+					Priority:    models.PriorityP1,
 					Status:      models.StatusClosed,
 					Description: "Main login UI",
+					Acceptance:  "Login renders correctly",
 				},
 				{
 					ID:          "td-2",
 					Title:       "Password reset",
+					Type:        models.TypeTask,
+					Priority:    models.PriorityP2,
 					Status:      models.StatusInProgress,
 					Description: "Reset flow",
 				},
 				{
 					ID:          "td-3",
 					Title:       "Two-factor auth",
+					Type:        models.TypeTask,
+					Priority:    models.PriorityP1,
 					Status:      models.StatusOpen,
 					Description: "",
 				},
@@ -187,12 +194,20 @@ func TestFormatEpicAsMarkdown(t *testing.T) {
 				"Build auth system",
 				"## Acceptance Criteria",
 				"All flows work",
-				"## Stories",
-				"[x] **Login page** `td-1`",
+				"## Tasks",
+				"### [x] Login page",
+				"**ID:** `td-1`",
+				"**Type:** task | **Priority:** P1 | **Status:** closed",
+				"#### Description",
 				"Main login UI",
-				"[-] **Password reset** `td-2`",
+				"#### Acceptance Criteria",
+				"Login renders correctly",
+				"---",
+				"### [-] Password reset",
+				"**ID:** `td-2`",
 				"Reset flow",
-				"[ ] **Two-factor auth** `td-3`",
+				"### [ ] Two-factor auth",
+				"**ID:** `td-3`",
 			},
 			notIn: []string{},
 		},
@@ -212,7 +227,7 @@ func TestFormatEpicAsMarkdown(t *testing.T) {
 				"**Priority:** P2",
 				"**Status:** open",
 			},
-			notIn: []string{"## Stories", "## Description", "## Acceptance Criteria"},
+			notIn: []string{"## Tasks", "## Description", "## Acceptance Criteria"},
 		},
 		{
 			name: "epic with story in review status",
@@ -227,19 +242,23 @@ func TestFormatEpicAsMarkdown(t *testing.T) {
 				{
 					ID:     "td-perf-1",
 					Title:  "Optimize DB",
+					Type:   models.TypeTask,
 					Status: models.StatusInReview,
 				},
 				{
 					ID:     "td-perf-2",
 					Title:  "Cache layer",
+					Type:   models.TypeTask,
 					Status: models.StatusBlocked,
 				},
 			},
 			contains: []string{
 				"# Epic: Performance",
-				"## Stories",
-				"[~] **Optimize DB** `td-perf-1`",
-				"[!] **Cache layer** `td-perf-2`",
+				"## Tasks",
+				"### [~] Optimize DB",
+				"**ID:** `td-perf-1`",
+				"### [!] Cache layer",
+				"**ID:** `td-perf-2`",
 			},
 			notIn: []string{},
 		},
@@ -254,13 +273,16 @@ func TestFormatEpicAsMarkdown(t *testing.T) {
 				{
 					ID:          "td-test-1",
 					Title:       "Unit tests",
+					Type:        models.TypeTask,
 					Status:      models.StatusOpen,
 					Description: "Add unit tests\nfor all modules\nwith 80% coverage",
 				},
 			},
 			contains: []string{
 				"# Epic: Testing",
-				"- [ ] **Unit tests** `td-test-1`",
+				"### [ ] Unit tests",
+				"**ID:** `td-test-1`",
+				"#### Description",
 				"Add unit tests",
 				"for all modules",
 				"with 80% coverage",
@@ -394,8 +416,8 @@ func TestFormatEpicAsMarkdownEdgeCases(t *testing.T) {
 			},
 			children: []models.Issue{},
 			validates: func(result string) error {
-				if strings.Contains(result, "## Stories") {
-					return fmt.Errorf("empty children should not have Stories section")
+				if strings.Contains(result, "## Tasks") {
+					return fmt.Errorf("empty children should not have Tasks section")
 				}
 				return nil
 			},
@@ -411,13 +433,17 @@ func TestFormatEpicAsMarkdownEdgeCases(t *testing.T) {
 				{
 					ID:          "td-1",
 					Title:       "Task",
+					Type:        models.TypeTask,
 					Status:      models.StatusOpen,
 					Description: "",
 				},
 			},
 			validates: func(result string) error {
-				if !strings.Contains(result, "- [ ] **Task** `td-1`") {
-					return fmt.Errorf("expected task checkbox line in output")
+				if !strings.Contains(result, "### [ ] Task") {
+					return fmt.Errorf("expected task header line in output")
+				}
+				if !strings.Contains(result, "**ID:** `td-1`") {
+					return fmt.Errorf("expected task ID line in output")
 				}
 				return nil
 			},
@@ -520,8 +546,8 @@ func TestMarkdownSyntaxValidation(t *testing.T) {
 		}
 
 		children := []models.Issue{
-			{ID: "td-1", Title: "Story 1", Status: models.StatusOpen},
-			{ID: "td-2", Title: "Story 2", Status: models.StatusClosed},
+			{ID: "td-1", Title: "Story 1", Type: models.TypeTask, Status: models.StatusOpen},
+			{ID: "td-2", Title: "Story 2", Type: models.TypeTask, Status: models.StatusClosed},
 		}
 
 		result := formatEpicAsMarkdown(epic, children)
@@ -531,23 +557,23 @@ func TestMarkdownSyntaxValidation(t *testing.T) {
 			t.Errorf("first line should start with '# Epic:', got %q", lines[0])
 		}
 
-		hasStorySection := false
-		storyCount := 0
+		hasTaskSection := false
+		taskHeaderCount := 0
 
 		for _, line := range lines {
-			if strings.HasPrefix(line, "## Stories") {
-				hasStorySection = true
+			if strings.HasPrefix(line, "## Tasks") {
+				hasTaskSection = true
 			}
-			if strings.HasPrefix(strings.TrimSpace(line), "-") && strings.Contains(line, "[") {
-				storyCount++
+			if strings.HasPrefix(line, "### [") {
+				taskHeaderCount++
 			}
 		}
 
-		if !hasStorySection {
-			t.Error("epic markdown missing Stories section")
+		if !hasTaskSection {
+			t.Error("epic markdown missing Tasks section")
 		}
-		if storyCount < 2 {
-			t.Errorf("epic markdown should have 2 stories, found %d", storyCount)
+		if taskHeaderCount < 2 {
+			t.Errorf("epic markdown should have 2 task headers, found %d", taskHeaderCount)
 		}
 	})
 }
