@@ -17,8 +17,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// issueIDPattern matches valid issue IDs like "td-a1b2c3d4"
-var issueIDPattern = regexp.MustCompile(`^td-[0-9a-f]{8}$`)
+// issueIDPattern matches valid issue IDs like "td-a1b2c3" or "td-a1b2c3d4"
+var issueIDPattern = regexp.MustCompile(`^td-[0-9a-f]{6,8}$`)
 
 var logCmd = &cobra.Command{
 	Use:   "log [issue-id] <message>",
@@ -60,9 +60,18 @@ Supports stdin input for multi-line messages or piped input:
 		var message string
 
 		if len(args) == 2 {
-			// Two args: first is issue ID, second is message
-			issueID = args[0]
-			message = args[1]
+			// Two args: detect which is issue ID regardless of order
+			if issueIDPattern.MatchString(args[0]) {
+				issueID = args[0]
+				message = args[1]
+			} else if issueIDPattern.MatchString(args[1]) {
+				issueID = args[1]
+				message = args[0]
+			} else {
+				// Neither matches ID pattern; treat as original order (first=ID, second=message)
+				issueID = args[0]
+				message = args[1]
+			}
 		} else if len(args) == 1 {
 			// One arg: check if it's an issue ID or message
 			// Issue IDs match pattern "td-[8 hex chars]", otherwise it's a message

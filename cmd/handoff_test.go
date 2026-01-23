@@ -404,9 +404,9 @@ func TestHandoffPositionalMessage(t *testing.T) {
 		t.Errorf("Expected 2 args to be valid: %v", err)
 	}
 
-	// Test with 0 args (should fail)
-	if err := args(handoffCmd, []string{}); err == nil {
-		t.Error("Expected 0 args to fail")
+	// Test with 0 args (should be valid - infers from focused issue)
+	if err := args(handoffCmd, []string{}); err != nil {
+		t.Errorf("Expected 0 args to be valid (infer from focus): %v", err)
 	}
 
 	// Test with 3 args (should fail)

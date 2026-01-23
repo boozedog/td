@@ -104,7 +104,7 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 
 var reviewCmd = &cobra.Command{
 	Use:     "review [issue-id...]",
-	Aliases: []string{"submit"},
+	Aliases: []string{"submit", "finish"},
 	Short:   "Submit one or more issues for review",
 	Long: `Submits the issue(s) for review. If no handoff exists, a minimal one is
 auto-created (consider using 'td handoff' for better documentation).
@@ -511,8 +511,8 @@ Supports bulk operations:
 				continue
 			}
 
-			// Log
-			reason, _ := cmd.Flags().GetString("reason")
+			// Log (supports --reason, --message, --comment, --note, --notes)
+			reason := approvalReason(cmd)
 			logMsg := "Rejected"
 			if reason != "" {
 				logMsg = "Rejected: " + reason
@@ -776,12 +776,16 @@ func init() {
 	reviewCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
 	approveCmd.Flags().StringP("reason", "m", "", "Reason for approval")
 	approveCmd.Flags().String("message", "", "Reason for approval (alias for --reason)")
-	approveCmd.Flags().String("comment", "", "Reason for approval (alias for --message)")
+	approveCmd.Flags().StringP("comment", "c", "", "Reason for approval (alias for --message)")
 	approveCmd.Flags().String("note", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().String("notes", "", "Reason for approval (alias for --reason)")
 	approveCmd.Flags().Bool("json", false, "JSON output")
 	approveCmd.Flags().Bool("all", false, "Approve all reviewable issues")
 	rejectCmd.Flags().StringP("reason", "m", "", "Reason for rejection")
+	rejectCmd.Flags().StringP("comment", "c", "", "Reason for rejection (alias for --reason)")
+	rejectCmd.Flags().String("message", "", "Reason for rejection (alias for --reason)")
+	rejectCmd.Flags().String("note", "", "Reason for rejection (alias for --reason)")
+	rejectCmd.Flags().String("notes", "", "Reason for rejection (alias for --reason)")
 	rejectCmd.Flags().Bool("json", false, "JSON output")
 	closeCmd.Flags().StringP("reason", "m", "", "Reason for closing")
 	closeCmd.Flags().String("comment", "", "Reason for closing (alias for --reason)")

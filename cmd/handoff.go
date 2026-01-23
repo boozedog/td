@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/input"
@@ -36,14 +37,42 @@ Or use flags with values, stdin (-), or file (@path):
   --done @done.txt       Items from file (one per line)
   echo "item" | td handoff ID --done -   Items from stdin`,
 	GroupID: "workflow",
-	Args:    cobra.RangeArgs(1, 2),
+	Args:    cobra.RangeArgs(0, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Validate issue ID (catch empty strings)
-		if err := ValidateIssueID(args[0], "handoff <issue-id> [message]"); err != nil {
+		baseDir := getBaseDir()
+
+		// Resolve issue ID: from args or focused issue
+		var issueArg string
+		var messageArg string
+		switch len(args) {
+		case 2:
+			issueArg = args[0]
+			messageArg = args[1]
+		case 1:
+			// Check if the single arg is an issue ID or a message
+			if issueIDPattern.MatchString(args[0]) {
+				issueArg = args[0]
+			} else {
+				// Treat as message, infer issue from focus
+				messageArg = args[0]
+			}
+		}
+
+		if issueArg == "" {
+			// Infer from focused issue
+			focusedID, err := config.GetFocus(baseDir)
+			if err != nil || focusedID == "" {
+				output.Error("no issue specified and no focused issue")
+				fmt.Fprintln(os.Stderr, "  Use: td handoff <id> [message]  OR  td start <id> first")
+				return fmt.Errorf("no issue specified")
+			}
+			issueArg = focusedID
+		}
+
+		if err := ValidateIssueID(issueArg, "handoff <issue-id> [message]"); err != nil {
 			output.Error("%v", err)
 			return err
 		}
-		baseDir := getBaseDir()
 
 		database, err := db.Open(baseDir)
 		if err != nil {
@@ -58,7 +87,7 @@ Or use flags with values, stdin (-), or file (@path):
 			return err
 		}
 
-		issueID := args[0]
+		issueID := issueArg
 		issue, err := database.GetIssue(issueID)
 		if err != nil {
 			output.Error("%v", err)
@@ -92,9 +121,9 @@ Or use flags with values, stdin (-), or file (@path):
 			handoff.Done = append(handoff.Done, message)
 		}
 
-		// Handle positional message argument: td handoff <id> "message"
-		if len(args) > 1 && args[1] != "" {
-			handoff.Done = append(handoff.Done, args[1])
+		// Handle positional message argument
+		if messageArg != "" {
+			handoff.Done = append(handoff.Done, messageArg)
 		}
 
 		// Check if stdin has data (YAML format) - only if not already used by flag expansion

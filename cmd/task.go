@@ -93,6 +93,11 @@ func init() {
 	taskCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	taskCreateCmd.Flags().StringP("description", "d", "", "Description text")
 	taskCreateCmd.Flags().String("labels", "", "Comma-separated labels")
+	taskCreateCmd.Flags().String("parent", "", "Parent issue ID")
+	taskCreateCmd.Flags().String("epic", "", "Parent issue ID (alias for --parent)")
+	taskCreateCmd.Flags().String("depends-on", "", "Issues this depends on")
+	taskCreateCmd.Flags().String("blocks", "", "Issues this blocks")
+	taskCreateCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
 	// Hidden type flag - set programmatically to "task"
 	taskCreateCmd.Flags().StringP("type", "t", "", "")
 	taskCreateCmd.Flags().MarkHidden("type")

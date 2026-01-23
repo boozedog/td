@@ -93,6 +93,10 @@ func init() {
 	epicCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	epicCreateCmd.Flags().StringP("description", "d", "", "Description text")
 	epicCreateCmd.Flags().String("labels", "", "Comma-separated labels")
+	epicCreateCmd.Flags().String("parent", "", "Parent issue ID")
+	epicCreateCmd.Flags().String("epic", "", "Parent issue ID (alias for --parent)")
+	epicCreateCmd.Flags().String("depends-on", "", "Issues this depends on")
+	epicCreateCmd.Flags().String("blocks", "", "Issues this blocks")
 	// Hidden type flag - set programmatically to "epic"
 	epicCreateCmd.Flags().StringP("type", "t", "", "")
 	epicCreateCmd.Flags().MarkHidden("type")
