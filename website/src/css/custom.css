@@ -818,7 +818,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
   gap: 0.5rem;
   padding: 0.875rem 2rem;
   background: #89d4ff;
-  color: #4b5563;
+  color: #2d1f45;
   font-family: 'JetBrains Mono', monospace;
   font-weight: 700;
   font-size: 0.95rem;
@@ -832,7 +832,7 @@ html[data-theme='dark'] ::-webkit-scrollbar-thumb:hover {
 .sc-cta__button:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 20px rgba(137, 212, 255, 0.4);
-  color: #4b5563;
+  color: #2d1f45;
   text-decoration: none;
 }
 
