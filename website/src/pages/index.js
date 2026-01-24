@@ -182,85 +182,87 @@ function WorkflowSection() {
           You build the backlog. Agents work through it autonomously—in parallel, with handoffs and enforced review.
         </p>
 
-        <div className="sc-workflow-columns">
-          <div className="sc-workflow-column">
-            <div className="sc-workflow-column__header">
-              <span className="sc-workflow-column__icon">👤</span>
-              <span className="sc-workflow-column__title">You</span>
-            </div>
+        <div className="sc-workflow-grid">
+          {/* Header row */}
+          <div className="sc-workflow-header sc-workflow-header--left">
+            <Monitor size={20} />
+            <span>You</span>
+          </div>
+          <div className="sc-workflow-header sc-workflow-header--right">
+            <Terminal size={20} />
+            <span>Agents</span>
+          </div>
 
+          {/* Row 1: Human creates backlog */}
+          <div className="sc-workflow-cell">
             <div className="sc-workflow-item">
               <div className="sc-workflow-item__title">Create backlog</div>
               <div className="sc-workflow-item__desc">Define epics, break into tasks, set priorities</div>
               <code className="sc-workflow-item__code">td create "OAuth login" -p P1</code>
             </div>
+          </div>
+          <div className="sc-workflow-cell sc-workflow-cell--arrow-right">
+            <ArrowRight size={18} className="sc-workflow-arrow-icon" />
+          </div>
 
-            <div className="sc-workflow-arrow">→</div>
+          {/* Row 2: Agent picks up and works */}
+          <div className="sc-workflow-cell sc-workflow-cell--arrow-left">
+            <ArrowRight size={18} className="sc-workflow-arrow-icon sc-workflow-arrow-icon--flip" />
+          </div>
+          <div className="sc-workflow-cell">
+            <div className="sc-workflow-item">
+              <div className="sc-workflow-item__title">Pick up tasks</div>
+              <div className="sc-workflow-item__desc">Start work, handle in parallel when unblocked</div>
+              <code className="sc-workflow-item__code">td start td-a1b2</code>
+            </div>
+          </div>
 
-            <div className="sc-workflow-spacer" />
+          {/* Row 3: Agent handoffs */}
+          <div className="sc-workflow-cell" />
+          <div className="sc-workflow-cell">
+            <div className="sc-workflow-item sc-workflow-item--indent">
+              <div className="sc-workflow-item__title">Do handoffs</div>
+              <div className="sc-workflow-item__desc">Record progress for next session to resume</div>
+              <code className="sc-workflow-item__code">td handoff --done "..." --remaining "..."</code>
+            </div>
+          </div>
 
-            <div className="sc-workflow-arrow">←</div>
+          {/* Row 4: Agent submits for review */}
+          <div className="sc-workflow-cell" />
+          <div className="sc-workflow-cell">
+            <div className="sc-workflow-item sc-workflow-item--indent">
+              <div className="sc-workflow-item__title">Submit for review</div>
+              <div className="sc-workflow-item__desc">Different session must review—enforced isolation</div>
+              <code className="sc-workflow-item__code">td review td-a1b2</code>
+            </div>
+          </div>
 
+          {/* Row 5: Human reviews */}
+          <div className="sc-workflow-cell">
             <div className="sc-workflow-item">
               <div className="sc-workflow-item__title">Review & approve</div>
-              <div className="sc-workflow-item__desc">Verify work, request changes, or approve</div>
+              <div className="sc-workflow-item__desc">Verify work, request changes, or close</div>
               <code className="sc-workflow-item__code">td approve td-a1b2</code>
             </div>
+          </div>
+          <div className="sc-workflow-cell sc-workflow-cell--arrow-right">
+            <ArrowRight size={18} className="sc-workflow-arrow-icon sc-workflow-arrow-icon--flip" />
+          </div>
 
-            <div className="sc-workflow-spacer" />
-
+          {/* Row 6: Human monitors */}
+          <div className="sc-workflow-cell">
             <div className="sc-workflow-item">
-              <div className="sc-workflow-item__title">Monitor in real-time</div>
-              <div className="sc-workflow-item__desc">Watch agents work across sessions</div>
+              <div className="sc-workflow-item__title">Monitor progress</div>
+              <div className="sc-workflow-item__desc">Watch agents work across sessions in real-time</div>
               <code className="sc-workflow-item__code">td monitor</code>
             </div>
           </div>
-
-          <div className="sc-workflow-divider" />
-
-          <div className="sc-workflow-column">
-            <div className="sc-workflow-column__header">
-              <span className="sc-workflow-column__icon">🤖</span>
-              <span className="sc-workflow-column__title">Agents</span>
-            </div>
-
-            <div className="sc-workflow-spacer" />
-
-            <div className="sc-workflow-arrow">←</div>
-
-            <div className="sc-workflow-item">
-              <div className="sc-workflow-item__title">Pick up tasks</div>
-              <div className="sc-workflow-item__desc">Start work, handle in parallel if ready</div>
-              <code className="sc-workflow-item__code">td start td-a1b2</code>
-            </div>
-
-            <div className="sc-workflow-item sc-workflow-item--indent">
-              <div className="sc-workflow-item__title">Do handoffs</div>
-              <div className="sc-workflow-item__desc">Record progress for next session</div>
-              <code className="sc-workflow-item__code">td handoff --done "..." --remaining "..."</code>
-            </div>
-
-            <div className="sc-workflow-item sc-workflow-item--indent">
-              <div className="sc-workflow-item__title">Submit for review</div>
-              <div className="sc-workflow-item__desc">Different agent/session must review</div>
-              <code className="sc-workflow-item__code">td review td-a1b2</code>
-            </div>
-
-            <div className="sc-workflow-arrow">→</div>
-          </div>
+          <div className="sc-workflow-cell" />
         </div>
       </div>
     </section>
   );
 }
-
-const agents = [
-  'Claude Code',
-  'Cursor',
-  'Codex',
-  'GitHub Copilot',
-  'Gemini CLI',
-];
 
 function AgentsSection() {
   return (
@@ -271,12 +273,60 @@ function AgentsSection() {
           Any AI coding agent that can run shell commands works with td.
         </p>
         <div className="sc-agents-section__grid">
-          {agents.map((agent, idx) => (
-            <div className="sc-agents-section__item" key={idx}>
-              <Terminal size={24} className="sc-agents-section__item-icon" />
-              <span className="sc-agents-section__item-name">{agent}</span>
+          <div className="sc-agents-section__item">
+            <div className="sc-agent-logo">
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="32" height="32" rx="6" fill="#D97706" />
+                <path d="M16 6L8 10v12l8 4 8-4V10l-8-4zm0 2.2l5.6 2.8L16 13.8l-5.6-2.8L16 8.2zM10 11.8l5 2.5v7.4l-5-2.5v-7.4zm12 0v7.4l-5 2.5v-7.4l5-2.5z" fill="white" />
+              </svg>
             </div>
-          ))}
+            <span className="sc-agents-section__item-name">Claude Code</span>
+          </div>
+
+          <div className="sc-agents-section__item">
+            <div className="sc-agent-logo">
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="32" height="32" rx="6" fill="#171717" />
+                <path d="M8 16a8 8 0 1 1 16 0" stroke="#F7B500" strokeWidth="2.5" strokeLinecap="round" />
+                <circle cx="16" cy="16" r="3" fill="#F7B500" />
+                <path d="M16 19v5" stroke="#F7B500" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </div>
+            <span className="sc-agents-section__item-name">Cursor</span>
+          </div>
+
+          <div className="sc-agents-section__item">
+            <div className="sc-agent-logo">
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="32" height="32" rx="6" fill="#10A37F" />
+                <circle cx="16" cy="16" r="8" stroke="white" strokeWidth="2" fill="none" />
+                <circle cx="16" cy="16" r="3" fill="white" />
+              </svg>
+            </div>
+            <span className="sc-agents-section__item-name">Codex</span>
+          </div>
+
+          <div className="sc-agents-section__item">
+            <div className="sc-agent-logo">
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="32" height="32" rx="6" fill="#4285F4" />
+                <path d="M16 8l-6.93 12h13.86L16 8z" fill="#EA4335" />
+                <path d="M9.07 20L16 8v12H9.07z" fill="#FBBC05" />
+                <path d="M22.93 20L16 8v12h6.93z" fill="#34A853" />
+              </svg>
+            </div>
+            <span className="sc-agents-section__item-name">Gemini CLI</span>
+          </div>
+
+          <div className="sc-agents-section__item">
+            <div className="sc-agent-logo">
+              <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="32" height="32" rx="6" fill="#24292e" />
+                <path d="M16 8c-4.42 0-8 3.58-8 8a8.01 8.01 0 005.47 7.59c.4.07.53-.17.53-.38v-1.33c-2.22.48-2.69-1.07-2.69-1.07-.36-.92-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.82 1.23.82.71 1.22 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.65 7.65 0 014 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.74.54 1.49v2.21c0 .21.14.46.55.38A8.01 8.01 0 0024 16c0-4.42-3.58-8-8-8z" fill="white" />
+              </svg>
+            </div>
+            <span className="sc-agents-section__item-name">GitHub Copilot</span>
+          </div>
         </div>
       </div>
     </section>
