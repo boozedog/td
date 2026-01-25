@@ -1191,9 +1191,10 @@ func TestConfirmDialogButtonStyles(t *testing.T) {
 			}
 
 			// Verify the render doesn't panic and produces output
-			output := m.renderConfirmation()
+			// Use legacy renderer for testing (declarative modal requires more setup)
+			output := m.renderDeleteConfirmationLegacy()
 			if output == "" {
-				t.Errorf("%s: renderConfirmation returned empty string", tt.description)
+				t.Errorf("%s: renderDeleteConfirmationLegacy returned empty string", tt.description)
 			}
 
 			// Verify buttons are rendered

@@ -229,6 +229,28 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Fall through to keymap for esc, etc.
 	}
 
+	// Delete confirmation modal: let declarative modal handle keys first
+	if m.ConfirmOpen && m.DeleteConfirmModal != nil && m.DeleteConfirmMouseHandler != nil {
+		// Handle Y/N quick keys directly (modal doesn't know about these)
+		key := msg.String()
+		switch key {
+		case "y", "Y":
+			return m.handleDeleteConfirmAction("yes")
+		case "n", "N":
+			return m.handleDeleteConfirmAction("no")
+		}
+
+		// Let declarative modal handle tab/shift+tab/enter/esc
+		action, cmd := m.DeleteConfirmModal.HandleKey(msg)
+		if action != "" {
+			return m.handleDeleteConfirmAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// Fall through to keymap only for unhandled keys
+	}
+
 	// Search mode: forward most keys to textinput for cursor support
 	if ctx == keymap.ContextSearch {
 		// Special case: ? triggers help even in search mode
@@ -892,6 +914,8 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		if m.CloseConfirmOpen {
 			return m.executeCloseWithReason()
 		}
+		// Delete confirmation is now handled by declarative modal in handleKey
+		// This is a fallback for legacy button focus state
 		if m.ConfirmOpen && m.ConfirmAction == "delete" {
 			return m.executeDelete()
 		}
@@ -904,8 +928,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			m.CloseConfirmTitle = ""
 			return m, nil
 		}
+		// Delete confirmation is now handled by declarative modal in handleKey
+		// This is a fallback
 		if m.ConfirmOpen {
-			m.ConfirmOpen = false
+			m.closeDeleteConfirmModal()
 		}
 		return m, nil
 
@@ -921,11 +947,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.ConfirmOpen {
-			// Cycle: yes(0) -> no(1) -> yes(0)
-			m.ConfirmButtonFocus = (m.ConfirmButtonFocus + 1) % 2
-			return m, nil
-		}
+		// Delete confirmation tab cycling is now handled by declarative modal
 		return m, nil
 
 	case keymap.CmdPrevButton:
@@ -939,11 +961,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.ConfirmOpen {
-			// Reverse cycle: yes(0) <- no(1) <- yes(0)
-			m.ConfirmButtonFocus = (m.ConfirmButtonFocus + 1) % 2
-			return m, nil
-		}
+		// Delete confirmation tab cycling is now handled by declarative modal
 		return m, nil
 
 	case keymap.CmdSelect:
@@ -961,15 +979,7 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
-		if m.ConfirmOpen {
-			switch m.ConfirmButtonFocus {
-			case 0: // Yes button focused
-				return m.executeDelete()
-			case 1: // No button focused
-				m.ConfirmOpen = false
-				return m, nil
-			}
-		}
+		// Delete confirmation enter handling is now done by declarative modal
 		return m, nil
 
 	// Section navigation - Tab cycles through focusable sections (top-to-bottom visual order)

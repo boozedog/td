@@ -123,10 +123,8 @@ func (m Model) confirmDelete() (tea.Model, tea.Cmd) {
 		}
 	}
 
-	m.ConfirmOpen = true
-	m.ConfirmAction = "delete"
-	m.ConfirmIssueID = issueID
-	m.ConfirmTitle = issue.Title
+	// Use the new declarative modal function
+	m = m.openDeleteConfirmModal(issueID, issue.Title)
 
 	return m, nil
 }
@@ -134,7 +132,7 @@ func (m Model) confirmDelete() (tea.Model, tea.Cmd) {
 // executeDelete performs the actual deletion after confirmation
 func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 	if m.ConfirmIssueID == "" {
-		m.ConfirmOpen = false
+		m.closeDeleteConfirmModal()
 		return m, nil
 	}
 
@@ -142,7 +140,7 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 
 	// Delete issue
 	if err := m.DB.DeleteIssue(deletedID); err != nil {
-		m.ConfirmOpen = false
+		m.closeDeleteConfirmModal()
 		return m, nil
 	}
 
@@ -154,10 +152,8 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 		EntityID:   deletedID,
 	})
 
-	m.ConfirmOpen = false
-	m.ConfirmIssueID = ""
-	m.ConfirmTitle = ""
-	m.ConfirmAction = ""
+	// Close the delete confirmation modal
+	m.closeDeleteConfirmModal()
 
 	// Close modal if we just deleted the issue being viewed
 	if modal := m.CurrentModal(); modal != nil && modal.IssueID == deletedID {

@@ -584,3 +584,16 @@ type SendTaskToWorktreeMsg struct {
 	TaskID    string
 	TaskTitle string
 }
+
+// FirstRunCheckMsg carries the result of checking for first-time user setup.
+type FirstRunCheckMsg struct {
+	IsFirstRun      bool   // true if should show getting started modal
+	AgentFilePath   string // detected file path (may be empty)
+	HasInstructions bool   // true if agent file already has td instructions
+}
+
+// InstallInstructionsResultMsg carries the result of installing agent instructions.
+type InstallInstructionsResultMsg struct {
+	Success bool
+	Message string // e.g. "Added td instructions to AGENTS.md"
+}

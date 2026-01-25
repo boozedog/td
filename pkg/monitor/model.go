@@ -63,13 +63,17 @@ type Model struct {
 	SortMode       SortMode       // Task list sort order
 	TypeFilterMode TypeFilterMode // Type filter (epic, task, bug, etc.)
 
-	// Confirmation dialog state
+	// Confirmation dialog state (delete confirmation)
 	ConfirmOpen        bool
 	ConfirmAction      string // "delete"
 	ConfirmIssueID     string
 	ConfirmTitle       string
-	ConfirmButtonFocus int // 0=Yes, 1=No (for delete confirmation)
-	ConfirmButtonHover int // 0=none, 1=Yes, 2=No
+	ConfirmButtonFocus int // 0=Yes, 1=No (for delete confirmation) - legacy, kept for compatibility
+	ConfirmButtonHover int // 0=none, 1=Yes, 2=No - legacy, kept for compatibility
+
+	// Declarative delete confirmation modal
+	DeleteConfirmModal        *modal.Modal   // Declarative modal instance
+	DeleteConfirmMouseHandler *mouse.Handler // Mouse handler for delete confirmation modal
 
 	// Close confirmation dialog state
 	CloseConfirmOpen        bool

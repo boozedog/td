@@ -609,6 +609,96 @@ func (m *Model) createBoardPickerModal() *modal.Modal {
 	return md
 }
 
+// openDeleteConfirmModal opens the delete confirmation modal
+func (m Model) openDeleteConfirmModal(issueID, issueTitle string) Model {
+	m.ConfirmOpen = true
+	m.ConfirmAction = "delete"
+	m.ConfirmIssueID = issueID
+	m.ConfirmTitle = issueTitle
+
+	// Create declarative modal and mouse handler
+	m.DeleteConfirmModal = m.createDeleteConfirmModal()
+	m.DeleteConfirmModal.Reset()
+	m.DeleteConfirmMouseHandler = mouse.NewHandler()
+
+	return m
+}
+
+// closeDeleteConfirmModal closes the delete confirmation modal and clears state
+func (m *Model) closeDeleteConfirmModal() {
+	m.ConfirmOpen = false
+	m.ConfirmAction = ""
+	m.ConfirmIssueID = ""
+	m.ConfirmTitle = ""
+	m.DeleteConfirmModal = nil
+	m.DeleteConfirmMouseHandler = nil
+}
+
+// createDeleteConfirmModal builds the declarative modal for delete confirmation.
+func (m *Model) createDeleteConfirmModal() *modal.Modal {
+	// Calculate width based on issue title length (matches legacy behavior)
+	width := 40
+	if len(m.ConfirmTitle) > 30 {
+		width = len(m.ConfirmTitle) + 10
+	}
+	if width > 60 {
+		width = 60
+	}
+
+	// Build title based on action
+	action := "Delete"
+	if m.ConfirmAction != "" && m.ConfirmAction != "delete" {
+		action = m.ConfirmAction
+	}
+	title := action + " " + m.ConfirmIssueID + "?"
+
+	md := modal.New(title,
+		modal.WithWidth(width),
+		modal.WithVariant(modal.VariantDanger), // Red border for destructive action
+		modal.WithHints(false),                 // We use custom hint text
+	)
+
+	// Truncate issue title to fit
+	maxTitleLen := width - 10
+	if maxTitleLen < 20 {
+		maxTitleLen = 20
+	}
+	displayTitle := m.ConfirmTitle
+	if len(displayTitle) > maxTitleLen {
+		displayTitle = displayTitle[:maxTitleLen-3] + "..."
+	}
+
+	// Add issue title as text section (with quotes)
+	md.AddSection(modal.Text("\"" + displayTitle + "\""))
+
+	// Add spacer before buttons
+	md.AddSection(modal.Spacer())
+
+	// Add buttons - Yes is danger, No is normal
+	md.AddSection(modal.Buttons(
+		modal.Btn(" Yes ", "yes", modal.BtnDanger()),
+		modal.Btn(" No ", "no"),
+	))
+
+	// Add custom hint text
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Text("Tab:switch  Y/N:quick  Esc:cancel"))
+
+	return md
+}
+
+// handleDeleteConfirmAction handles actions from the delete confirmation modal
+func (m Model) handleDeleteConfirmAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "yes", "delete":
+		return m.executeDelete()
+	case "no", "cancel":
+		m.closeDeleteConfirmModal()
+		return m, nil
+	}
+	return m, nil
+}
+
 // navigateEpicTask navigates to the prev/next task within the epic's task list
 func (m Model) navigateEpicTask(delta int) (tea.Model, tea.Cmd) {
 	modal := m.CurrentModal()

@@ -56,9 +56,9 @@ func (m Model) renderView() string {
 		return OverlayModal(base, form, m.Width, m.Height)
 	}
 
-	// Overlay confirmation dialog if open
+	// Overlay delete confirmation dialog if open
 	if m.ConfirmOpen {
-		confirm := m.renderConfirmation()
+		confirm := m.renderDeleteConfirmation()
 		return OverlayModal(base, confirm, m.Width, m.Height)
 	}
 
@@ -1836,8 +1836,20 @@ func (m Model) wrapConfirmationModal(content string, width int) string {
 	return modalStyle.Render(content)
 }
 
-// renderConfirmation renders the confirmation dialog with interactive buttons
-func (m Model) renderConfirmation() string {
+// renderDeleteConfirmation renders the delete confirmation dialog using the declarative modal library
+func (m Model) renderDeleteConfirmation() string {
+	// Use declarative modal when available
+	if m.DeleteConfirmModal != nil && m.DeleteConfirmMouseHandler != nil {
+		return m.DeleteConfirmModal.Render(m.Width, m.Height, m.DeleteConfirmMouseHandler)
+	}
+
+	// Fallback to legacy rendering (should not happen in normal flow)
+	return m.renderDeleteConfirmationLegacy()
+}
+
+// renderDeleteConfirmationLegacy is the legacy rendering for the delete confirmation dialog
+// Kept for backward compatibility and edge cases
+func (m Model) renderDeleteConfirmationLegacy() string {
 	width := 40
 	if len(m.ConfirmTitle) > 30 {
 		width = len(m.ConfirmTitle) + 10
