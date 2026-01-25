@@ -120,6 +120,15 @@ func (r *Registry) GenerateHelp() string {
 		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
 	}
 
+	sb.WriteString("\nGETTING STARTED:\n")
+	gettingStartedBindings := []HelpBinding{
+		{Keys: "H", Description: "Open getting started guide"},
+		{Keys: "I", Description: "Install td instructions to agent file"},
+	}
+	for _, b := range gettingStartedBindings {
+		sb.WriteString(fmt.Sprintf("  %-20s %s\n", b.Keys, b.Description))
+	}
+
 	sb.WriteString("\nHANDOFFS MODAL:\n")
 	handoffBindings := []HelpBinding{
 		{Keys: "↑ / ↓ / j / k", Description: "Select handoff"},
@@ -386,6 +395,10 @@ func CommandHelp(cmd Command) string {
 		return "Cycle status filter in board"
 	case CmdToggleBoardView:
 		return "Toggle swimlanes/backlog view"
+	case CmdOpenGettingStarted:
+		return "Open the getting started guide"
+	case CmdInstallInstructions:
+		return "Install td instructions to agent file"
 	default:
 		return string(cmd)
 	}
@@ -460,6 +473,8 @@ func AllCommands() []Command {
 		CmdOpenBoardPicker, CmdSelectBoard, CmdCloseBoardPicker,
 		CmdMoveIssueUp, CmdMoveIssueDown, CmdMoveIssueToTop, CmdMoveIssueToBottom,
 		CmdExitBoardMode, CmdToggleBoardClosed, CmdCycleBoardStatusFilter, CmdToggleBoardView,
+		// Getting started commands
+		CmdOpenGettingStarted, CmdInstallInstructions,
 	}
 
 	sort.Slice(cmds, func(i, j int) bool {

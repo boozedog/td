@@ -29,6 +29,7 @@ const (
 	ContextHelp              Context = "help"                // When help modal is open
 	ContextBoardPicker       Context = "board-picker"        // When board picker is open
 	ContextBoard             Context = "board"               // When board mode is active
+	ContextGettingStarted    Context = "getting-started"    // When getting started modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings
@@ -131,6 +132,10 @@ const (
 
 	// External integration commands
 	CmdSendToWorktree Command = "send-to-worktree"
+
+	// Getting started commands
+	CmdOpenGettingStarted  Command = "open-getting-started"
+	CmdInstallInstructions Command = "install-instructions"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

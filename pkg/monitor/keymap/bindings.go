@@ -346,6 +346,16 @@ func DefaultBindings() []Binding {
 		{Key: "ctrl+b", Command: CmdFullPageUp, Context: ContextBoard, Description: "Full page up"},
 		{Key: "home", Command: CmdCursorTop, Context: ContextBoard, Description: "Go to top"},
 		{Key: "end", Command: CmdCursorBottom, Context: ContextBoard, Description: "Go to bottom"},
+
+		// ============================================================
+		// GETTING STARTED MODAL BINDINGS
+		// Active when the getting started modal is open
+		// ============================================================
+		{Key: "H", Command: CmdOpenGettingStarted, Context: ContextMain, Description: "Open getting started guide"},
+		{Key: "I", Command: CmdInstallInstructions, Context: ContextMain, Description: "Install agent instructions"},
+		{Key: "I", Command: CmdInstallInstructions, Context: ContextGettingStarted, Description: "Install agent instructions"},
+		{Key: "esc", Command: CmdClose, Context: ContextGettingStarted, Description: "Close modal"},
+		{Key: "q", Command: CmdClose, Context: ContextGettingStarted, Description: "Close modal"},
 	}
 }
 

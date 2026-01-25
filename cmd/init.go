@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/marcus/td/internal/agent"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/output"
@@ -86,44 +87,15 @@ func addToGitignore(path string) {
 	fmt.Println("Added .todos/ to .gitignore")
 }
 
-// agentInstructionText is the text to add to agent files
-const agentInstructionText = `## MANDATORY: Use td for Task Management
-
-Run td usage --new-session at conversation start (or after /clear). This tells you what to work on next.
-
-Sessions are automatic (based on terminal/agent context). Optional:
-- td session "name" to label the current session
-- td session --new to force a new session in the same context
-
-Use td usage -q after first read.
-`
-
-// knownAgentFiles lists agent instruction files in priority order
-var knownAgentFiles = []string{
-	"CLAUDE.md",
-	"AGENTS.md",
-	"COPILOT.md",
-	"CURSOR.md",
-	".github/copilot-instructions.md",
-}
-
 func suggestAgentFileAddition(baseDir string) {
 	fmt.Println()
 
 	// Check for existing agent files
-	var foundFile string
-	for _, name := range knownAgentFiles {
-		path := filepath.Join(baseDir, name)
-		if _, err := os.Stat(path); err == nil {
-			foundFile = path
-			break
-		}
-	}
+	foundFile := agent.DetectAgentFile(baseDir)
 
 	if foundFile != "" {
 		// Check if already contains td instruction
-		content, err := os.ReadFile(foundFile)
-		if err == nil && strings.Contains(string(content), "td usage") {
+		if agent.HasTDInstructions(foundFile) {
 			return // Already has td instructions
 		}
 
@@ -131,7 +103,7 @@ func suggestAgentFileAddition(baseDir string) {
 		fmt.Println()
 		fmt.Println("Text to add:")
 		fmt.Println("---")
-		fmt.Print(agentInstructionText)
+		fmt.Print(agent.InstructionText)
 		fmt.Println("---")
 		fmt.Println()
 		fmt.Print("Add to file? [y/N]: ")
@@ -141,7 +113,7 @@ func suggestAgentFileAddition(baseDir string) {
 		response = strings.TrimSpace(strings.ToLower(response))
 
 		if response == "y" || response == "yes" {
-			if err := prependToFile(foundFile, agentInstructionText); err != nil {
+			if err := agent.InstallInstructions(foundFile); err != nil {
 				output.Error("failed to update %s: %v", filepath.Base(foundFile), err)
 			} else {
 				output.Success("Added td instructions to %s", filepath.Base(foundFile))
@@ -151,51 +123,8 @@ func suggestAgentFileAddition(baseDir string) {
 		// No agent file found, just show suggestion
 		fmt.Println("Tip: Add this to your CLAUDE.md, AGENTS.md, or similar agent file:")
 		fmt.Println()
-		fmt.Print(agentInstructionText)
+		fmt.Print(agent.InstructionText)
 	}
-}
-
-func prependToFile(path string, text string) error {
-	// Read existing content
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	// Find safe insertion point (after any frontmatter or initial heading)
-	contentStr := string(content)
-	insertPos := 0
-
-	// Skip YAML frontmatter if present
-	if strings.HasPrefix(contentStr, "---") {
-		if endIdx := strings.Index(contentStr[3:], "---"); endIdx != -1 {
-			insertPos = endIdx + 6 // Skip past closing ---
-			// Skip any newlines after frontmatter
-			for insertPos < len(contentStr) && contentStr[insertPos] == '\n' {
-				insertPos++
-			}
-		}
-	}
-
-	// Skip initial # heading if present at insertion point
-	if insertPos < len(contentStr) && contentStr[insertPos] == '#' {
-		if nlIdx := strings.Index(contentStr[insertPos:], "\n"); nlIdx != -1 {
-			insertPos += nlIdx + 1
-			// Skip blank lines after heading
-			for insertPos < len(contentStr) && contentStr[insertPos] == '\n' {
-				insertPos++
-			}
-		}
-	}
-
-	// Build new content
-	var newContent strings.Builder
-	newContent.WriteString(contentStr[:insertPos])
-	newContent.WriteString(text)
-	newContent.WriteString("\n")
-	newContent.WriteString(contentStr[insertPos:])
-
-	return os.WriteFile(path, []byte(newContent.String()), 0644)
 }
 
 func init() {
