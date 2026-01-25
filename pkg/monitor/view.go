@@ -40,6 +40,13 @@ func (m Model) renderView() string {
 		return OverlayModal(base, tdqModal, m.Width, m.Height)
 	}
 
+	// Render getting started modal if open (using declarative modal)
+	if m.GettingStartedOpen && m.GettingStartedModal != nil && m.GettingStartedMouseHandler != nil {
+		base := m.renderBaseView()
+		gettingStartedContent := m.GettingStartedModal.Render(m.Width, m.Height, m.GettingStartedMouseHandler)
+		return OverlayModal(base, gettingStartedContent, m.Width, m.Height)
+	}
+
 	// Render base view (panels + footer)
 	base := m.renderBaseView()
 
@@ -1290,8 +1297,20 @@ func (m Model) wrapStatsModal(content string, width, height int) string {
 	return modalStyle.Render(content)
 }
 
-// renderStatsModal renders the stats modal with statistics and bar charts
+// renderStatsModal renders the stats modal using the declarative modal library
 func (m Model) renderStatsModal() string {
+	// Use declarative modal when available and data is ready
+	if m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil &&
+		m.StatsData != nil && m.StatsData.Error == nil {
+		return m.StatsModal.Render(m.Width, m.Height, m.StatsMouseHandler)
+	}
+
+	// Fallback to legacy rendering for loading/error states
+	return m.renderStatsModalLegacy()
+}
+
+// renderStatsModalLegacy is the legacy rendering for loading/error states
+func (m Model) renderStatsModalLegacy() string {
 	// Calculate modal dimensions (80% of terminal, capped)
 	modalWidth := m.Width * 80 / 100
 	if modalWidth > 100 {
@@ -1307,8 +1326,6 @@ func (m Model) renderStatsModal() string {
 	if modalHeight < 20 {
 		modalHeight = 20
 	}
-
-	contentWidth := modalWidth - 4 // Account for border and padding
 
 	var content strings.Builder
 
@@ -1339,14 +1356,21 @@ func (m Model) renderStatsModal() string {
 		return m.wrapStatsModal(content.String(), modalWidth, modalHeight)
 	}
 
+	// Should not reach here - data ready means we use declarative modal
+	return m.wrapStatsModal("Loading...", modalWidth, modalHeight)
+}
+
+// renderStatsContent renders the statistics content for the declarative modal.
+// This is called from the Custom section and returns all content lines.
+// The modal library handles scrolling automatically.
+func (m Model) renderStatsContent(contentWidth int) string {
+	// Handle missing data gracefully (shouldn't happen, but be safe)
+	if m.StatsData == nil || m.StatsData.ExtendedStats == nil {
+		return subtleStyle.Render("No stats available")
+	}
+
 	stats := m.StatsData.ExtendedStats
-
-	// Build all content lines for scrolling
 	var lines []string
-
-	// Title
-	lines = append(lines, titleStyle.Render("STATISTICS"))
-	lines = append(lines, "")
 
 	// Status bar chart
 	lines = append(lines, sectionHeader.Render("STATUS BREAKDOWN"))
@@ -1405,38 +1429,7 @@ func (m Model) renderStatsModal() string {
 			truncateSession(stats.MostActiveSession)))
 	}
 
-	// Apply scroll offset
-	visibleHeight := modalHeight - 4 // Account for border and footer
-	totalLines := len(lines)
-
-	// Clamp scroll
-	maxScroll := totalLines - visibleHeight
-	if maxScroll < 0 {
-		maxScroll = 0
-	}
-	scroll := m.StatsScroll
-	if scroll > maxScroll {
-		scroll = maxScroll
-	}
-
-	// Get visible lines
-	endIdx := scroll + visibleHeight
-	if endIdx > totalLines {
-		endIdx = totalLines
-	}
-	visibleLines := lines[scroll:endIdx]
-
-	// Build content
-	content.WriteString(strings.Join(visibleLines, "\n"))
-
-	// Add scroll indicator if needed
-	if totalLines > visibleHeight {
-		content.WriteString("\n")
-		scrollInfo := subtleStyle.Render(fmt.Sprintf("─ %d/%d ─", scroll+1, totalLines))
-		content.WriteString(scrollInfo)
-	}
-
-	return m.wrapStatsModal(content.String(), modalWidth, modalHeight)
+	return strings.Join(lines, "\n")
 }
 
 // renderHandoffsModal renders the handoffs modal

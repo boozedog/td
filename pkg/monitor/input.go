@@ -828,6 +828,11 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
+			// Route scroll to getting started modal - just ignore scroll
+			if m.GettingStartedOpen {
+				return m, nil
+			}
+
 			// Route scroll to appropriate modal
 			if modal := m.CurrentModal(); modal != nil {
 				// Mouse wheel always scrolls modal content (use j/k for task list navigation)
@@ -873,6 +878,38 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Handle Getting Started modal mouse events (declarative modal)
+	if m.GettingStartedOpen && m.GettingStartedModal != nil && m.GettingStartedMouseHandler != nil {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			action := m.GettingStartedModal.HandleMouse(msg, m.GettingStartedMouseHandler)
+			if action != "" {
+				return m.handleGettingStartedAction(action)
+			}
+			return m, nil
+		}
+		// Handle motion for hover states
+		if msg.Action == tea.MouseActionMotion {
+			_ = m.GettingStartedModal.HandleMouse(msg, m.GettingStartedMouseHandler)
+			return m, nil
+		}
+	}
+
+	// Handle Stats modal mouse events (declarative modal)
+	if m.StatsOpen && m.StatsModal != nil && m.StatsMouseHandler != nil && !m.StatsLoading && m.StatsError == nil {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			action := m.StatsModal.HandleMouse(msg, m.StatsMouseHandler)
+			if action != "" {
+				return m.handleStatsAction(action)
+			}
+			return m, nil
+		}
+		// Handle motion for hover states
+		if msg.Action == tea.MouseActionMotion {
+			_ = m.StatsModal.HandleMouse(msg, m.StatsMouseHandler)
+			return m, nil
+		}
+	}
+
 	// Handle left-click in modal for section selection
 	if m.ModalOpen() && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 		return m.handleModalClick(msg.X, msg.Y)
@@ -907,7 +944,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Ignore other mouse events when modals/overlays are open
-	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.BoardPickerOpen || m.HelpOpen || m.ShowTDQHelp {
+	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.BoardPickerOpen || m.HelpOpen || m.ShowTDQHelp || m.GettingStartedOpen {
 		return m, nil
 	}
 

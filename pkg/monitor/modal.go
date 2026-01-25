@@ -6,6 +6,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/pkg/monitor/modal"
+	"github.com/marcus/td/pkg/monitor/mouse"
 )
 
 // openModal opens the details modal for the currently selected issue
@@ -353,6 +355,11 @@ func (m Model) openStatsModal() (tea.Model, tea.Cmd) {
 	m.StatsError = nil
 	m.StatsData = nil
 
+	// Create declarative modal and mouse handler
+	m.StatsModal = m.createStatsModal()
+	m.StatsModal.Reset()
+	m.StatsMouseHandler = mouse.NewHandler()
+
 	return m, m.fetchStats()
 }
 
@@ -363,6 +370,44 @@ func (m *Model) closeStatsModal() {
 	m.StatsLoading = false
 	m.StatsError = nil
 	m.StatsData = nil
+	m.StatsModal = nil
+	m.StatsMouseHandler = nil
+}
+
+// createStatsModal builds the declarative modal for statistics.
+// The content is rendered via a Custom section since it uses bar charts and complex layout.
+func (m *Model) createStatsModal() *modal.Modal {
+	// Calculate width based on terminal size (80% width, capped)
+	modalWidth := m.Width * 80 / 100
+	if modalWidth > 100 {
+		modalWidth = 100
+	}
+	if modalWidth < 50 {
+		modalWidth = 50
+	}
+
+	md := modal.New("Statistics",
+		modal.WithWidth(modalWidth),
+		modal.WithVariant(modal.VariantDefault), // Use primary color (green)
+		modal.WithHints(false),                  // No hints, we have our own footer
+	)
+
+	// Use Custom section for the scrollable stats content
+	md.AddSection(modal.Custom(
+		func(contentWidth int, focusID, hoverID string) modal.RenderedSection {
+			return modal.RenderedSection{
+				Content: m.renderStatsContent(contentWidth),
+			}
+		},
+		nil, // No update handling needed
+	))
+
+	// Add Close button
+	md.AddSection(modal.Buttons(
+		modal.Btn(" Close ", "close"),
+	))
+
+	return md
 }
 
 // openHandoffsModal opens the handoffs modal and fetches data

@@ -178,6 +178,31 @@ func (m *Modal) Reset() {
 	m.scrollOffset = 0
 }
 
+// Scroll adjusts the scroll offset by delta lines.
+// Positive delta scrolls down, negative scrolls up.
+// The offset is clamped to valid bounds during Render.
+func (m *Modal) Scroll(delta int) {
+	m.scrollOffset += delta
+	if m.scrollOffset < 0 {
+		m.scrollOffset = 0
+	}
+	// Upper bound clamping happens in buildLayout
+}
+
+// ScrollOffset returns the current scroll offset.
+func (m *Modal) ScrollOffset() int {
+	return m.scrollOffset
+}
+
+// SetScrollOffset sets the scroll offset to a specific value.
+// The offset is clamped to valid bounds during Render.
+func (m *Modal) SetScrollOffset(offset int) {
+	if offset < 0 {
+		offset = 0
+	}
+	m.scrollOffset = offset
+}
+
 // currentFocusID returns the ID of the currently focused element.
 func (m *Modal) currentFocusID() string {
 	if len(m.focusIDs) == 0 {

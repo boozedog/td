@@ -1,19 +1,25 @@
 package monitor
 
 import (
+	"path/filepath"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
+	"github.com/marcus/td/internal/agent"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/query"
 	"github.com/marcus/td/pkg/monitor/keymap"
+	"github.com/marcus/td/pkg/monitor/mouse"
 )
 
 // currentContext returns the keymap context based on current UI state
 func (m Model) currentContext() keymap.Context {
+	if m.GettingStartedOpen {
+		return keymap.ContextGettingStarted
+	}
 	if m.HelpOpen {
 		return keymap.ContextHelp
 	}
@@ -160,6 +166,30 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 // handleKey processes key input using the centralized keymap registry
 func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ctx := m.currentContext()
+
+	// Getting Started modal: let declarative modal handle keys first
+	if m.GettingStartedOpen && m.GettingStartedModal != nil {
+		action, cmd := m.GettingStartedModal.HandleKey(msg)
+		if action != "" {
+			return m.handleGettingStartedAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// Fall through to keymap for esc, q, I, etc.
+	}
+
+	// Stats modal: let declarative modal handle keys first (when data is ready)
+	if m.StatsOpen && m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
+		action, cmd := m.StatsModal.HandleKey(msg)
+		if action != "" {
+			return m.handleStatsAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// Fall through to keymap for esc, scroll keys, etc.
+	}
 
 	// Search mode: forward most keys to textinput for cursor support
 	if ctx == keymap.ContextSearch {
@@ -319,7 +349,12 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				m.HandoffsCursor++
 			}
 		} else if m.StatsOpen {
-			m.StatsScroll++
+			// Use declarative modal scroll when available
+			if m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
+				m.StatsModal.Scroll(1)
+			} else {
+				m.StatsScroll++
+			}
 		} else {
 			m.moveCursor(1)
 		}
@@ -379,7 +414,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				m.HandoffsCursor--
 			}
 		} else if m.StatsOpen {
-			if m.StatsScroll > 0 {
+			// Use declarative modal scroll when available
+			if m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
+				m.StatsModal.Scroll(-1)
+			} else if m.StatsScroll > 0 {
 				m.StatsScroll--
 			}
 		} else {
@@ -408,7 +446,12 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 			m.HandoffsCursor = 0
 			m.HandoffsScroll = 0
 		} else if m.StatsOpen {
-			m.StatsScroll = 0
+			// Use declarative modal scroll when available
+			if m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
+				m.StatsModal.SetScrollOffset(0)
+			} else {
+				m.StatsScroll = 0
+			}
 		} else {
 			m.Cursor[m.ActivePanel] = 0
 			m.saveSelectedID(m.ActivePanel)
@@ -444,7 +487,12 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				m.HandoffsCursor = len(m.HandoffsData) - 1
 			}
 		} else if m.StatsOpen {
-			m.StatsScroll = 9999 // Will be clamped by view
+			// Use declarative modal scroll when available
+			if m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
+				m.StatsModal.SetScrollOffset(9999) // Will be clamped during render
+			} else {
+				m.StatsScroll = 9999 // Will be clamped by view
+			}
 		} else {
 			count := m.rowCount(m.ActivePanel)
 			if count > 0 {
@@ -503,7 +551,12 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				m.HandoffsCursor = 0
 			}
 		} else if m.StatsOpen {
-			m.StatsScroll += pageSize
+			// Use declarative modal scroll when available
+			if m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
+				m.StatsModal.Scroll(pageSize)
+			} else {
+				m.StatsScroll += pageSize
+			}
 		} else {
 			for i := 0; i < pageSize; i++ {
 				m.moveCursor(1)
@@ -549,9 +602,14 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				m.HandoffsCursor = 0
 			}
 		} else if m.StatsOpen {
-			m.StatsScroll -= pageSize
-			if m.StatsScroll < 0 {
-				m.StatsScroll = 0
+			// Use declarative modal scroll when available
+			if m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
+				m.StatsModal.Scroll(-pageSize)
+			} else {
+				m.StatsScroll -= pageSize
+				if m.StatsScroll < 0 {
+					m.StatsScroll = 0
+				}
 			}
 		} else {
 			for i := 0; i < pageSize; i++ {
@@ -581,7 +639,12 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				modal.Scroll = maxScroll
 			}
 		} else if m.StatsOpen {
-			m.StatsScroll += pageSize
+			// Use declarative modal scroll when available
+			if m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
+				m.StatsModal.Scroll(pageSize)
+			} else {
+				m.StatsScroll += pageSize
+			}
 		} else {
 			for i := 0; i < pageSize; i++ {
 				m.moveCursor(1)
@@ -609,9 +672,14 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 				modal.Scroll = 0
 			}
 		} else if m.StatsOpen {
-			m.StatsScroll -= pageSize
-			if m.StatsScroll < 0 {
-				m.StatsScroll = 0
+			// Use declarative modal scroll when available
+			if m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
+				m.StatsModal.Scroll(-pageSize)
+			} else {
+				m.StatsScroll -= pageSize
+				if m.StatsScroll < 0 {
+					m.StatsScroll = 0
+				}
 			}
 		} else {
 			for i := 0; i < pageSize; i++ {
@@ -1034,6 +1102,13 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdToggleBoardView:
 		return m.toggleBoardView()
+
+	// Getting started commands
+	case keymap.CmdOpenGettingStarted:
+		return m.openGettingStarted()
+
+	case keymap.CmdInstallInstructions:
+		return m.installAgentInstructions()
 	}
 
 	return m, nil
@@ -1655,5 +1730,81 @@ func (m Model) saveFilterState() tea.Cmd {
 		// Fire and forget - errors are not critical
 		_ = config.SetFilterState(m.BaseDir, state)
 		return nil
+	}
+}
+
+// openGettingStarted opens the getting started modal
+func (m Model) openGettingStarted() (Model, tea.Cmd) {
+	m.GettingStartedOpen = true
+	m.GettingStartedModal = m.createGettingStartedModal()
+	m.GettingStartedModal.Reset()
+	m.GettingStartedMouseHandler = mouse.NewHandler()
+	return m, nil
+}
+
+// handleGettingStartedAction handles actions from the getting started modal
+func (m Model) handleGettingStartedAction(action string) (Model, tea.Cmd) {
+	switch action {
+	case "install":
+		return m.installAgentInstructions()
+	case "close":
+		m.GettingStartedOpen = false
+		return m, nil
+	}
+	return m, nil
+}
+
+// handleStatsAction handles actions from the stats modal
+func (m Model) handleStatsAction(action string) (Model, tea.Cmd) {
+	switch action {
+	case "close", "cancel":
+		m.closeStatsModal()
+		return m, nil
+	}
+	return m, nil
+}
+
+// installAgentInstructions installs td instructions to the agent file
+func (m Model) installAgentInstructions() (Model, tea.Cmd) {
+	return m, m.doInstallInstructions()
+}
+
+// doInstallInstructions returns a command that installs agent instructions
+func (m Model) doInstallInstructions() tea.Cmd {
+	return func() tea.Msg {
+		targetPath := m.AgentFilePath
+		if targetPath == "" {
+			// No existing file - use preferred file (AGENTS.md)
+			targetPath = agent.PreferredAgentFile(m.BaseDir)
+		}
+
+		err := agent.InstallInstructions(targetPath)
+		if err != nil {
+			return InstallInstructionsResultMsg{
+				Success: false,
+				Message: "Failed: " + err.Error(),
+			}
+		}
+		return InstallInstructionsResultMsg{
+			Success: true,
+			Message: "Added td instructions to " + filepath.Base(targetPath),
+		}
+	}
+}
+
+// checkFirstRun returns a command that checks if this is a first-time run
+func (m Model) checkFirstRun() tea.Cmd {
+	return func() tea.Msg {
+		agentPath := agent.DetectAgentFile(m.BaseDir)
+		hasTD := false
+		if agentPath != "" {
+			hasTD = agent.HasTDInstructions(agentPath)
+		}
+
+		return FirstRunCheckMsg{
+			IsFirstRun:      !hasTD, // Show modal if no instructions found
+			AgentFilePath:   agentPath,
+			HasInstructions: hasTD,
+		}
 	}
 }

@@ -11,6 +11,8 @@ import (
 	"github.com/marcus/td/internal/session"
 	"github.com/marcus/td/internal/version"
 	"github.com/marcus/td/pkg/monitor/keymap"
+	"github.com/marcus/td/pkg/monitor/modal"
+	"github.com/marcus/td/pkg/monitor/mouse"
 )
 
 // Model is the main Bubble Tea model for the monitor TUI
@@ -78,11 +80,13 @@ type Model struct {
 	CloseConfirmButtonHover int // 0=none, 1=Confirm, 2=Cancel
 
 	// Stats modal state
-	StatsOpen    bool
-	StatsLoading bool
-	StatsData    *StatsData
-	StatsScroll  int
-	StatsError   error
+	StatsOpen         bool
+	StatsLoading      bool
+	StatsData         *StatsData
+	StatsScroll       int
+	StatsError        error
+	StatsModal        *modal.Modal   // Declarative modal instance
+	StatsMouseHandler *mouse.Handler // Mouse handler for stats modal
 
 	// Handoffs modal state
 	HandoffsOpen    bool
@@ -95,6 +99,13 @@ type Model struct {
 	// Form modal state
 	FormOpen  bool
 	FormState *FormState
+
+	// Getting Started modal state
+	GettingStartedOpen         bool           // Whether getting started modal is open
+	GettingStartedModal        *modal.Modal   // Declarative modal instance
+	GettingStartedMouseHandler *mouse.Handler // Mouse handler for getting started modal
+	AgentFilePath              string         // Detected agent file path (may be empty)
+	AgentFileHasTD             bool           // Whether agent file already has td instructions
 
 	// Board picker state
 	BoardPickerOpen   bool
@@ -303,6 +314,7 @@ func (m Model) Init() tea.Cmd {
 		m.scheduleTick(),
 		m.restoreLastViewedBoard(),
 		m.restoreFilterState(),
+		m.checkFirstRun(),
 	}
 
 	// Start async version check (non-blocking)
@@ -558,6 +570,32 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.StatusMessage = ""
 		m.StatusIsError = false
 		return m, nil
+
+	case FirstRunCheckMsg:
+		m.AgentFilePath = msg.AgentFilePath
+		m.AgentFileHasTD = msg.HasInstructions
+		if msg.IsFirstRun {
+			m.GettingStartedOpen = true
+			m.GettingStartedModal = m.createGettingStartedModal()
+			m.GettingStartedModal.Reset()
+			m.GettingStartedMouseHandler = mouse.NewHandler()
+		}
+		return m, nil
+
+	case InstallInstructionsResultMsg:
+		if msg.Success {
+			m.StatusMessage = msg.Message
+			m.StatusIsError = false
+			m.AgentFileHasTD = true
+			// Recreate modal to show updated state (checkmark)
+			if m.GettingStartedOpen {
+				m.GettingStartedModal = m.createGettingStartedModal()
+			}
+		} else {
+			m.StatusMessage = msg.Message
+			m.StatusIsError = true
+		}
+		return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
 
 	case version.UpdateAvailableMsg:
 		m.UpdateAvail = &msg
