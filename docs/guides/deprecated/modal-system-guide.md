@@ -1,4 +1,14 @@
-# Modal System Architecture
+# Modal System Architecture (DEPRECATED)
+
+> **⚠️ DEPRECATED**: This guide documents the legacy manual modal implementation.
+> For new modals, use the declarative modal library documented in
+> [declarative-modal-guide.md](declarative-modal-guide.md).
+>
+> The new library provides:
+> - Render-then-measure hit regions (eliminates off-by-one bugs)
+> - Automatic keyboard navigation (Tab/Shift+Tab, Enter, Esc)
+> - Automatic hover state management
+> - Declarative API: `modal.New().AddSection(modal.Text()).AddSection(modal.Buttons())`
 
 Guide for developers adding modal-related features to the TD monitor.
 
