@@ -251,6 +251,30 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Fall through to keymap only for unhandled keys
 	}
 
+	// Close confirmation modal: let declarative modal handle keys
+	if m.CloseConfirmOpen && m.CloseConfirmModal != nil && m.CloseConfirmMouseHandler != nil {
+		// Let declarative modal handle tab/shift+tab/enter/esc and input
+		action, cmd := m.CloseConfirmModal.HandleKey(msg)
+		if action != "" {
+			return m.handleCloseConfirmAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// Consume keys that the modal handles internally (focus cycling, input)
+		// to prevent double-handling by keymap
+		key := msg.String()
+		switch key {
+		case "tab", "shift+tab", "enter", "up", "down", "left", "right", "home", "end", "backspace", "delete":
+			return m, nil // Key was handled by modal
+		}
+		// Also consume regular character keys for the input field
+		if msg.Type == tea.KeyRunes {
+			return m, nil
+		}
+		// Fall through to keymap only for unhandled keys (like esc)
+	}
+
 	// Search mode: forward most keys to textinput for cursor support
 	if ctx == keymap.ContextSearch {
 		// Special case: ? triggers help even in search mode
@@ -936,50 +960,16 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	// Button navigation for confirmation dialogs
+	// Note: Both delete and close confirmation modals now handle tab cycling
+	// internally through their declarative modal HandleKey() methods
 	case keymap.CmdNextButton:
-		if m.CloseConfirmOpen {
-			// Cycle: input(0) -> confirm(1) -> cancel(2) -> input(0)
-			m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 1) % 3
-			if m.CloseConfirmButtonFocus == 0 {
-				m.CloseConfirmInput.Focus()
-			} else {
-				m.CloseConfirmInput.Blur()
-			}
-			return m, nil
-		}
-		// Delete confirmation tab cycling is now handled by declarative modal
 		return m, nil
 
 	case keymap.CmdPrevButton:
-		if m.CloseConfirmOpen {
-			// Reverse cycle: input(0) <- confirm(1) <- cancel(2) <- input(0)
-			m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 2) % 3
-			if m.CloseConfirmButtonFocus == 0 {
-				m.CloseConfirmInput.Focus()
-			} else {
-				m.CloseConfirmInput.Blur()
-			}
-			return m, nil
-		}
-		// Delete confirmation tab cycling is now handled by declarative modal
 		return m, nil
 
 	case keymap.CmdSelect:
-		// Execute focused button in confirmation dialogs
-		if m.CloseConfirmOpen {
-			switch m.CloseConfirmButtonFocus {
-			case 0: // Input focused - confirm (same as Enter in input)
-				return m.executeCloseWithReason()
-			case 1: // Confirm button focused
-				return m.executeCloseWithReason()
-			case 2: // Cancel button focused
-				m.CloseConfirmOpen = false
-				m.CloseConfirmIssueID = ""
-				m.CloseConfirmTitle = ""
-				return m, nil
-			}
-		}
-		// Delete confirmation enter handling is now done by declarative modal
+		// Confirmation dialog enter handling is now done by declarative modals
 		return m, nil
 
 	// Section navigation - Tab cycles through focusable sections (top-to-bottom visual order)

@@ -943,8 +943,20 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	if m.CloseConfirmOpen && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-		return m.handleCloseConfirmDialogClick(msg.X, msg.Y)
+	// Handle Close confirmation modal mouse events (declarative modal)
+	if m.CloseConfirmOpen && m.CloseConfirmModal != nil && m.CloseConfirmMouseHandler != nil {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			action := m.CloseConfirmModal.HandleMouse(msg, m.CloseConfirmMouseHandler)
+			if action != "" {
+				return m.handleCloseConfirmAction(action)
+			}
+			return m, nil
+		}
+		// Handle motion for hover states
+		if msg.Action == tea.MouseActionMotion {
+			_ = m.CloseConfirmModal.HandleMouse(msg, m.CloseConfirmMouseHandler)
+			return m, nil
+		}
 	}
 	if m.FormOpen && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
 		return m.handleFormDialogClick(msg.X, msg.Y)
@@ -967,9 +979,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Handle mouse motion for hover states on confirmation dialogs
-	if m.CloseConfirmOpen && msg.Action == tea.MouseActionMotion {
-		return m.handleCloseConfirmDialogHover(msg.X, msg.Y)
-	}
+	// Note: CloseConfirm hover is now handled by declarative modal above
 	if m.FormOpen && msg.Action == tea.MouseActionMotion {
 		return m.handleFormDialogHover(msg.X, msg.Y)
 	}
@@ -1364,127 +1374,7 @@ func (m Model) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleCloseConfirmDialogClick handles mouse clicks on the close confirmation dialog buttons
-func (m Model) handleCloseConfirmDialogClick(x, y int) (tea.Model, tea.Cmd) {
-	// Calculate modal bounds
-	width := 50
-	if len(m.CloseConfirmTitle) > 40 {
-		width = len(m.CloseConfirmTitle) + 10
-	}
-	if width > 60 {
-		width = 60
-	}
-
-	// Modal structure:
-	// - Border top (1) + Padding top (1) = 2 lines before content
-	// - Content lines:
-	//   0: Title
-	//   1: Issue title
-	//   2: blank
-	//   3: Input label
-	//   4: Input field
-	//   5: blank
-	//   6: Buttons
-	//   7: blank
-	//   8: Hints
-	// - Padding bottom (1) + Border bottom (1) = 2 lines after
-	// Total: 2 + 9 + 2 = 13 lines
-
-	modalHeight := 13
-	// lipgloss Width() sets content width, border adds 2 (1 each side)
-	// Padding is inside the content width, not added to it
-	modalWidth := width + 2
-
-	// Modal is centered
-	modalX := (m.Width - modalWidth) / 2
-	modalY := (m.Height - modalHeight) / 2
-
-	// Content starts after border (1) + padding (1) = 2
-	contentStartY := modalY + 2
-
-	// Button row is at content line 6
-	buttonRowY := contentStartY + 6
-
-	// Input field is at content line 4
-	inputRowY := contentStartY + 4
-
-	// Check if click is on button row (exact match, no tolerance)
-	if y == buttonRowY {
-		// Calculate button X positions relative to content area
-		// Content starts at modalX + border (1) + padding (2) = modalX + 3
-		contentStartX := modalX + 3
-
-		// Button widths: "Confirm" = 7 chars + 4 padding = 11, "Cancel" = 6 chars + 4 padding = 10
-		// Buttons are rendered with 2 spaces between them
-		confirmStartX := contentStartX
-		confirmEndX := confirmStartX + 11
-		cancelStartX := confirmEndX + 2
-		cancelEndX := cancelStartX + 10
-
-		if x >= confirmStartX && x < confirmEndX {
-			return m.executeCloseWithReason()
-		} else if x >= cancelStartX && x < cancelEndX {
-			m.CloseConfirmOpen = false
-			m.CloseConfirmIssueID = ""
-			m.CloseConfirmTitle = ""
-			return m, nil
-		}
-		return m, nil
-	}
-
-	// Check if click is on input field row
-	if y == inputRowY {
-		m.CloseConfirmButtonFocus = 0
-		m.CloseConfirmInput.Focus()
-		return m, nil
-	}
-
-	return m, nil
-}
-
-// handleCloseConfirmDialogHover handles mouse hover on the close confirmation dialog buttons
-func (m Model) handleCloseConfirmDialogHover(x, y int) (tea.Model, tea.Cmd) {
-	// Calculate modal bounds (same as click handler)
-	width := 50
-	if len(m.CloseConfirmTitle) > 40 {
-		width = len(m.CloseConfirmTitle) + 10
-	}
-	if width > 60 {
-		width = 60
-	}
-
-	modalHeight := 13
-	modalWidth := width + 2 // border only, padding is inside content width
-
-	modalX := (m.Width - modalWidth) / 2
-	modalY := (m.Height - modalHeight) / 2
-
-	contentStartY := modalY + 2
-	buttonRowY := contentStartY + 6
-
-	// Reset hover state
-	m.CloseConfirmButtonHover = 0
-
-	// Check if on button row (exact match)
-	if y != buttonRowY {
-		return m, nil
-	}
-
-	// Check button positions
-	contentStartX := modalX + 3
-	confirmStartX := contentStartX
-	confirmEndX := confirmStartX + 11
-	cancelStartX := confirmEndX + 2
-	cancelEndX := cancelStartX + 10
-
-	if x >= confirmStartX && x < confirmEndX {
-		m.CloseConfirmButtonHover = 1 // Confirm
-	} else if x >= cancelStartX && x < cancelEndX {
-		m.CloseConfirmButtonHover = 2 // Cancel
-	}
-
-	return m, nil
-}
+// Legacy handlers removed - close confirmation now uses declarative modal
 
 // handleFormDialogClick handles mouse clicks on the form modal buttons
 func (m Model) handleFormDialogClick(x, y int) (tea.Model, tea.Cmd) {

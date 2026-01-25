@@ -80,8 +80,12 @@ type Model struct {
 	CloseConfirmIssueID     string
 	CloseConfirmTitle       string
 	CloseConfirmInput       textinput.Model
-	CloseConfirmButtonFocus int // 0=input, 1=Confirm, 2=Cancel
-	CloseConfirmButtonHover int // 0=none, 1=Confirm, 2=Cancel
+	CloseConfirmButtonFocus int // 0=input, 1=Confirm, 2=Cancel - legacy, kept for compatibility
+	CloseConfirmButtonHover int // 0=none, 1=Confirm, 2=Cancel - legacy, kept for compatibility
+
+	// Declarative close confirmation modal
+	CloseConfirmModal        *modal.Modal   // Declarative modal instance
+	CloseConfirmMouseHandler *mouse.Handler // Mouse handler for close confirmation modal
 
 	// Stats modal state
 	StatsOpen         bool
@@ -384,53 +388,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFormUpdate(msg)
 	}
 
-	// Close confirmation mode: forward key messages to textinput (when input is focused)
+	// Close confirmation mode: forward non-key messages to textinput (cursor blink, etc.)
+	// Key messages are handled in handleKey() via the declarative modal
 	if m.CloseConfirmOpen {
-		if keyMsg, ok := msg.(tea.KeyMsg); ok {
-			switch keyMsg.String() {
-			case "tab":
-				// Cycle: input(0) -> confirm(1) -> cancel(2) -> input(0)
-				m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 1) % 3
-				if m.CloseConfirmButtonFocus == 0 {
-					m.CloseConfirmInput.Focus()
-				} else {
-					m.CloseConfirmInput.Blur()
-				}
-				return m, nil
-			case "shift+tab":
-				// Reverse cycle
-				m.CloseConfirmButtonFocus = (m.CloseConfirmButtonFocus + 2) % 3
-				if m.CloseConfirmButtonFocus == 0 {
-					m.CloseConfirmInput.Focus()
-				} else {
-					m.CloseConfirmInput.Blur()
-				}
-				return m, nil
-			case "enter":
-				// Enter behavior depends on focus
-				switch m.CloseConfirmButtonFocus {
-				case 0, 1: // Input or Confirm button focused
-					return m.executeCloseWithReason()
-				case 2: // Cancel button focused
-					m.CloseConfirmOpen = false
-					m.CloseConfirmIssueID = ""
-					m.CloseConfirmTitle = ""
-					return m, nil
-				}
-				return m.executeCloseWithReason()
-			case "esc":
-				m.CloseConfirmOpen = false
-				m.CloseConfirmIssueID = ""
-				m.CloseConfirmTitle = ""
-				return m, nil
-			default:
-				// Only forward to textinput if input is focused
-				if m.CloseConfirmButtonFocus == 0 {
-					var cmd tea.Cmd
-					m.CloseConfirmInput, cmd = m.CloseConfirmInput.Update(msg)
-					return m, cmd
-				}
-				return m, nil
+		if _, isKey := msg.(tea.KeyMsg); !isKey {
+			var inputCmd tea.Cmd
+			m.CloseConfirmInput, inputCmd = m.CloseConfirmInput.Update(msg)
+			if inputCmd != nil {
+				return m, inputCmd
 			}
 		}
 	}

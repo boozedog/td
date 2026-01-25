@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/marcus/td/internal/models"
@@ -694,6 +695,104 @@ func (m Model) handleDeleteConfirmAction(action string) (tea.Model, tea.Cmd) {
 		return m.executeDelete()
 	case "no", "cancel":
 		m.closeDeleteConfirmModal()
+		return m, nil
+	}
+	return m, nil
+}
+
+// openCloseConfirmModal opens the close confirmation modal
+func (m Model) openCloseConfirmModal(issueID, issueTitle string) Model {
+	m.CloseConfirmOpen = true
+	m.CloseConfirmIssueID = issueID
+	m.CloseConfirmTitle = issueTitle
+
+	// Create textinput for reason
+	m.CloseConfirmInput = textinput.New()
+	m.CloseConfirmInput.Placeholder = "Optional: reason for closing"
+	m.CloseConfirmInput.Width = 40
+
+	// Create declarative modal and mouse handler
+	m.CloseConfirmModal = m.createCloseConfirmModal()
+	m.CloseConfirmModal.Reset()
+	m.CloseConfirmMouseHandler = mouse.NewHandler()
+
+	return m
+}
+
+// closeCloseConfirmModal closes the close confirmation modal and clears state
+func (m *Model) closeCloseConfirmModal() {
+	m.CloseConfirmOpen = false
+	m.CloseConfirmIssueID = ""
+	m.CloseConfirmTitle = ""
+	m.CloseConfirmModal = nil
+	m.CloseConfirmMouseHandler = nil
+}
+
+// createCloseConfirmModal builds the declarative modal for close confirmation.
+func (m *Model) createCloseConfirmModal() *modal.Modal {
+	// Calculate width based on issue title length (matches legacy behavior)
+	width := 50
+	if len(m.CloseConfirmTitle) > 40 {
+		width = len(m.CloseConfirmTitle) + 10
+	}
+	if width > 60 {
+		width = 60
+	}
+
+	title := fmt.Sprintf("Close %s?", m.CloseConfirmIssueID)
+
+	md := modal.New(title,
+		modal.WithWidth(width),
+		modal.WithVariant(modal.VariantDanger),  // Red border for destructive action
+		modal.WithHints(false),                  // We use custom hint text
+		modal.WithPrimaryAction("confirm"),     // Enter on input submits confirm
+	)
+
+	// Truncate issue title to fit
+	maxTitleLen := width - 10
+	if maxTitleLen < 20 {
+		maxTitleLen = 20
+	}
+	displayTitle := m.CloseConfirmTitle
+	if len(displayTitle) > maxTitleLen {
+		displayTitle = displayTitle[:maxTitleLen-3] + "..."
+	}
+
+	// Add issue title as text section (with quotes)
+	md.AddSection(modal.Text("\"" + displayTitle + "\""))
+
+	// Add spacer before input
+	md.AddSection(modal.Spacer())
+
+	// Add reason input with label
+	md.AddSection(modal.InputWithLabel("reason", "Reason (optional):", &m.CloseConfirmInput,
+		modal.WithSubmitOnEnter(true),
+		modal.WithSubmitAction("confirm"),
+	))
+
+	// Add spacer before buttons
+	md.AddSection(modal.Spacer())
+
+	// Add buttons - Confirm is normal, Cancel is also normal
+	md.AddSection(modal.Buttons(
+		modal.Btn(" Confirm ", "confirm"),
+		modal.Btn(" Cancel ", "cancel"),
+	))
+
+	// Add custom hint text
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Text("Tab:switch  Enter:confirm  Esc:cancel"))
+
+	return md
+}
+
+// handleCloseConfirmAction handles actions from the close confirmation modal
+func (m Model) handleCloseConfirmAction(action string) (tea.Model, tea.Cmd) {
+	switch action {
+	case "confirm":
+		return m.executeCloseWithReason()
+	case "cancel":
+		m.closeCloseConfirmModal()
 		return m, nil
 	}
 	return m, nil

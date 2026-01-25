@@ -62,9 +62,9 @@ func (m Model) renderView() string {
 		return OverlayModal(base, confirm, m.Width, m.Height)
 	}
 
-	// Overlay close confirmation dialog if open
-	if m.CloseConfirmOpen {
-		confirm := m.renderCloseConfirmation()
+	// Overlay close confirmation dialog if open (declarative modal)
+	if m.CloseConfirmOpen && m.CloseConfirmModal != nil && m.CloseConfirmMouseHandler != nil {
+		confirm := m.CloseConfirmModal.Render(m.Width, m.Height, m.CloseConfirmMouseHandler)
 		return OverlayModal(base, confirm, m.Width, m.Height)
 	}
 
@@ -1901,65 +1901,7 @@ func (m Model) renderDeleteConfirmationLegacy() string {
 	return m.wrapConfirmationModal(content.String(), width)
 }
 
-// renderCloseConfirmation renders the close confirmation dialog with optional reason input and interactive buttons
-func (m Model) renderCloseConfirmation() string {
-	width := 50
-	if len(m.CloseConfirmTitle) > 40 {
-		width = len(m.CloseConfirmTitle) + 10
-	}
-	if width > 60 {
-		width = 60
-	}
-
-	var content strings.Builder
-
-	// Title
-	content.WriteString(titleStyle.Render(fmt.Sprintf("Close %s?", m.CloseConfirmIssueID)))
-	content.WriteString("\n")
-
-	// Issue title (truncated to fit on one line)
-	// Content width is width - 6 (border 2 + padding 4), minus 2 for quotes
-	maxTitleLen := width - 10
-	if maxTitleLen < 20 {
-		maxTitleLen = 20
-	}
-	title := m.CloseConfirmTitle
-	if len(title) > maxTitleLen {
-		title = title[:maxTitleLen-3] + "..."
-	}
-	content.WriteString(subtleStyle.Render(fmt.Sprintf("\"%s\"", title)))
-	content.WriteString("\n\n")
-
-	// Reason input with focus indicator
-	inputLabel := "Reason (optional):"
-	if m.CloseConfirmButtonFocus == 0 {
-		inputLabel = "> " + inputLabel
-	} else {
-		inputLabel = "  " + inputLabel
-	}
-	content.WriteString(inputLabel + "\n")
-	content.WriteString(m.CloseConfirmInput.View())
-	content.WriteString("\n\n")
-
-	// Interactive buttons
-	confirmFocused := m.CloseConfirmButtonFocus == 1
-	cancelFocused := m.CloseConfirmButtonFocus == 2
-	confirmHovered := m.CloseConfirmButtonHover == 1
-	cancelHovered := m.CloseConfirmButtonHover == 2
-
-	confirmBtn := renderButton("Confirm", confirmFocused, confirmHovered, false)
-	cancelBtn := renderButton("Cancel", cancelFocused, cancelHovered, false)
-
-	content.WriteString(confirmBtn)
-	content.WriteString("  ")
-	content.WriteString(cancelBtn)
-	content.WriteString("\n\n")
-
-	// Shortcut hints
-	content.WriteString(subtleStyle.Render("Tab:switch  Enter:confirm  Esc:cancel"))
-
-	return m.wrapConfirmationModal(content.String(), width)
-}
+// Legacy renderCloseConfirmation removed - close confirmation now uses declarative modal
 
 // wrapText wraps text to fit within maxWidth
 func wrapText(text string, maxWidth int) []string {

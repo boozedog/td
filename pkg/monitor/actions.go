@@ -3,7 +3,6 @@ package monitor
 import (
 	"time"
 
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -202,13 +201,8 @@ func (m Model) confirmClose() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.CloseConfirmOpen = true
-	m.CloseConfirmIssueID = issueID
-	m.CloseConfirmTitle = issue.Title
-	m.CloseConfirmInput = textinput.New()
-	m.CloseConfirmInput.Placeholder = "Optional: reason for closing"
-	m.CloseConfirmInput.Width = 40
-	m.CloseConfirmInput.Focus()
+	// Use the new declarative modal function
+	m = m.openCloseConfirmModal(issueID, issue.Title)
 
 	return m, nil
 }
@@ -216,7 +210,7 @@ func (m Model) confirmClose() (tea.Model, tea.Cmd) {
 // executeCloseWithReason performs the actual close after confirmation
 func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 	if m.CloseConfirmIssueID == "" {
-		m.CloseConfirmOpen = false
+		m.closeCloseConfirmModal()
 		return m, nil
 	}
 
@@ -226,14 +220,14 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 	// Get the issue
 	issue, err := m.DB.GetIssue(issueID)
 	if err != nil || issue == nil {
-		m.CloseConfirmOpen = false
+		m.closeCloseConfirmModal()
 		return m, nil
 	}
 
 	// Validate transition with state machine
 	sm := workflow.DefaultMachine()
 	if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
-		m.CloseConfirmOpen = false
+		m.closeCloseConfirmModal()
 		return m, nil
 	}
 
@@ -242,7 +236,7 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 	issue.Status = models.StatusClosed
 	issue.ClosedAt = &now
 	if err := m.DB.UpdateIssue(issue); err != nil {
-		m.CloseConfirmOpen = false
+		m.closeCloseConfirmModal()
 		return m, nil
 	}
 
@@ -295,10 +289,8 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 	// Cascade up to parent epic if all siblings are closed
 	m.DB.CascadeUpParentStatus(issueID, models.StatusClosed, m.SessionID)
 
-	// Reset confirmation state
-	m.CloseConfirmOpen = false
-	m.CloseConfirmIssueID = ""
-	m.CloseConfirmTitle = ""
+	// Close the confirmation modal
+	m.closeCloseConfirmModal()
 
 	// If we're in a modal, refresh instead of closing
 	if modal := m.CurrentModal(); modal != nil {
