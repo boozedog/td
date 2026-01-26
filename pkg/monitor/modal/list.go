@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
 )
 
 // ListItem represents an item in a list section.
@@ -73,8 +72,11 @@ func (s *listSection) Render(contentWidth int, focusID, hoverID string) Rendered
 	maxScroll := max(0, len(s.items)-visibleCount)
 	s.scrollOffset = clamp(s.scrollOffset, 0, maxScroll)
 
+	// Check if the list itself is focused (for styling the selected item)
+	listIsFocused := focusID == s.id
+
 	var sb strings.Builder
-	focusables := make([]FocusableInfo, 0, visibleCount)
+	totalHeight := 0
 
 	for i := 0; i < visibleCount; i++ {
 		itemIdx := s.scrollOffset + i
@@ -86,10 +88,12 @@ func (s *listSection) Render(contentWidth int, focusID, hoverID string) Rendered
 		isSelected := s.selectedIdx != nil && *s.selectedIdx == itemIdx
 		isHovered := item.ID == hoverID
 
-		// Determine style
+		// Determine style - show focused style only when list is focused AND item is selected
 		var style = ListItemNormal
-		if isSelected {
+		if isSelected && listIsFocused {
 			style = ListItemFocused
+		} else if isSelected {
+			style = ListItemSelected // Selected but list not focused
 		} else if isHovered {
 			style = ListItemSelected
 		}
@@ -106,15 +110,7 @@ func (s *listSection) Render(contentWidth int, focusID, hoverID string) Rendered
 			sb.WriteString("\n")
 		}
 		sb.WriteString(line)
-
-		// Register focusable
-		focusables = append(focusables, FocusableInfo{
-			ID:      item.ID,
-			OffsetX: 0,
-			OffsetY: i,
-			Width:   ansi.StringWidth(line),
-			Height:  1,
-		})
+		totalHeight++
 	}
 
 	// Show scroll indicators if needed
@@ -122,14 +118,23 @@ func (s *listSection) Render(contentWidth int, focusID, hoverID string) Rendered
 	hasTopIndicator := s.scrollOffset > 0
 	if hasTopIndicator {
 		content = MutedText.Render("↑ more above") + "\n" + content
-		// Adjust focusable offsets since we prepended a line
-		for i := range focusables {
-			focusables[i].OffsetY++
-		}
+		totalHeight++
 	}
 	if s.scrollOffset+visibleCount < len(s.items) {
 		content = content + "\n" + MutedText.Render("↓ more below")
+		totalHeight++
 	}
+
+	// Register the LIST ITSELF as a single focusable (not each item)
+	// This makes Tab move to the next section instead of cycling through items
+	// Individual items are still clickable via mouse hit regions
+	focusables := []FocusableInfo{{
+		ID:      s.id, // Use the list's ID, not individual item IDs
+		OffsetX: 0,
+		OffsetY: 0,
+		Width:   contentWidth,
+		Height:  totalHeight,
+	}}
 
 	return RenderedSection{
 		Content:    content,
@@ -138,15 +143,8 @@ func (s *listSection) Render(contentWidth int, focusID, hoverID string) Rendered
 }
 
 func (s *listSection) Update(msg tea.Msg, focusID string) (string, tea.Cmd) {
-	// Check if any of our items are focused
-	isFocused := false
-	for _, item := range s.items {
-		if item.ID == focusID {
-			isFocused = true
-			break
-		}
-	}
-	if !isFocused {
+	// Check if the list itself is focused (not individual items)
+	if focusID != s.id {
 		return "", nil
 	}
 

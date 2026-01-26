@@ -466,25 +466,30 @@ func TestListSection(t *testing.T) {
 		{ID: "item2", Label: "Item 2"},
 		{ID: "item3", Label: "Item 3"},
 	}
-	s := List("list", items, &selectedIdx)
+	s := List("my-list", items, &selectedIdx)
 
-	res := s.Render(60, "item1", "")
+	// Render with list focused
+	res := s.Render(60, "my-list", "")
 
 	if !strings.Contains(res.Content, "Item 1") {
 		t.Errorf("expected content to contain 'Item 1', got %q", res.Content)
 	}
-	if len(res.Focusables) != 3 {
-		t.Errorf("expected 3 focusables, got %d", len(res.Focusables))
+	// List now registers as a single focusable (the list itself, not each item)
+	if len(res.Focusables) != 1 {
+		t.Errorf("expected 1 focusable (the list), got %d", len(res.Focusables))
+	}
+	if res.Focusables[0].ID != "my-list" {
+		t.Errorf("expected focusable ID 'my-list', got %q", res.Focusables[0].ID)
 	}
 
-	// Test navigation
-	s.Update(tea.KeyMsg{Type: tea.KeyDown}, "item1")
+	// Test navigation - pass the list's ID, not item ID
+	s.Update(tea.KeyMsg{Type: tea.KeyDown}, "my-list")
 	if selectedIdx != 1 {
 		t.Errorf("expected selectedIdx 1 after down, got %d", selectedIdx)
 	}
 
 	// Test enter returns selected item ID
-	action, _ := s.Update(tea.KeyMsg{Type: tea.KeyEnter}, "item2")
+	action, _ := s.Update(tea.KeyMsg{Type: tea.KeyEnter}, "my-list")
 	if action != "item2" {
 		t.Errorf("expected action 'item2' on enter, got %q", action)
 	}
