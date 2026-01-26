@@ -215,14 +215,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if cmd != nil {
 			return m, cmd
 		}
-		// The List section handles j/k/up/down/home/end internally without returning an action.
-		// We need to consume these keys here to prevent double-handling by the keymap.
-		key := msg.String()
-		switch key {
-		case "j", "k", "up", "down", "home", "end":
-			return m, nil // Key was handled by List section
-		}
-		// Fall through to keymap for ctrl+d, G, g g, r (refresh), etc.
+		// NOTE: j/k/up/down/home/end navigation is handled by the keymap below, not by the
+		// list section. The list's Update modifies *selectedIdx which points to a stale
+		// model instance (due to value receiver semantics). We let the keymap handlers
+		// update m.HandoffsCursor on the current copy instead.
+		// Fall through to keymap for navigation, ctrl+d, G, g g, r (refresh), etc.
 	}
 
 	// Board picker modal: let declarative modal handle keys first (when data is ready)
@@ -234,14 +231,11 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if cmd != nil {
 			return m, cmd
 		}
-		// The List section handles j/k/up/down/home/end internally without returning an action.
-		// We need to consume these keys here to prevent double-handling by the keymap.
-		key := msg.String()
-		switch key {
-		case "j", "k", "up", "down", "home", "end":
-			return m, nil // Key was handled by List section
-		}
-		// Fall through to keymap for esc, etc.
+		// NOTE: j/k/up/down/home/end navigation is handled by the keymap below, not by the
+		// list section. The list's Update modifies *selectedIdx which points to a stale
+		// model instance (due to value receiver semantics). We let the keymap handlers
+		// update m.BoardPickerCursor on the current copy instead.
+		// Fall through to keymap for navigation, esc, etc.
 	}
 
 	// Delete confirmation modal: let declarative modal handle keys first
@@ -1217,10 +1211,12 @@ func (m Model) selectBoard() (Model, tea.Cmd) {
 	}
 	m.closeBoardPickerModal()
 
-	// Update last viewed
-	if err := m.DB.UpdateBoardLastViewed(board.ID); err != nil {
-		m.StatusMessage = "Error: " + err.Error()
-		m.StatusIsError = true
+	// Update last viewed (skip if DB not initialized, e.g., in tests)
+	if m.DB != nil {
+		if err := m.DB.UpdateBoardLastViewed(board.ID); err != nil {
+			m.StatusMessage = "Error: " + err.Error()
+			m.StatusIsError = true
+		}
 	}
 
 	return m, m.fetchBoardIssues(board.ID)

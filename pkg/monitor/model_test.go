@@ -4191,3 +4191,99 @@ func TestScrollIndependent(t *testing.T) {
 		}
 	})
 }
+
+// TestBoardPickerSelectBoard tests that Enter on board picker selects the board
+func TestBoardPickerSelectBoard(t *testing.T) {
+	// Create a model with board picker state
+	m := Model{
+		Width:           80,
+		Height:          24,
+		Keymap:          newTestKeymap(),
+		BoardPickerOpen: true,
+		AllBoards: []models.Board{
+			{ID: "bd-001", Name: "Test Board 1"},
+			{ID: "bd-002", Name: "Test Board 2"},
+		},
+		BoardPickerCursor: 0,
+		PaneHeights:       defaultPaneHeights(),
+	}
+
+	// Create the declarative modal
+	m.BoardPickerModal = m.createBoardPickerModal()
+	m.BoardPickerModal.Reset()
+
+	// Render once to populate focusIDs (just like in real flow)
+	m.BoardPickerModal.Render(m.Width, m.Height, nil)
+
+	// Verify initial state
+	if m.TaskListMode != TaskListModeCategorized {
+		t.Errorf("Initial TaskListMode should be TaskListModeCategorized, got %d", m.TaskListMode)
+	}
+
+	// Press Enter to select the board
+	enterKey := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, _ := m.handleKey(enterKey)
+	m2 := updated.(Model)
+
+	// Verify the board was selected
+	if m2.TaskListMode != TaskListModeBoard {
+		t.Errorf("After Enter: TaskListMode should be TaskListModeBoard, got %d", m2.TaskListMode)
+	}
+	if m2.BoardMode.Board == nil {
+		t.Error("After Enter: BoardMode.Board should be set")
+	} else if m2.BoardMode.Board.ID != "bd-001" {
+		t.Errorf("After Enter: BoardMode.Board.ID should be 'bd-001', got %q", m2.BoardMode.Board.ID)
+	}
+	if m2.BoardPickerOpen {
+		t.Error("After Enter: BoardPickerOpen should be false")
+	}
+}
+
+// TestBoardPickerNavigateAndSelect tests navigation with j/k and then selecting
+func TestBoardPickerNavigateAndSelect(t *testing.T) {
+	m := Model{
+		Width:           80,
+		Height:          24,
+		Keymap:          newTestKeymap(),
+		BoardPickerOpen: true,
+		AllBoards: []models.Board{
+			{ID: "bd-001", Name: "Test Board 1"},
+			{ID: "bd-002", Name: "Test Board 2"},
+			{ID: "bd-003", Name: "Test Board 3"},
+		},
+		BoardPickerCursor: 0,
+		PaneHeights:       defaultPaneHeights(),
+	}
+
+	// Create the declarative modal
+	m.BoardPickerModal = m.createBoardPickerModal()
+	m.BoardPickerModal.Reset()
+	m.BoardPickerModal.Render(m.Width, m.Height, nil)
+
+	// Navigate down twice (to board 3)
+	jKey := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}}
+	updated, _ := m.handleKey(jKey)
+	m = updated.(Model)
+	updated, _ = m.handleKey(jKey)
+	m = updated.(Model)
+
+	// Verify cursor moved
+	if m.BoardPickerCursor != 2 {
+		t.Errorf("After 2x j: BoardPickerCursor should be 2, got %d", m.BoardPickerCursor)
+	}
+
+	// Press Enter to select
+	enterKey := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, _ = m.handleKey(enterKey)
+	m2 := updated.(Model)
+
+	// Verify the third board was selected
+	if m2.TaskListMode != TaskListModeBoard {
+		t.Errorf("After Enter: TaskListMode should be TaskListModeBoard, got %d", m2.TaskListMode)
+	}
+	if m2.BoardMode.Board == nil {
+		t.Error("After Enter: BoardMode.Board should be set")
+	} else if m2.BoardMode.Board.ID != "bd-003" {
+		t.Errorf("After Enter: BoardMode.Board.ID should be 'bd-003', got %q", m2.BoardMode.Board.ID)
+	}
+}
