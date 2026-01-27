@@ -418,6 +418,36 @@ function BottomCTA() {
   );
 }
 
+function SisterProjects() {
+  return (
+    <section className="sc-sister-projects">
+      <div className="sc-section-container">
+        <h2 className="sc-sister-projects__title">Sister Projects</h2>
+        <div className="sc-sister-projects__grid">
+          <a href="https://marcus.github.io/td/" className="sc-sister-card sc-sister-card--purple sc-sister-card--current">
+            <div className="sc-sister-card__logo-wrapper">
+              <img src={useBaseUrl('/img/td-logo.png')} alt="td" className="sc-sister-card__logo" />
+            </div>
+            <p>Task management for AI-assisted development.</p>
+          </a>
+          <a href="https://marcus.github.io/sidecar/" className="sc-sister-card sc-sister-card--green">
+            <div className="sc-sister-card__logo-wrapper">
+              <img src={useBaseUrl('/img/sidecar-logo.png')} alt="Sidecar" className="sc-sister-card__logo" />
+            </div>
+            <p>You might never open your editor again.</p>
+          </a>
+          <a href="https://marcus.github.io/betamax/" className="sc-sister-card sc-sister-card--blue">
+            <div className="sc-sister-card__logo-wrapper">
+              <img src={useBaseUrl('/img/betamax-logo-fuzzy.png')} alt="Betamax" className="sc-sister-card__logo" />
+            </div>
+            <p>Record anything you see in your terminal.</p>
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function Home() {
   return (
     <Layout title="td" description="Task management for AI-assisted development">
@@ -430,6 +460,7 @@ export default function Home() {
         <AgentsSection />
         <FeaturesGrid />
         <BottomCTA />
+        <SisterProjects />
       </main>
     </Layout>
   );

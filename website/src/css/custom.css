@@ -1140,3 +1140,110 @@ a.sc-features-grid__item:hover {
   margin: 0 auto;
   padding: 0 2rem;
 }
+
+/* =========================================================================
+   Sister Projects Section
+   ========================================================================= */
+.sc-sister-projects {
+  padding: 4rem 2rem;
+  background: var(--td-bg-surface);
+  border-top: 1px solid var(--td-border-color);
+}
+
+.sc-sister-projects__title {
+  font-family: 'Fraunces', 'Iowan Old Style', 'Palatino', serif;
+  font-size: 1.5rem;
+  text-align: center;
+  margin-bottom: 2rem;
+  color: var(--td-text-primary);
+}
+
+.sc-sister-projects__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.5rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .sc-sister-projects__grid {
+    grid-template-columns: 1fr;
+    max-width: 400px;
+  }
+}
+
+.sc-sister-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2rem 1.5rem;
+  border-radius: 12px;
+  text-decoration: none;
+  transition: all 0.3s ease;
+  border: 1px solid transparent;
+}
+
+.sc-sister-card:hover {
+  transform: translateY(-4px);
+  text-decoration: none;
+}
+
+.sc-sister-card--purple {
+  background: linear-gradient(135deg, rgba(216, 180, 254, 0.15) 0%, rgba(216, 180, 254, 0.05) 100%);
+  border-color: rgba(216, 180, 254, 0.3);
+}
+
+.sc-sister-card--purple:hover {
+  border-color: rgba(216, 180, 254, 0.6);
+  box-shadow: 0 8px 32px rgba(216, 180, 254, 0.2);
+}
+
+.sc-sister-card--green {
+  background: linear-gradient(135deg, rgba(166, 226, 46, 0.15) 0%, rgba(166, 226, 46, 0.05) 100%);
+  border-color: rgba(166, 226, 46, 0.3);
+}
+
+.sc-sister-card--green:hover {
+  border-color: rgba(166, 226, 46, 0.6);
+  box-shadow: 0 8px 32px rgba(166, 226, 46, 0.2);
+}
+
+.sc-sister-card--blue {
+  background: linear-gradient(135deg, rgba(126, 184, 218, 0.15) 0%, rgba(126, 184, 218, 0.05) 100%);
+  border-color: rgba(126, 184, 218, 0.3);
+}
+
+.sc-sister-card--blue:hover {
+  border-color: rgba(126, 184, 218, 0.6);
+  box-shadow: 0 8px 32px rgba(126, 184, 218, 0.2);
+}
+
+.sc-sister-card--current {
+  border-width: 2px;
+}
+
+.sc-sister-card__logo-wrapper {
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.sc-sister-card__logo {
+  max-width: 140px;
+  max-height: 80px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.sc-sister-card p {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  color: var(--td-text-secondary);
+  text-align: center;
+  margin: 0;
+  line-height: 1.5;
+}
