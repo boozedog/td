@@ -2,6 +2,18 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.24.0] - 2026-01-28
+
+### Features
+- Auto-unblock dependents when blocker is approved/closed
+- OG image for rich link previews
+- Redesigned marketing site hero and workflow sections
+
+### Bug Fixes
+- TUI actions now capture PreviousData/NewData for undo support
+- TUI markForReview sets ImplementerSession when empty (matching CLI)
+- TUI reopenIssue clears ReviewerSession (matching CLI)
+
 ## [v0.23.0] - 2026-01-26
 
 ### Features
