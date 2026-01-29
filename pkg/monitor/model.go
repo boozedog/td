@@ -666,6 +666,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.SearchInput.SetValue(msg.SearchQuery)
 		// Refresh data with restored filters
 		return m, m.fetchData()
+
+	case OpenIssueByIDMsg:
+		if msg.IssueID != "" {
+			return m.pushModal(msg.IssueID, m.ActivePanel)
+		}
+		return m, nil
 	}
 
 	return m, nil

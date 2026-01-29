@@ -585,6 +585,13 @@ type SendTaskToWorktreeMsg struct {
 	TaskTitle string
 }
 
+// OpenIssueByIDMsg can be sent to the monitor to open the issue detail modal
+// for a specific issue ID. Designed for embedding contexts (like sidecar) that
+// want to programmatically open an issue modal from outside the monitor.
+type OpenIssueByIDMsg struct {
+	IssueID string
+}
+
 // FirstRunCheckMsg carries the result of checking for first-time user setup.
 type FirstRunCheckMsg struct {
 	IsFirstRun      bool   // true if should show getting started modal
