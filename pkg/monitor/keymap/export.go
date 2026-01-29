@@ -31,6 +31,7 @@ var contextToSidecar = map[Context]string{
 	ContextHelp:              "td-help",
 	ContextBoard:             "td-board",
 	ContextBoardPicker:       "td-board-picker",
+	ContextForm:              "td-form",
 	ContextTDQHelp:           "td-tdq-help",
 }
 
