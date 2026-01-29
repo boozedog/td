@@ -31,6 +31,7 @@ const (
 	ContextBoard             Context = "board"               // When board mode is active
 	ContextGettingStarted    Context = "getting-started"    // When getting started modal is open
 	ContextTDQHelp           Context = "tdq-help"           // When TDQ help modal is open
+	ContextBoardEditor       Context = "board-editor"       // When board edit/create modal is open
 )
 
 // Command represents a named command that can be triggered by key bindings
@@ -133,6 +134,13 @@ const (
 
 	// External integration commands
 	CmdSendToWorktree Command = "send-to-worktree"
+
+	// Board editor commands
+	CmdEditBoard          Command = "edit-board"
+	CmdNewBoard           Command = "new-board"
+	CmdBoardEditorSave    Command = "board-editor-save"
+	CmdBoardEditorCancel  Command = "board-editor-cancel"
+	CmdBoardEditorDelete  Command = "board-editor-delete"
 
 	// Getting started commands
 	CmdOpenGettingStarted  Command = "open-getting-started"

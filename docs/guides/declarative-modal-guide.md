@@ -104,6 +104,54 @@ case "cancel":
 }
 ```
 
+### Pointer Pattern for Model-Stored Inputs
+
+The quick-start example above works when the input is a local variable. However, when inputs are stored as fields on a bubbletea `Model` struct, you must use **pointers** (`*textinput.Model` / `*textarea.Model`) to avoid stale data.
+
+**Why:** Bubbletea copies the Model (value receiver) on every `Update` call. If you store `textinput.Model` as a value field and pass `&m.SomeInput` to the modal, the modal captures a pointer to *that specific copy's* field. On the next Update, bubbletea creates a new copy with its own independent field — the modal's pointer now references stale data.
+
+**Solution:** Store pointers on the Model struct. When bubbletea copies the Model, it copies the pointer (not the pointed-to data), so the modal and all Model copies share the same underlying instance.
+
+```go
+type Model struct {
+    nameInput  *textinput.Model   // pointer, not value
+    queryInput *textarea.Model    // pointer, not value
+    myModal    *modal.Modal
+}
+
+func (m Model) openModal() Model {
+    // Allocate on heap, store pointer
+    ti := textinput.New()
+    ti.Placeholder = "Name..."
+    ti.Focus()
+    m.nameInput = &ti
+
+    ta := textarea.New()
+    ta.SetWidth(40)
+    ta.SetHeight(3)
+    m.queryInput = &ta
+
+    // Pass pointer directly (no & needed — already a pointer)
+    m.myModal = modal.New("Edit",
+        modal.WithPrimaryAction("save"),
+    )
+    m.myModal.AddSection(modal.InputWithLabel("name", "Name:", m.nameInput))
+    m.myModal.AddSection(modal.TextareaWithLabel("query", "Query:", m.queryInput, 3))
+    m.myModal.Reset()
+    return m
+}
+
+// In Update: just delegate to modal.HandleKey() — no manual forwarding needed.
+// The modal updates the shared input through the pointer automatically.
+action, cmd := m.myModal.HandleKey(msg)
+```
+
+**Key points:**
+- All key routing goes through `modal.HandleKey()` — no manual `Update()` forwarding needed
+- No manual `Focus()`/`Blur()` sync needed — the modal manages focus on the shared instances
+- Set `textarea.SetWidth()` before any `Update`/`View` calls to avoid zero-width panics
+- Set pointers to `nil` when closing the modal to avoid dangling references
+
 ## API Reference
 
 ### Modal

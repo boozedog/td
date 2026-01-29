@@ -81,6 +81,12 @@ func (m Model) renderView() string {
 		return OverlayModal(base, handoffs, m.Width, m.Height)
 	}
 
+	// Overlay board editor if open (on top of board picker)
+	if m.BoardEditorOpen && m.BoardEditorModal != nil && m.BoardEditorMouseHandler != nil {
+		boardEditor := m.BoardEditorModal.Render(m.Width, m.Height, m.BoardEditorMouseHandler)
+		return OverlayModal(base, boardEditor, m.Width, m.Height)
+	}
+
 	// Overlay board picker if open
 	if m.BoardPickerOpen {
 		picker := m.renderBoardPicker()

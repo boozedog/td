@@ -26,6 +26,9 @@ func (m Model) currentContext() keymap.Context {
 	if m.ConfirmOpen {
 		return keymap.ContextConfirm
 	}
+	if m.BoardEditorOpen {
+		return keymap.ContextBoardEditor
+	}
 	if m.BoardPickerOpen {
 		return keymap.ContextBoardPicker
 	}
@@ -232,6 +235,70 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// model instance (due to value receiver semantics). We let the keymap handlers
 		// update m.HandoffsCursor on the current copy instead.
 		// Fall through to keymap for navigation, ctrl+d, G, g g, r (refresh), etc.
+	}
+
+	// Board editor modal: let declarative modal handle keys first
+	if m.BoardEditorOpen && m.BoardEditorModal != nil {
+		// Delete confirmation sub-modal gets special handling
+		if m.BoardEditorDeleteConfirm {
+			action, cmd := m.BoardEditorModal.HandleKey(msg)
+			if action != "" {
+				return m.handleBoardEditorAction(action)
+			}
+			if cmd != nil {
+				return m, cmd
+			}
+			// Handle esc to cancel delete
+			if msg.Type == tea.KeyEsc {
+				return m.handleBoardEditorAction("delete-cancel")
+			}
+			return m, nil
+		}
+
+		// For info mode, just let modal handle keys
+		if m.BoardEditorMode == "info" {
+			action, cmd := m.BoardEditorModal.HandleKey(msg)
+			if action != "" {
+				return m.handleBoardEditorAction(action)
+			}
+			if cmd != nil {
+				return m, cmd
+			}
+			if msg.Type == tea.KeyEsc {
+				return m.handleBoardEditorAction("cancel")
+			}
+			return m, nil
+		}
+
+		// Edit/Create mode: shared pointers let modal handle all keys.
+		// Inputs are stored as *textinput.Model / *textarea.Model on the Model
+		// struct. Bubbletea copies the pointer (not the data), so the modal's
+		// sections and all Model copies reference the same underlying instance.
+		// No manual forwarding or Focus/Blur sync needed.
+
+		// Intercept Ctrl+S (modal doesn't know this shortcut)
+		if msg.Type == tea.KeyCtrlS {
+			return m.handleBoardEditorAction("save")
+		}
+
+		prevQuery := ""
+		if m.BoardEditorQueryInput != nil {
+			prevQuery = m.BoardEditorQueryInput.Value()
+		}
+
+		action, cmd := m.BoardEditorModal.HandleKey(msg)
+		if action != "" {
+			return m.handleBoardEditorAction(action)
+		}
+
+		// Check if query changed for live preview debounce
+		if m.BoardEditorQueryInput != nil {
+			newQuery := m.BoardEditorQueryInput.Value()
+			if newQuery != prevQuery && newQuery != "" {
+				return m, tea.Batch(cmd, m.boardEditorDebouncedPreview(newQuery))
+			}
+		}
+		return m, cmd
 	}
 
 	// Board picker modal: let declarative modal handle keys first (when data is ready)
@@ -1147,6 +1214,18 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdFormOpenEditor:
 		return m.openExternalEditor()
+
+	// Board editor commands
+	case keymap.CmdEditBoard:
+		return m.openBoardEditor()
+	case keymap.CmdNewBoard:
+		return m.openBoardEditorCreate()
+	case keymap.CmdBoardEditorSave:
+		return m.handleBoardEditorAction("save")
+	case keymap.CmdBoardEditorCancel:
+		return m.handleBoardEditorAction("cancel")
+	case keymap.CmdBoardEditorDelete:
+		return m.handleBoardEditorAction("delete")
 
 	// Board commands
 	case keymap.CmdOpenBoardPicker:

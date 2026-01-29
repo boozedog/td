@@ -4,6 +4,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
@@ -126,6 +127,17 @@ type Model struct {
 	AllBoards               []models.Board
 	BoardPickerModal        *modal.Modal   // Declarative modal instance
 	BoardPickerMouseHandler *mouse.Handler // Mouse handler for board picker modal
+
+	// Board editor modal state (edit/create/info overlay on board picker)
+	BoardEditorOpen         bool
+	BoardEditorMode         string         // "edit", "create", "info" (builtin read-only)
+	BoardEditorBoard        *models.Board  // Board being edited (nil for create)
+	BoardEditorNameInput    *textinput.Model
+	BoardEditorQueryInput   *textarea.Model
+	BoardEditorModal        *modal.Modal   // Declarative modal instance
+	BoardEditorMouseHandler *mouse.Handler          // Mouse handler
+	BoardEditorPreview      *boardEditorPreviewData // Shared pointer: survives stale closure captures
+	BoardEditorDeleteConfirm bool                   // Whether delete confirmation is active
 
 	// Board mode state
 	TaskListMode         TaskListMode       // Whether Task List shows categorized or board view
@@ -390,6 +402,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleFormUpdate(msg)
 	}
 
+	// Board editor mode: forward non-key messages to inputs (cursor blink, etc.)
+	if m.BoardEditorOpen && m.BoardEditorMode != "info" {
+		if _, isKey := msg.(tea.KeyMsg); !isKey {
+			var cmds []tea.Cmd
+			if m.BoardEditorNameInput != nil {
+				var nameCmd tea.Cmd
+				*m.BoardEditorNameInput, nameCmd = m.BoardEditorNameInput.Update(msg)
+				if nameCmd != nil {
+					cmds = append(cmds, nameCmd)
+				}
+			}
+			if m.BoardEditorQueryInput != nil {
+				var queryCmd tea.Cmd
+				*m.BoardEditorQueryInput, queryCmd = m.BoardEditorQueryInput.Update(msg)
+				if queryCmd != nil {
+					cmds = append(cmds, queryCmd)
+				}
+			}
+			if len(cmds) > 0 {
+				return m, tea.Batch(cmds...)
+			}
+		}
+	}
+
 	// Close confirmation mode: forward non-key messages to textinput (cursor blink, etc.)
 	// Key messages are handled in handleKey() via the declarative modal
 	if m.CloseConfirmOpen {
@@ -588,6 +624,62 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case PaneHeightsSavedMsg:
 		// Pane heights saved (or failed) - just ignore errors silently
+		return m, nil
+
+	case boardEditorDebounceMsg:
+		// Only execute if board editor is still open and query matches current input
+		if m.BoardEditorOpen && msg.Query == m.BoardEditorQueryInput.Value() {
+			return m, m.boardEditorQueryPreview(msg.Query)
+		}
+		return m, nil
+
+	case BoardEditorSaveResultMsg:
+		if msg.Error != nil {
+			m.StatusMessage = "Error: " + msg.Error.Error()
+			m.StatusIsError = true
+			return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+		}
+		action := "Updated"
+		if msg.IsNew {
+			action = "Created"
+		}
+		m.StatusMessage = action + " board: " + msg.Board.Name
+		m.StatusIsError = false
+		m.closeBoardEditorModal()
+		// Refresh boards list to pick up changes
+		return m, tea.Batch(
+			m.fetchBoards(),
+			tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+		)
+
+	case BoardEditorDeleteResultMsg:
+		if msg.Error != nil {
+			m.StatusMessage = "Error: " + msg.Error.Error()
+			m.StatusIsError = true
+			return m, tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} })
+		}
+		m.StatusMessage = "Board deleted"
+		m.StatusIsError = false
+		m.closeBoardEditorModal()
+		// If the deleted board was the active board, exit board mode
+		if m.BoardMode.Board != nil && m.BoardMode.Board.ID == msg.BoardID {
+			m.TaskListMode = TaskListModeCategorized
+			m.BoardMode.Board = nil
+		}
+		return m, tea.Batch(
+			m.fetchBoards(),
+			tea.Tick(3*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
+		)
+
+	case BoardEditorQueryPreviewMsg:
+		// Only update if the board editor is still open and query matches
+		if m.BoardEditorOpen && m.BoardEditorPreview != nil && msg.Query == m.BoardEditorQueryInput.Value() {
+			// Write to the shared pointer so the modal's Custom closures see updates
+			m.BoardEditorPreview.Count = msg.Count
+			m.BoardEditorPreview.Titles = msg.Titles
+			m.BoardEditorPreview.Error = msg.Error
+			m.BoardEditorPreview.Query = msg.Query
+		}
 		return m, nil
 
 	case BoardsDataMsg:

@@ -656,6 +656,10 @@ func (m *Model) createBoardPickerModal() *modal.Modal {
 		modal.Btn(" Cancel ", "cancel"),
 	))
 
+	// Shortcuts footer
+	md.AddSection(modal.Spacer())
+	md.AddSection(modal.Text("Enter:select  e:edit  n:new  Esc:close"))
+
 	return md
 }
 

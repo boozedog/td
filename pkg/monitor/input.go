@@ -978,6 +978,22 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 		return m.handleFormDialogClick(msg.X, msg.Y)
 	}
 
+	// Handle Board editor modal mouse events (declarative modal)
+	if m.BoardEditorOpen && m.BoardEditorModal != nil && m.BoardEditorMouseHandler != nil {
+		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			action := m.BoardEditorModal.HandleMouse(msg, m.BoardEditorMouseHandler)
+			if action != "" {
+				return m.handleBoardEditorAction(action)
+			}
+			return m, nil
+		}
+		// Handle motion for hover states
+		if msg.Action == tea.MouseActionMotion {
+			_ = m.BoardEditorModal.HandleMouse(msg, m.BoardEditorMouseHandler)
+			return m, nil
+		}
+	}
+
 	// Handle Board picker modal mouse events (declarative modal)
 	if m.BoardPickerOpen && m.BoardPickerModal != nil && m.BoardPickerMouseHandler != nil && len(m.AllBoards) > 0 {
 		if msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
@@ -1001,7 +1017,7 @@ func (m Model) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	}
 
 	// Ignore other mouse events when modals/overlays are open
-	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.BoardPickerOpen || m.HelpOpen || m.ShowTDQHelp || m.GettingStartedOpen {
+	if m.ModalOpen() || m.StatsOpen || m.HandoffsOpen || m.ConfirmOpen || m.CloseConfirmOpen || m.FormOpen || m.BoardPickerOpen || m.BoardEditorOpen || m.HelpOpen || m.ShowTDQHelp || m.GettingStartedOpen {
 		return m, nil
 	}
 

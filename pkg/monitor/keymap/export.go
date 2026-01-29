@@ -33,6 +33,7 @@ var contextToSidecar = map[Context]string{
 	ContextBoardPicker:       "td-board-picker",
 	ContextForm:              "td-form",
 	ContextTDQHelp:           "td-tdq-help",
+	ContextBoardEditor:       "td-board-editor",
 }
 
 // commandMetadata defines display info and priority for each command.
@@ -112,6 +113,13 @@ var commandMetadata = map[Command]struct {
 	// Confirm dialog (P4)
 	CmdConfirm: {"Yes", "Confirm action", 4},
 	CmdCancel:  {"No", "Cancel action", 4},
+
+	// Board editor (P3)
+	CmdEditBoard:         {"Edit", "Edit board", 3},
+	CmdNewBoard:          {"New", "New board", 3},
+	CmdBoardEditorSave:   {"Save", "Save board", 3},
+	CmdBoardEditorCancel: {"Cancel", "Cancel editing", 3},
+	CmdBoardEditorDelete: {"Delete", "Delete board", 3},
 }
 
 // ExportBindings returns all bindings in a format sidecar can consume.

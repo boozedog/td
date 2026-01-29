@@ -412,6 +412,43 @@ type BoardIssuesMsg struct {
 	Error       error
 }
 
+// boardEditorDebounceMsg is sent after 300ms debounce for query preview
+type boardEditorDebounceMsg struct {
+	Query string
+}
+
+// BoardEditorSaveResultMsg carries the result of saving a board
+type BoardEditorSaveResultMsg struct {
+	Board   *models.Board
+	IsNew   bool // true if newly created, false if updated
+	Error   error
+}
+
+// BoardEditorDeleteResultMsg carries the result of deleting a board
+type BoardEditorDeleteResultMsg struct {
+	BoardID string
+	Error   error
+}
+
+// BoardEditorQueryPreviewMsg carries live query preview results
+type BoardEditorQueryPreviewMsg struct {
+	Query    string // Query that was executed (for staleness check)
+	Count    int
+	Titles   []string // First 5 issue titles
+	Error    error
+}
+
+// boardEditorPreviewData holds live query preview state.
+// Stored as a pointer on Model so that the modal's Custom closures
+// (which capture a stale *Model from creation time) still see updates
+// made by the Update handler on the current Model copy.
+type boardEditorPreviewData struct {
+	Count  int
+	Titles []string
+	Error  error
+	Query  string
+}
+
 // BoardMode holds state for board mode view (when Task List is in board mode)
 type BoardMode struct {
 	Board        *models.Board           // Currently active board

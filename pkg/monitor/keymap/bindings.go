@@ -314,8 +314,17 @@ func DefaultBindings() []Binding {
 		{Key: "k", Command: CmdCursorUp, Context: ContextBoardPicker, Description: "Move up"},
 		{Key: "up", Command: CmdCursorUp, Context: ContextBoardPicker, Description: "Move up"},
 		{Key: "enter", Command: CmdSelectBoard, Context: ContextBoardPicker, Description: "Select board"},
+		{Key: "e", Command: CmdEditBoard, Context: ContextBoardPicker, Description: "Edit board"},
+		{Key: "n", Command: CmdNewBoard, Context: ContextBoardPicker, Description: "New board"},
 		{Key: "esc", Command: CmdCloseBoardPicker, Context: ContextBoardPicker, Description: "Close picker"},
 		{Key: "q", Command: CmdCloseBoardPicker, Context: ContextBoardPicker, Description: "Close picker"},
+
+		// ============================================================
+		// BOARD EDITOR MODAL BINDINGS
+		// Active when board edit/create modal is open
+		// ============================================================
+		{Key: "ctrl+s", Command: CmdBoardEditorSave, Context: ContextBoardEditor, Description: "Save board"},
+		{Key: "esc", Command: CmdBoardEditorCancel, Context: ContextBoardEditor, Description: "Cancel"},
 
 		// ============================================================
 		// BOARD MODE BINDINGS
