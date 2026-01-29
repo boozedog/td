@@ -255,6 +255,125 @@ func TestExecuteDescendantOf(t *testing.T) {
 	}
 }
 
+func TestExecuteEpicByID(t *testing.T) {
+	database := setupTestDB(t)
+	defer database.Close()
+
+	// Create an epic
+	epic := &models.Issue{
+		Title:    "Theme Switcher",
+		Status:   models.StatusOpen,
+		Type:     models.TypeEpic,
+		Priority: models.PriorityP1,
+	}
+	if err := database.CreateIssue(epic); err != nil {
+		t.Fatalf("failed to create epic: %v", err)
+	}
+
+	// Create tasks under the epic
+	task1 := &models.Issue{
+		Title:    "Add theme entry type",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP1,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(task1); err != nil {
+		t.Fatalf("failed to create task1: %v", err)
+	}
+
+	task2 := &models.Issue{
+		Title:    "Update theme switcher",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP1,
+		ParentID: epic.ID,
+	}
+	if err := database.CreateIssue(task2); err != nil {
+		t.Fatalf("failed to create task2: %v", err)
+	}
+
+	// Create a nested subtask (grandchild of epic)
+	subtask := &models.Issue{
+		Title:    "Subtask under task1",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+		ParentID: task1.ID,
+	}
+	if err := database.CreateIssue(subtask); err != nil {
+		t.Fatalf("failed to create subtask: %v", err)
+	}
+
+	// Create an unrelated epic and task
+	otherEpic := &models.Issue{
+		Title:    "Other Epic",
+		Status:   models.StatusOpen,
+		Type:     models.TypeEpic,
+		Priority: models.PriorityP2,
+	}
+	if err := database.CreateIssue(otherEpic); err != nil {
+		t.Fatalf("failed to create other epic: %v", err)
+	}
+
+	unrelatedTask := &models.Issue{
+		Title:    "Unrelated task",
+		Status:   models.StatusOpen,
+		Type:     models.TypeTask,
+		Priority: models.PriorityP2,
+		ParentID: otherEpic.ID,
+	}
+	if err := database.CreateIssue(unrelatedTask); err != nil {
+		t.Fatalf("failed to create unrelated task: %v", err)
+	}
+
+	t.Run("epic = id finds direct children and nested descendants", func(t *testing.T) {
+		results, err := Execute(database, "epic = "+epic.ID, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		// Should find task1, task2 (direct children), and subtask (grandchild via task1)
+		if len(results) != 3 {
+			t.Errorf("epic = %s returned %d results, want 3", epic.ID, len(results))
+			for _, r := range results {
+				t.Logf("  got: %s %s", r.ID, r.Title)
+			}
+		}
+		found := map[string]bool{}
+		for _, r := range results {
+			found[r.ID] = true
+		}
+		if !found[task1.ID] {
+			t.Error("missing task1")
+		}
+		if !found[task2.ID] {
+			t.Error("missing task2")
+		}
+		if !found[subtask.ID] {
+			t.Error("missing subtask (grandchild)")
+		}
+		if found[epic.ID] {
+			t.Error("should not include the epic itself")
+		}
+		if found[unrelatedTask.ID] {
+			t.Error("should not include unrelated task")
+		}
+	})
+
+	t.Run("epic = id does not match unrelated issues", func(t *testing.T) {
+		results, err := Execute(database, "epic = "+otherEpic.ID, "ses_test", ExecuteOptions{})
+		if err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(results) != 1 {
+			t.Errorf("epic = %s returned %d results, want 1", otherEpic.ID, len(results))
+		}
+		if len(results) > 0 && results[0].ID != unrelatedTask.ID {
+			t.Errorf("expected %s, got %s", unrelatedTask.ID, results[0].ID)
+		}
+	})
+}
+
 func TestExecuteEpicLabels(t *testing.T) {
 	database := setupTestDB(t)
 	defer database.Close()

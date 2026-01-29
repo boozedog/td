@@ -175,6 +175,17 @@ func extractCrossEntityConditionsWithNegation(n Node, negated bool) []crossEntit
 		// NOT flips the negation state
 		filters = append(filters, extractCrossEntityConditionsWithNegation(node.Expr, !negated)...)
 	case *FieldExpr:
+		// "epic" without dot (e.g., "epic = td-123") matches by ancestor epic ID
+		if node.Field == "epic" {
+			filters = append(filters, crossEntityFilter{
+				entity:   "epic",
+				field:    "id",
+				operator: node.Operator,
+				value:    node.Value,
+				negated:  negated,
+			})
+			break
+		}
 		parts := strings.Split(node.Field, ".")
 		if len(parts) > 1 {
 			prefix := parts[0]
@@ -351,6 +362,8 @@ func matchEpicAncestor(database *db.DB, issue models.Issue, filter crossEntityFi
 			// Found an epic - check if it matches the filter
 			var fieldValue string
 			switch filter.field {
+			case "id":
+				fieldValue = parent.ID
 			case "labels":
 				fieldValue = strings.Join(parent.Labels, ",")
 			case "title":

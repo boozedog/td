@@ -120,6 +120,10 @@ func (e *Evaluator) hasCrossEntity(n Node) bool {
 	case *UnaryExpr:
 		return e.hasCrossEntity(node.Expr)
 	case *FieldExpr:
+		// "epic" without dot (e.g., "epic = td-123") requires walking the parent chain
+		if node.Field == "epic" {
+			return true
+		}
 		parts := strings.Split(node.Field, ".")
 		if len(parts) > 1 {
 			prefix := parts[0]
@@ -138,6 +142,10 @@ func (e *Evaluator) hasCrossEntity(n Node) bool {
 func (e *Evaluator) isCrossEntityNode(n Node) bool {
 	switch node := n.(type) {
 	case *FieldExpr:
+		// "epic" without dot (e.g., "epic = td-123") requires walking the parent chain
+		if node.Field == "epic" {
+			return true
+		}
 		parts := strings.Split(node.Field, ".")
 		if len(parts) > 1 {
 			prefix := parts[0]
@@ -216,6 +224,10 @@ func (e *Evaluator) unaryExprToSQL(node *UnaryExpr) ([]SQLCondition, error) {
 }
 
 func (e *Evaluator) fieldExprToSQL(node *FieldExpr) ([]SQLCondition, error) {
+	// "epic" without dot requires parent chain traversal, handled as cross-entity
+	if node.Field == "epic" {
+		return nil, nil
+	}
 	// Cross-entity fields can't be converted to SQL directly
 	parts := strings.Split(node.Field, ".")
 	if len(parts) > 1 {
