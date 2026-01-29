@@ -105,6 +105,7 @@ func TestAddLog_AllLogTypes(t *testing.T) {
 		models.LogTypeHypothesis,
 		models.LogTypeTried,
 		models.LogTypeResult,
+		models.LogTypeOrchestration,
 	}
 
 	for _, lt := range logTypes {

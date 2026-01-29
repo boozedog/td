@@ -102,6 +102,9 @@ Supports stdin input for multi-line messages or piped input:
 		if issueID == "" {
 			issueID, _ = cmd.Flags().GetString("issue")
 			if issueID == "" {
+				issueID, _ = cmd.Flags().GetString("task")
+			}
+			if issueID == "" {
 				issueID, err = config.GetFocus(baseDir)
 				if err != nil || issueID == "" {
 					output.Error("no issue specified and no focused issue")
@@ -143,7 +146,10 @@ Supports stdin input for multi-line messages or piped input:
 		logType := models.LogTypeProgress
 		typeLabel := ""
 
-		if blocker, _ := cmd.Flags().GetBool("blocker"); blocker {
+		if typeStr, _ := cmd.Flags().GetString("type"); typeStr != "" {
+			logType = models.LogType(typeStr)
+			typeLabel = " [" + typeStr + "]"
+		} else if blocker, _ := cmd.Flags().GetBool("blocker"); blocker {
 			logType = models.LogTypeBlocker
 			typeLabel = " [blocker]"
 		} else if decision, _ := cmd.Flags().GetBool("decision"); decision {
@@ -185,6 +191,8 @@ func init() {
 	rootCmd.AddCommand(logCmd)
 
 	logCmd.Flags().StringP("issue", "i", "", "Issue ID (default: focused issue)")
+	logCmd.Flags().StringP("type", "t", "", "Log type (progress, blocker, decision, hypothesis, tried, result, orchestration)")
+	logCmd.Flags().StringP("task", "T", "", "Alias for --issue (issue ID)")
 	logCmd.Flags().Bool("blocker", false, "Mark as blocker")
 	logCmd.Flags().Bool("decision", false, "Mark as decision")
 	logCmd.Flags().Bool("hypothesis", false, "Mark as hypothesis")

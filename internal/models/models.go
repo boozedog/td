@@ -47,8 +47,9 @@ const (
 	LogTypeBlocker    LogType = "blocker"
 	LogTypeDecision   LogType = "decision"
 	LogTypeHypothesis LogType = "hypothesis"
-	LogTypeTried      LogType = "tried"
-	LogTypeResult     LogType = "result"
+	LogTypeTried         LogType = "tried"
+	LogTypeResult        LogType = "result"
+	LogTypeOrchestration LogType = "orchestration"
 )
 
 // IssueSessionAction represents actions a session can take on an issue

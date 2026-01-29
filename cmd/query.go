@@ -311,7 +311,7 @@ func printQueryFields() {
 		prefix string
 		fields string
 	}{
-		{"log.", "message, type (progress/blocker/decision/hypothesis/tried/result), timestamp, session"},
+		{"log.", "message, type (progress/blocker/decision/hypothesis/tried/result/orchestration), timestamp, session"},
 		{"comment.", "text, created, session"},
 		{"handoff.", "done, remaining, decisions, uncertain, timestamp"},
 		{"file.", "path, role (implementation/test/reference/config)"},
