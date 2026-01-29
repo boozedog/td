@@ -56,6 +56,7 @@ Plain text searches title/description/ID. TDQ syntax is auto-detected when you u
 | `NOT expr` | Negation |
 | `-expr` | Shorthand for NOT |
 | `(expr)` | Grouping |
+| `expr expr` | Implicit AND (space between expressions) |
 
 Priority: NOT > AND > OR
 
@@ -230,10 +231,30 @@ Flags:
       --fields          List all searchable fields
 ```
 
+## Inline Sort
+
+You can add sort clauses directly in the query string:
+
+```bash
+# Sort by priority (ascending)
+td query "type = bug sort:priority"
+
+# Sort by priority descending
+td query "type = bug sort:-priority"
+
+# Multiple sort fields
+td query "status = open sort:-priority sort:created"
+```
+
+Prefix with `-` for descending order. Multiple `sort:` clauses are applied in order.
+
 ## Tips
 
-1. **Quote strings with spaces**: `title ~ "multi word search"`
-2. **Use functions for common patterns**: `is(open)` instead of `status = open`
-3. **Combine with AND for precision**: `type = bug AND priority = P0 AND created >= -7d`
-4. **Use cross-entity search to find issues**: `log.type = blocker` finds issues with blockers
-5. **In monitor, plain text still works**: Just type to do simple text search
+1. **Enum values are case-insensitive**: `priority = p0` and `priority = P0` both work, as do `status = OPEN`, `type = Bug`, etc.
+2. **Quote strings with spaces**: `title ~ "multi word search"`
+3. **Use functions for common patterns**: `is(open)` instead of `status = open`
+4. **Combine with AND for precision**: `type = bug AND priority = P0 AND created >= -7d`
+5. **Implicit AND**: `type = bug priority = P0` is equivalent to `type = bug AND priority = P0`
+6. **Use cross-entity search to find issues**: `log.type = blocker` finds issues with blockers
+7. **Inline sort**: Add `sort:field` or `sort:-field` to any query for ordering
+8. **In monitor, plain text still works**: Just type to do simple text search

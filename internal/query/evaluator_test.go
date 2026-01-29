@@ -195,6 +195,96 @@ func TestToMatcher(t *testing.T) {
 	}
 }
 
+func TestCaseInsensitiveEnumMatching(t *testing.T) {
+	tests := []struct {
+		name    string
+		query   string
+		issue   models.Issue
+		matches bool
+	}{
+		{
+			name:  "lowercase priority exact match",
+			query: "priority = p1",
+			issue: models.Issue{
+				ID:       "td-ci-01",
+				Priority: models.PriorityP1,
+			},
+			matches: true,
+		},
+		{
+			name:  "lowercase priority no match",
+			query: "priority = p0",
+			issue: models.Issue{
+				ID:       "td-ci-02",
+				Priority: models.PriorityP2,
+			},
+			matches: false,
+		},
+		{
+			name:  "lowercase priority ordinal lte matches",
+			query: "priority <= p1",
+			issue: models.Issue{
+				ID:       "td-ci-03",
+				Priority: models.PriorityP0,
+			},
+			matches: true,
+		},
+		{
+			name:  "lowercase priority ordinal lte excludes",
+			query: "priority <= p1",
+			issue: models.Issue{
+				ID:       "td-ci-04",
+				Priority: models.PriorityP3,
+			},
+			matches: false,
+		},
+		{
+			name:  "uppercase status matches",
+			query: "status = OPEN",
+			issue: models.Issue{
+				ID:     "td-ci-05",
+				Status: models.StatusOpen,
+			},
+			matches: true,
+		},
+		{
+			name:  "is function mixed case",
+			query: "is(Open)",
+			issue: models.Issue{
+				ID:     "td-ci-06",
+				Status: models.StatusOpen,
+			},
+			matches: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			query, err := Parse(tt.query)
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			// Validate normalizes enum values to canonical form
+			if errs := query.Validate(); len(errs) > 0 {
+				t.Fatalf("validation errors: %v", errs)
+			}
+
+			ctx := NewEvalContext("ses_test")
+			eval := NewEvaluator(ctx, query)
+
+			matcher, err := eval.ToMatcher()
+			if err != nil {
+				t.Fatalf("ToMatcher error: %v", err)
+			}
+
+			got := matcher(tt.issue)
+			if got != tt.matches {
+				t.Errorf("matcher(%v) = %v, want %v", tt.issue.ID, got, tt.matches)
+			}
+		})
+	}
+}
+
 func TestHasCrossEntityConditions(t *testing.T) {
 	tests := []struct {
 		name     string

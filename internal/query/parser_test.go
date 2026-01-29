@@ -320,6 +320,51 @@ func TestQueryValidation(t *testing.T) {
 	}
 }
 
+func TestEnumValueNormalization(t *testing.T) {
+	tests := []struct {
+		input         string
+		expectedValue string
+	}{
+		// Priority: lowercase → uppercase
+		{"priority = p0", "P0"},
+		{"priority = p1", "P1"},
+		{"priority <= p2", "P2"},
+		// Status: uppercase/mixed → lowercase
+		{"status = OPEN", "open"},
+		{"status = Open", "open"},
+		{"status = IN_PROGRESS", "in_progress"},
+		// Type: uppercase → lowercase
+		{"type = BUG", "bug"},
+		{"type = Feature", "feature"},
+		// Already canonical
+		{"priority = P0", "P0"},
+		{"status = open", "open"},
+		{"type = bug", "bug"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			query, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("parse error: %v", err)
+			}
+			errs := query.Validate()
+			if len(errs) != 0 {
+				t.Fatalf("unexpected validation errors: %v", errs)
+			}
+			// Extract the field expression value
+			fe, ok := query.Root.(*FieldExpr)
+			if !ok {
+				t.Fatalf("expected FieldExpr, got %T", query.Root)
+			}
+			got := fe.Value.(string)
+			if got != tt.expectedValue {
+				t.Errorf("expected normalized value %q, got %q", tt.expectedValue, got)
+			}
+		})
+	}
+}
+
 func TestOperatorPrecedence(t *testing.T) {
 	// NOT > AND > OR
 	tests := []struct {

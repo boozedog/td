@@ -630,6 +630,7 @@ func validateFieldExpr(f *FieldExpr, errs *[]error) {
 			found := false
 			for _, v := range enumVals {
 				if strings.EqualFold(v, strVal) {
+					f.Value = v // normalize to canonical form
 					found = true
 					break
 				}

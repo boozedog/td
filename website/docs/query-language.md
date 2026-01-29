@@ -30,13 +30,17 @@ td query "labels ~ auth"
 
 ## Boolean Operators
 
-Combine expressions with `AND`, `OR`, and `NOT`. Use parentheses to control precedence.
+Combine expressions with `AND`, `OR`, and `NOT`. Use parentheses to control precedence. Spaces between expressions are treated as implicit `AND`.
 
 ```bash
 td query "status = in_progress AND priority <= P1"
 td query "type = bug OR type = feature"
 td query "priority <= P1 AND NOT labels ~ frontend"
 td query "(type = bug OR type = feature) AND status != closed"
+
+# Implicit AND — these are equivalent:
+td query "type = bug priority = P0"
+td query "type = bug AND priority = P0"
 ```
 
 ## Available Fields
@@ -45,7 +49,7 @@ td query "(type = bug OR type = feature) AND status != closed"
 |-------|-------------|
 | `status` | Issue status: `open`, `in_progress`, `in_review`, `closed`, `blocked` |
 | `type` | Issue type: `bug`, `feature`, `task`, etc. |
-| `priority` | Priority level: `P0`, `P1`, `P2`, `P3` |
+| `priority` | Priority level: `P0`, `P1`, `P2`, `P3`, `P4` |
 | `points` | Story points (numeric) |
 | `labels` | Comma-separated label list |
 | `title` | Issue title text |
@@ -74,6 +78,29 @@ Built-in functions provide common filter patterns:
 ```bash
 td query "rework()"              # Issues rejected and needing fixes
 td query "stale(14)"             # Issues not updated in 14 days
+```
+
+## Case-Insensitive Values
+
+Enum fields (`status`, `type`, `priority`) accept values in any case. All of these are equivalent:
+
+```bash
+td query "priority = P0"
+td query "priority = p0"
+td query "status = OPEN"
+td query "type = Bug"
+```
+
+The `is()` function is also case-insensitive: `is(Open)` works the same as `is(open)`.
+
+## Inline Sort
+
+Add `sort:field` clauses directly in the query string. Prefix with `-` for descending order.
+
+```bash
+td query "type = bug sort:priority"      # Sort by priority ascending
+td query "type = bug sort:-priority"     # Sort by priority descending
+td query "status = open sort:-priority sort:created"  # Multiple sort fields
 ```
 
 ## Using with Boards

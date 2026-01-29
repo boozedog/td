@@ -304,6 +304,15 @@ func (e *Evaluator) functionToSQL(node *FunctionCall) ([]SQLCondition, error) {
 			return nil, fmt.Errorf("is() requires 1 argument")
 		}
 		status := fmt.Sprintf("%v", node.Args[0])
+		// Normalize to canonical enum form for case-insensitive matching
+		if enumVals, ok := EnumValues["status"]; ok {
+			for _, v := range enumVals {
+				if strings.EqualFold(v, status) {
+					status = v
+					break
+				}
+			}
+		}
 		return []SQLCondition{{Clause: "status = ?", Args: []interface{}{status}}}, nil
 
 	case "any":
