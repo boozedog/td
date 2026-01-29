@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.25.0] - 2026-01-28
+
+### Features
+- Exported `OpenIssueByIDMsg` for embedding contexts to programmatically open issue detail modals by ID
+
 ## [v0.24.0] - 2026-01-28
 
 ### Features
