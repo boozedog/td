@@ -628,7 +628,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case boardEditorDebounceMsg:
 		// Only execute if board editor is still open and query matches current input
-		if m.BoardEditorOpen && msg.Query == m.BoardEditorQueryInput.Value() {
+		if m.BoardEditorOpen && m.BoardEditorQueryInput != nil && msg.Query == m.BoardEditorQueryInput.Value() {
 			return m, m.boardEditorQueryPreview(msg.Query)
 		}
 		return m, nil
@@ -673,7 +673,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case BoardEditorQueryPreviewMsg:
 		// Only update if the board editor is still open and query matches
-		if m.BoardEditorOpen && m.BoardEditorPreview != nil && msg.Query == m.BoardEditorQueryInput.Value() {
+		if m.BoardEditorOpen && m.BoardEditorPreview != nil && m.BoardEditorQueryInput != nil && msg.Query == m.BoardEditorQueryInput.Value() {
 			// Write to the shared pointer so the modal's Custom closures see updates
 			m.BoardEditorPreview.Count = msg.Count
 			m.BoardEditorPreview.Titles = msg.Titles
