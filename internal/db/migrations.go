@@ -137,7 +137,7 @@ func (db *DB) runMigrationsInternal() (int, error) {
 					continue
 				}
 			}
-				if migration.Version == 15 {
+			if migration.Version == 15 {
 				if err := db.migrateToTextIDs(); err != nil {
 					return migrationsRun, fmt.Errorf("migration 15 (text IDs): %w", err)
 				}
@@ -258,7 +258,22 @@ func generateTextID(prefix string) (string, error) {
 // migrateToTextIDs converts 6 tables from INTEGER AUTOINCREMENT PKs to TEXT PKs.
 // For each table: create new table with TEXT PK, copy data with generated text IDs,
 // update action_log.entity_id references, drop old table, rename new table.
+// Wrapped in a transaction for crash safety -- partial migration would corrupt the DB.
 func (db *DB) migrateToTextIDs() error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback() // no-op after commit
+
+	if err := db.migrateToTextIDsTx(tx); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (db *DB) migrateToTextIDsTx(tx *sql.Tx) error {
 	type tableMigration struct {
 		name       string
 		prefix     string
@@ -366,7 +381,7 @@ func (db *DB) migrateToTextIDs() error {
 
 	for _, m := range migrations {
 		// Check if old table exists with integer PK (idempotency)
-		hasIntPK, err := db.tableHasIntegerPK(m.name)
+		hasIntPK, err := db.tableHasIntegerPKTx(tx, m.name)
 		if err != nil {
 			return fmt.Errorf("check %s PK type: %w", m.name, err)
 		}
@@ -375,18 +390,18 @@ func (db *DB) migrateToTextIDs() error {
 		}
 
 		// Drop any leftover temp table from previous failed migrations
-		if _, err := db.conn.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s_new", m.name)); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s_new", m.name)); err != nil {
 			return fmt.Errorf("drop leftover %s_new: %w", m.name, err)
 		}
 
 		// Create new table
-		if _, err := db.conn.Exec(m.createSQL); err != nil {
+		if _, err := tx.Exec(m.createSQL); err != nil {
 			return fmt.Errorf("create %s_new: %w", m.name, err)
 		}
 
-		// Read ALL old rows into memory first (MaxOpenConns=1 means we can't
-		// hold an open cursor and execute INSERTs simultaneously)
-		rows, err := db.conn.Query(m.insertSQL)
+		// Read ALL old rows into memory first (can't hold an open cursor
+		// and execute INSERTs simultaneously within the same transaction)
+		rows, err := tx.Query(m.insertSQL)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", m.name, err)
 		}
@@ -440,16 +455,16 @@ func (db *DB) migrateToTextIDs() error {
 
 			vals[0] = newID
 
-			if _, err := db.conn.Exec(insertSQL, vals...); err != nil {
+			if _, err := tx.Exec(insertSQL, vals...); err != nil {
 				return fmt.Errorf("insert %s_new: %w", m.name, err)
 			}
 		}
 
 		// Drop old, rename new
-		if _, err := db.conn.Exec(fmt.Sprintf("DROP TABLE %s", m.name)); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf("DROP TABLE %s", m.name)); err != nil {
 			return fmt.Errorf("drop %s: %w", m.name, err)
 		}
-		if _, err := db.conn.Exec(fmt.Sprintf("ALTER TABLE %s_new RENAME TO %s", m.name, m.name)); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf("ALTER TABLE %s_new RENAME TO %s", m.name, m.name)); err != nil {
 			return fmt.Errorf("rename %s_new: %w", m.name, err)
 		}
 	}
@@ -457,7 +472,7 @@ func (db *DB) migrateToTextIDs() error {
 	// Rewrite action_log.entity_id for handoff references
 	for entityType, mapping := range idMap {
 		for oldID, newID := range mapping {
-			if _, err := db.conn.Exec(
+			if _, err := tx.Exec(
 				`UPDATE action_log SET entity_id = ? WHERE entity_type = ? AND entity_id = ?`,
 				newID, entityType, oldID,
 			); err != nil {
@@ -481,7 +496,7 @@ CREATE INDEX IF NOT EXISTS idx_action_log_session ON action_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_action_log_timestamp ON action_log(timestamp);
 CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, action_type);
 `
-	if _, err := db.conn.Exec(indexSQL); err != nil {
+	if _, err := tx.Exec(indexSQL); err != nil {
 		return fmt.Errorf("recreate indexes: %w", err)
 	}
 
@@ -501,6 +516,28 @@ func (db *DB) tableHasIntegerPK(table string) (bool, error) {
 	}
 	defer rows.Close()
 
+	return scanForIntegerPK(rows)
+}
+
+// tableHasIntegerPKTx is like tableHasIntegerPK but runs within a transaction
+func (db *DB) tableHasIntegerPKTx(tx *sql.Tx, table string) (bool, error) {
+	// Check table exists via tx
+	var count int
+	err := tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&count)
+	if err != nil || count == 0 {
+		return false, err
+	}
+
+	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	return scanForIntegerPK(rows)
+}
+
+func scanForIntegerPK(rows *sql.Rows) (bool, error) {
 	for rows.Next() {
 		var cid int
 		var name, ctype string
