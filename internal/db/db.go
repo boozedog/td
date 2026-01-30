@@ -32,6 +32,36 @@ func ResolveBaseDir(baseDir string) string {
 	return workdir.ResolveBaseDir(baseDir)
 }
 
+// openConn opens a SQLite connection with safe defaults for multi-process access.
+func openConn(dbPath string) (*sql.DB, error) {
+	conn, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+
+	// Pin to a single connection — SQLite only supports one writer,
+	// and this prevents the pool from opening extra connections that
+	// could corrupt the WAL/SHM files under concurrent multi-process access.
+	conn.SetMaxOpenConns(1)
+
+	// Enable WAL mode for concurrent reads while writes are serialized
+	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("enable WAL mode: %w", err)
+	}
+
+	// Set busy timeout for multi-process contention
+	if _, err := conn.Exec("PRAGMA busy_timeout=5000"); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("set busy timeout: %w", err)
+	}
+
+	// Slightly faster writes, still safe with WAL
+	conn.Exec("PRAGMA synchronous=NORMAL")
+
+	return conn, nil
+}
+
 // Open opens the database and runs any pending migrations
 func Open(baseDir string) (*DB, error) {
 	// Check for worktree redirection via .td-root
@@ -43,25 +73,10 @@ func Open(baseDir string) (*DB, error) {
 		return nil, fmt.Errorf("database not found: run 'td init' first")
 	}
 
-	conn, err := sql.Open("sqlite", dbPath)
+	conn, err := openConn(dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+		return nil, err
 	}
-
-	// Enable WAL mode for concurrent reads while writes are serialized
-	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("enable WAL mode: %w", err)
-	}
-
-	// Set busy timeout as fallback protection (500ms, matches lock timeout)
-	if _, err := conn.Exec("PRAGMA busy_timeout=500"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
-	}
-
-	// Slightly faster writes, still safe with WAL
-	conn.Exec("PRAGMA synchronous=NORMAL")
 
 	db := &DB{conn: conn, baseDir: baseDir}
 
@@ -84,25 +99,10 @@ func Initialize(baseDir string) (*DB, error) {
 		return nil, fmt.Errorf("create db dir: %w", err)
 	}
 
-	conn, err := sql.Open("sqlite", dbPath)
+	conn, err := openConn(dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("open database: %w", err)
+		return nil, err
 	}
-
-	// Enable WAL mode for concurrent reads while writes are serialized
-	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("enable WAL mode: %w", err)
-	}
-
-	// Set busy timeout as fallback protection (500ms, matches lock timeout)
-	if _, err := conn.Exec("PRAGMA busy_timeout=500"); err != nil {
-		conn.Close()
-		return nil, fmt.Errorf("set busy timeout: %w", err)
-	}
-
-	// Slightly faster writes, still safe with WAL
-	conn.Exec("PRAGMA synchronous=NORMAL")
 
 	// Run schema
 	if _, err := conn.Exec(schema); err != nil {
@@ -119,8 +119,13 @@ func Initialize(baseDir string) (*DB, error) {
 	return db, nil
 }
 
-// Close closes the database
+// Close closes the database connection.
+// It performs a TRUNCATE checkpoint first to flush the WAL back into the main
+// DB file and remove the -wal/-shm files. This prevents stale shared-memory
+// files from corrupting the database when another process opens it later.
 func (db *DB) Close() error {
+	// Best-effort checkpoint — ignore errors (DB might already be in a bad state)
+	db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	return db.conn.Close()
 }
 
