@@ -18,20 +18,19 @@ func (db *DB) AddLog(log *models.Log) error {
 	return db.withWriteLock(func() error {
 		log.Timestamp = time.Now()
 
-		result, err := db.conn.Exec(`
-			INSERT INTO logs (issue_id, session_id, work_session_id, message, type, timestamp)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, log.IssueID, log.SessionID, log.WorkSessionID, log.Message, log.Type, log.Timestamp)
-
+		id, err := generateLogID()
 		if err != nil {
-			return err
-		}
-
-		id, err := result.LastInsertId()
-		if err != nil {
-			return err
+			return fmt.Errorf("generate ID: %w", err)
 		}
 		log.ID = id
+
+		_, err = db.conn.Exec(`
+			INSERT INTO logs (id, issue_id, session_id, work_session_id, message, type, timestamp)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, log.ID, log.IssueID, log.SessionID, log.WorkSessionID, log.Message, log.Type, log.Timestamp)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -175,20 +174,19 @@ func (db *DB) AddHandoff(handoff *models.Handoff) error {
 		decisionsJSON, _ := json.Marshal(handoff.Decisions)
 		uncertainJSON, _ := json.Marshal(handoff.Uncertain)
 
-		result, err := db.conn.Exec(`
-			INSERT INTO handoffs (issue_id, session_id, done, remaining, decisions, uncertain, timestamp)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, handoff.IssueID, handoff.SessionID, doneJSON, remainingJSON, decisionsJSON, uncertainJSON, handoff.Timestamp)
-
+		id, err := generateHandoffID()
 		if err != nil {
-			return err
-		}
-
-		id, err := result.LastInsertId()
-		if err != nil {
-			return err
+			return fmt.Errorf("generate ID: %w", err)
 		}
 		handoff.ID = id
+
+		_, err = db.conn.Exec(`
+			INSERT INTO handoffs (id, issue_id, session_id, done, remaining, decisions, uncertain, timestamp)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		`, handoff.ID, handoff.IssueID, handoff.SessionID, doneJSON, remainingJSON, decisionsJSON, uncertainJSON, handoff.Timestamp)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -231,7 +229,7 @@ func (db *DB) GetLatestHandoff(issueID string) (*models.Handoff, error) {
 }
 
 // DeleteHandoff removes a handoff by ID (for undo support)
-func (db *DB) DeleteHandoff(handoffID int64) error {
+func (db *DB) DeleteHandoff(handoffID string) error {
 	return db.withWriteLock(func() error {
 		_, err := db.conn.Exec(`DELETE FROM handoffs WHERE id = ?`, handoffID)
 		return err
@@ -286,20 +284,19 @@ func (db *DB) AddComment(comment *models.Comment) error {
 	return db.withWriteLock(func() error {
 		comment.CreatedAt = time.Now()
 
-		result, err := db.conn.Exec(`
-			INSERT INTO comments (issue_id, session_id, text, created_at)
-			VALUES (?, ?, ?, ?)
-		`, comment.IssueID, comment.SessionID, comment.Text, comment.CreatedAt)
-
+		id, err := generateCommentID()
 		if err != nil {
-			return err
-		}
-
-		id, err := result.LastInsertId()
-		if err != nil {
-			return err
+			return fmt.Errorf("generate ID: %w", err)
 		}
 		comment.ID = id
+
+		_, err = db.conn.Exec(`
+			INSERT INTO comments (id, issue_id, session_id, text, created_at)
+			VALUES (?, ?, ?, ?, ?)
+		`, comment.ID, comment.IssueID, comment.SessionID, comment.Text, comment.CreatedAt)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -364,20 +361,19 @@ func (db *DB) LogAction(action *models.ActionLog) error {
 	return db.withWriteLock(func() error {
 		action.Timestamp = time.Now()
 
-		result, err := db.conn.Exec(`
-			INSERT INTO action_log (session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-		`, action.SessionID, action.ActionType, action.EntityType, action.EntityID, action.PreviousData, action.NewData, action.Timestamp)
-
+		id, err := generateActionID()
 		if err != nil {
-			return err
-		}
-
-		id, err := result.LastInsertId()
-		if err != nil {
-			return err
+			return fmt.Errorf("generate ID: %w", err)
 		}
 		action.ID = id
+
+		_, err = db.conn.Exec(`
+			INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)
+		`, action.ID, action.SessionID, action.ActionType, action.EntityType, action.EntityID, action.PreviousData, action.NewData, action.Timestamp)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	})
@@ -410,7 +406,7 @@ func (db *DB) GetLastAction(sessionID string) (*models.ActionLog, error) {
 }
 
 // MarkActionUndone marks an action as undone
-func (db *DB) MarkActionUndone(actionID int64) error {
+func (db *DB) MarkActionUndone(actionID string) error {
 	return db.withWriteLock(func() error {
 		_, err := db.conn.Exec(`UPDATE action_log SET undone = 1 WHERE id = ?`, actionID)
 		return err
@@ -536,20 +532,19 @@ func (db *DB) AddGitSnapshot(snapshot *models.GitSnapshot) error {
 	return db.withWriteLock(func() error {
 		snapshot.Timestamp = time.Now()
 
-		result, err := db.conn.Exec(`
-			INSERT INTO git_snapshots (issue_id, event, commit_sha, branch, dirty_files, timestamp)
-			VALUES (?, ?, ?, ?, ?, ?)
-		`, snapshot.IssueID, snapshot.Event, snapshot.CommitSHA, snapshot.Branch, snapshot.DirtyFiles, snapshot.Timestamp)
-
+		id, err := generateSnapshotID()
 		if err != nil {
-			return err
-		}
-
-		id, err := result.LastInsertId()
-		if err != nil {
-			return err
+			return fmt.Errorf("generate ID: %w", err)
 		}
 		snapshot.ID = id
+
+		_, err = db.conn.Exec(`
+			INSERT INTO git_snapshots (id, issue_id, event, commit_sha, branch, dirty_files, timestamp)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
+		`, snapshot.ID, snapshot.IssueID, snapshot.Event, snapshot.CommitSHA, snapshot.Branch, snapshot.DirtyFiles, snapshot.Timestamp)
+		if err != nil {
+			return err
+		}
 
 		return nil
 	})

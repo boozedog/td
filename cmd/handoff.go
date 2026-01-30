@@ -228,7 +228,7 @@ Or use flags with values, stdin (-), or file (@path):
 						SessionID:  sess.ID,
 						ActionType: models.ActionHandoff,
 						EntityType: "handoff",
-						EntityID:   fmt.Sprintf("%d", childHandoff.ID),
+						EntityID:   childHandoff.ID,
 						NewData:    string(handoffData),
 					}); err != nil {
 						output.Warning("log undo %s: %v", child.ID, err)

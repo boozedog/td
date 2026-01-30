@@ -288,8 +288,8 @@ func TestIssueDefaultValues(t *testing.T) {
 func TestLogDefaultValues(t *testing.T) {
 	log := Log{}
 
-	if log.ID != 0 {
-		t.Error("ID should be 0 by default")
+	if log.ID != "" {
+		t.Error("ID should be empty by default")
 	}
 	if log.IssueID != "" {
 		t.Error("IssueID should be empty by default")

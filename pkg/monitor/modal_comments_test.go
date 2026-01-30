@@ -35,7 +35,7 @@ func TestModalCommentsDisplayBasic(t *testing.T) {
 			name: "single comment",
 			comments: []models.Comment{
 				{
-					ID:        1,
+					ID:        "cm-00000001",
 					IssueID:   "td-001",
 					SessionID: "sess-001",
 					Text:      "This is a test comment",
@@ -48,21 +48,21 @@ func TestModalCommentsDisplayBasic(t *testing.T) {
 			name: "multiple comments",
 			comments: []models.Comment{
 				{
-					ID:        1,
+					ID:        "cm-00000001",
 					IssueID:   "td-001",
 					SessionID: "sess-001",
 					Text:      "First comment",
 					CreatedAt: time.Date(2024, 1, 15, 10, 30, 0, 0, time.UTC),
 				},
 				{
-					ID:        2,
+					ID:        "cm-00000002",
 					IssueID:   "td-001",
 					SessionID: "sess-002",
 					Text:      "Second comment",
 					CreatedAt: time.Date(2024, 1, 15, 11, 45, 0, 0, time.UTC),
 				},
 				{
-					ID:        3,
+					ID:        "cm-00000003",
 					IssueID:   "td-001",
 					SessionID: "sess-003",
 					Text:      "Third comment",
@@ -116,7 +116,7 @@ func TestModalCommentsDisplayFormatting(t *testing.T) {
 		{
 			name: "comment with short session",
 			comment: models.Comment{
-				ID:        1,
+				ID:        "cm-00000001",
 				IssueID:   issueID,
 				SessionID: "short",
 				Text:      "Test comment",
@@ -143,7 +143,7 @@ func TestModalCommentsDisplayFormatting(t *testing.T) {
 		{
 			name: "comment with long session ID (truncated)",
 			comment: models.Comment{
-				ID:        2,
+				ID:        "cm-00000002",
 				IssueID:   issueID,
 				SessionID: "this-is-a-very-long-session-id-that-should-be-truncated",
 				Text:      "Another test",
@@ -167,7 +167,7 @@ func TestModalCommentsDisplayFormatting(t *testing.T) {
 		{
 			name: "comment with special characters",
 			comment: models.Comment{
-				ID:        3,
+				ID:        "cm-00000003",
 				IssueID:   issueID,
 				SessionID: "sess-003",
 				Text:      "Comment with [special] {chars} and (parens)",
@@ -233,21 +233,21 @@ func TestModalCommentsMultipleDisplayOrder(t *testing.T) {
 
 	comments := []models.Comment{
 		{
-			ID:        1,
+			ID:        "cm-00000001",
 			IssueID:   "td-001",
 			SessionID: "sess-001",
 			Text:      "First comment",
 			CreatedAt: time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC),
 		},
 		{
-			ID:        2,
+			ID:        "cm-00000002",
 			IssueID:   "td-001",
 			SessionID: "sess-002",
 			Text:      "Second comment",
 			CreatedAt: time.Date(2024, 1, 15, 11, 0, 0, 0, time.UTC),
 		},
 		{
-			ID:        3,
+			ID:        "cm-00000003",
 			IssueID:   "td-001",
 			SessionID: "sess-003",
 			Text:      "Third comment",
@@ -264,7 +264,7 @@ func TestModalCommentsMultipleDisplayOrder(t *testing.T) {
 	// Verify comments are stored in order
 	for i, expectedComment := range comments {
 		if modal.Comments[i].ID != expectedComment.ID {
-			t.Errorf("comment %d: ID = %d, want %d",
+			t.Errorf("comment %d: ID = %s, want %s",
 				i, modal.Comments[i].ID, expectedComment.ID)
 		}
 		if modal.Comments[i].Text != expectedComment.Text {
@@ -351,7 +351,7 @@ func TestModalCommentsLongTextWrapping(t *testing.T) {
 	longText := strings.Repeat("This is a very long comment that exceeds normal display width. ", 10)
 
 	comment := models.Comment{
-		ID:        1,
+		ID:        "cm-00000001",
 		IssueID:   "td-long-comment",
 		SessionID: "sess-long",
 		Text:      longText,
@@ -427,7 +427,7 @@ func TestModalCommentsTimestampFormatting(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			comment := models.Comment{
-				ID:        1,
+				ID:        "cm-00000001",
 				IssueID:   "td-timestamps",
 				SessionID: "sess-001",
 				Text:      "Test comment",
@@ -485,7 +485,7 @@ func TestModalCommentsSessionIDTruncation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			comment := models.Comment{
-				ID:        1,
+				ID:        "cm-00000001",
 				IssueID:   "td-session",
 				SessionID: tt.sessionID,
 				Text:      "Test",
@@ -567,7 +567,7 @@ func TestModalCommentsScrollBehavior(t *testing.T) {
 			var comments []models.Comment
 			for i := 0; i < tt.commentCount; i++ {
 				comments = append(comments, models.Comment{
-					ID:        int64(i + 1),
+					ID:        fmt.Sprintf("cm-%08d", i+1),
 					IssueID:   "td-scroll",
 					SessionID: fmt.Sprintf("sess-%d", i),
 					Text:      fmt.Sprintf("Comment number %d", i+1),

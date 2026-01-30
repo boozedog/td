@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 14
+const SchemaVersion = 15
 
 const schema = `
 -- Issues table
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS issues (
 
 -- Logs table
 CREATE TABLE IF NOT EXISTS logs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     issue_id TEXT DEFAULT '',
     session_id TEXT NOT NULL,
     work_session_id TEXT DEFAULT '',
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS logs (
 
 -- Handoffs table
 CREATE TABLE IF NOT EXISTS handoffs (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL,
     session_id TEXT NOT NULL,
     done TEXT DEFAULT '[]',
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS handoffs (
 
 -- Git snapshots table
 CREATE TABLE IF NOT EXISTS git_snapshots (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL,
     event TEXT NOT NULL,
     commit_sha TEXT NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS git_snapshots (
 
 -- Issue files table
 CREATE TABLE IF NOT EXISTS issue_files (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL,
     file_path TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'implementation',
@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS work_session_issues (
 
 -- Comments table
 CREATE TABLE IF NOT EXISTS comments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL,
     session_id TEXT NOT NULL,
     text TEXT NOT NULL,
@@ -313,6 +313,12 @@ CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);`,
 		Version:     14,
 		Description: "Repair sessions table for DBs where v13 did not apply correctly",
 		// Reuses migrateV13Sessions — handles missing table and old-schema table
+		SQL: "",
+	},
+	{
+		Version:     15,
+		Description: "Migrate integer PK tables to text IDs for sync compatibility",
+		// Handled by custom Go code in migrations.go (migrateToTextIDs)
 		SQL: "",
 	},
 }

@@ -46,7 +46,7 @@ func TestHandoffRecordsData(t *testing.T) {
 		t.Fatalf("AddHandoff failed: %v", err)
 	}
 
-	if handoff.ID == 0 {
+	if handoff.ID == "" {
 		t.Error("Expected handoff ID to be set")
 	}
 }
@@ -800,7 +800,7 @@ func TestCascadeAndUndoInteraction(t *testing.T) {
 		SessionID:  "ses_test",
 		ActionType: models.ActionHandoff,
 		EntityType: "handoff",
-		EntityID:   fmt.Sprintf("%d", childHandoff.ID),
+		EntityID:   childHandoff.ID,
 		NewData:    string(handoffData),
 	}
 	if err := database.LogAction(action); err != nil {
@@ -917,7 +917,7 @@ func TestHandoffLoggingForUndo(t *testing.T) {
 		SessionID:  "ses_test",
 		ActionType: models.ActionHandoff,
 		EntityType: "handoff",
-		EntityID:   fmt.Sprintf("%d", handoff.ID),
+		EntityID:   handoff.ID,
 		NewData:    string(handoffData),
 	}
 	if err := database.LogAction(action); err != nil {

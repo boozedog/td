@@ -482,10 +482,14 @@ func (db *DB) GetIssueStatuses(ids []string) (map[string]models.Status, error) {
 // LinkFile links a file to an issue
 func (db *DB) LinkFile(issueID, filePath string, role models.FileRole, sha string) error {
 	return db.withWriteLock(func() error {
-		_, err := db.conn.Exec(`
-			INSERT OR REPLACE INTO issue_files (issue_id, file_path, role, linked_sha, linked_at)
-			VALUES (?, ?, ?, ?, ?)
-		`, issueID, filePath, role, sha, time.Now())
+		id, err := generateFileID()
+		if err != nil {
+			return fmt.Errorf("generate ID: %w", err)
+		}
+		_, err = db.conn.Exec(`
+			INSERT OR REPLACE INTO issue_files (id, issue_id, file_path, role, linked_sha, linked_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+		`, id, issueID, filePath, role, sha, time.Now())
 		return err
 	})
 }

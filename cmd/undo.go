@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/marcus/td/internal/db"
@@ -191,11 +190,7 @@ func undoFileLinkAction(database *db.DB, action *models.ActionLog) error {
 func undoHandoffAction(database *db.DB, action *models.ActionLog) error {
 	switch action.ActionType {
 	case models.ActionHandoff:
-		handoffID, err := strconv.ParseInt(action.EntityID, 10, 64)
-		if err != nil {
-			return fmt.Errorf("failed to parse handoff ID: %w", err)
-		}
-		return database.DeleteHandoff(handoffID)
+		return database.DeleteHandoff(action.EntityID)
 	default:
 		return fmt.Errorf("cannot undo handoff action: %s", action.ActionType)
 	}

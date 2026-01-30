@@ -98,7 +98,7 @@ type Issue struct {
 
 // Log represents a session log entry
 type Log struct {
-	ID            int64     `json:"id"`
+	ID            string    `json:"id"`
 	IssueID       string    `json:"issue_id"`
 	SessionID     string    `json:"session_id"`
 	WorkSessionID string    `json:"work_session_id,omitempty"`
@@ -109,7 +109,7 @@ type Log struct {
 
 // Handoff represents a structured handoff state
 type Handoff struct {
-	ID        int64     `json:"id"`
+	ID        string    `json:"id"`
 	IssueID   string    `json:"issue_id"`
 	SessionID string    `json:"session_id"`
 	Done      []string  `json:"done,omitempty"`
@@ -121,7 +121,7 @@ type Handoff struct {
 
 // GitSnapshot captures git state at a point in time
 type GitSnapshot struct {
-	ID         int64     `json:"id"`
+	ID         string    `json:"id"`
 	IssueID    string    `json:"issue_id"`
 	Event      string    `json:"event"` // start, handoff
 	CommitSHA  string    `json:"commit_sha"`
@@ -132,7 +132,7 @@ type GitSnapshot struct {
 
 // IssueFile represents a linked file
 type IssueFile struct {
-	ID        int64     `json:"id"`
+	ID        string    `json:"id"`
 	IssueID   string    `json:"issue_id"`
 	FilePath  string    `json:"file_path"`
 	Role      FileRole  `json:"role"`
@@ -205,7 +205,7 @@ type BoardIssueView struct {
 
 // Comment represents a comment on an issue
 type Comment struct {
-	ID        int64     `json:"id"`
+	ID        string    `json:"id"`
 	IssueID   string    `json:"issue_id"`
 	SessionID string    `json:"session_id"`
 	Text      string    `json:"text"`
@@ -260,7 +260,7 @@ const (
 
 // ActionLog represents a logged action that can be undone
 type ActionLog struct {
-	ID           int64      `json:"id"`
+	ID           string     `json:"id"`
 	SessionID    string     `json:"session_id"`
 	ActionType   ActionType `json:"action_type"`
 	EntityType   string     `json:"entity_type"` // issue, dependency, file_link

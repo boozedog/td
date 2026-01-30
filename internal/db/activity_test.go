@@ -36,7 +36,7 @@ func TestAddLog_Basic(t *testing.T) {
 		t.Fatalf("AddLog failed: %v", err)
 	}
 
-	if log.ID == 0 {
+	if log.ID == "" {
 		t.Error("Log ID not set after AddLog")
 	}
 	if log.Timestamp.IsZero() {
@@ -740,7 +740,7 @@ func TestAddHandoff_Basic(t *testing.T) {
 		t.Fatalf("AddHandoff failed: %v", err)
 	}
 
-	if handoff.ID == 0 {
+	if handoff.ID == "" {
 		t.Error("Handoff ID not set after AddHandoff")
 	}
 	if handoff.Timestamp.IsZero() {
@@ -1098,7 +1098,7 @@ func TestAddComment_Basic(t *testing.T) {
 		t.Fatalf("AddComment failed: %v", err)
 	}
 
-	if comment.ID == 0 {
+	if comment.ID == "" {
 		t.Error("Comment ID not set after AddComment")
 	}
 	if comment.CreatedAt.IsZero() {
@@ -1266,7 +1266,7 @@ func TestLogAction_Basic(t *testing.T) {
 		t.Fatalf("LogAction failed: %v", err)
 	}
 
-	if action.ID == 0 {
+	if action.ID == "" {
 		t.Error("Action ID not set after LogAction")
 	}
 	if action.Timestamp.IsZero() {
@@ -1593,7 +1593,7 @@ func TestAddGitSnapshot_Basic(t *testing.T) {
 		t.Fatalf("AddGitSnapshot failed: %v", err)
 	}
 
-	if snapshot.ID == 0 {
+	if snapshot.ID == "" {
 		t.Error("Snapshot ID not set after AddGitSnapshot")
 	}
 	if snapshot.Timestamp.IsZero() {

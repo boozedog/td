@@ -1,7 +1,9 @@
 package db
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
 )
 
@@ -135,6 +137,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 					continue
 				}
 			}
+				if migration.Version == 15 {
+				if err := db.migrateToTextIDs(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 15 (text IDs): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if migration.Version == 13 || migration.Version == 14 {
 				if err := db.ensureSessionsTable(); err != nil {
 					return migrationsRun, fmt.Errorf("migration %d (sessions): %w", migration.Version, err)
@@ -232,4 +244,284 @@ CREATE INDEX IF NOT EXISTS idx_sessions_branch ON sessions(branch);
 CREATE INDEX IF NOT EXISTS idx_sessions_branch_agent ON sessions(branch, agent_type, agent_pid);
 `)
 	return err
+}
+
+// generateTextID creates a prefixed text ID with 4 random bytes (8 hex chars)
+func generateTextID(prefix string) (string, error) {
+	b := make([]byte, 4)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return prefix + hex.EncodeToString(b), nil
+}
+
+// migrateToTextIDs converts 6 tables from INTEGER AUTOINCREMENT PKs to TEXT PKs.
+// For each table: create new table with TEXT PK, copy data with generated text IDs,
+// update action_log.entity_id references, drop old table, rename new table.
+func (db *DB) migrateToTextIDs() error {
+	type tableMigration struct {
+		name       string
+		prefix     string
+		entityType string // for action_log.entity_id rewriting; empty to skip
+		createSQL  string
+		insertSQL  string // SELECT portion to copy non-id columns
+	}
+
+	migrations := []tableMigration{
+		{
+			name:       "logs",
+			prefix:     "lg-",
+			entityType: "", // logs aren't referenced in action_log.entity_id
+			createSQL: `CREATE TABLE logs_new (
+				id TEXT PRIMARY KEY,
+				issue_id TEXT DEFAULT '',
+				session_id TEXT NOT NULL,
+				work_session_id TEXT DEFAULT '',
+				message TEXT NOT NULL,
+				type TEXT NOT NULL DEFAULT 'progress',
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)`,
+			insertSQL: "SELECT id, issue_id, session_id, work_session_id, message, type, timestamp FROM logs",
+		},
+		{
+			name:       "handoffs",
+			prefix:     "ho-",
+			entityType: "handoff",
+			createSQL: `CREATE TABLE handoffs_new (
+				id TEXT PRIMARY KEY,
+				issue_id TEXT NOT NULL,
+				session_id TEXT NOT NULL,
+				done TEXT DEFAULT '[]',
+				remaining TEXT DEFAULT '[]',
+				decisions TEXT DEFAULT '[]',
+				uncertain TEXT DEFAULT '[]',
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)`,
+			insertSQL: "SELECT id, issue_id, session_id, done, remaining, decisions, uncertain, timestamp FROM handoffs",
+		},
+		{
+			name:       "git_snapshots",
+			prefix:     "gs-",
+			entityType: "",
+			createSQL: `CREATE TABLE git_snapshots_new (
+				id TEXT PRIMARY KEY,
+				issue_id TEXT NOT NULL,
+				event TEXT NOT NULL,
+				commit_sha TEXT NOT NULL,
+				branch TEXT NOT NULL,
+				dirty_files INTEGER DEFAULT 0,
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)`,
+			insertSQL: "SELECT id, issue_id, event, commit_sha, branch, dirty_files, timestamp FROM git_snapshots",
+		},
+		{
+			name:       "issue_files",
+			prefix:     "if-",
+			entityType: "",
+			createSQL: `CREATE TABLE issue_files_new (
+				id TEXT PRIMARY KEY,
+				issue_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				role TEXT NOT NULL DEFAULT 'implementation',
+				linked_sha TEXT DEFAULT '',
+				linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				UNIQUE(issue_id, file_path)
+			)`,
+			insertSQL: "SELECT id, issue_id, file_path, role, linked_sha, linked_at FROM issue_files",
+		},
+		{
+			name:       "comments",
+			prefix:     "cm-",
+			entityType: "",
+			createSQL: `CREATE TABLE comments_new (
+				id TEXT PRIMARY KEY,
+				issue_id TEXT NOT NULL,
+				session_id TEXT NOT NULL,
+				text TEXT NOT NULL,
+				created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+			)`,
+			insertSQL: "SELECT id, issue_id, session_id, text, created_at FROM comments",
+		},
+		{
+			name:       "action_log",
+			prefix:     "al-",
+			entityType: "",
+			createSQL: `CREATE TABLE action_log_new (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				action_type TEXT NOT NULL,
+				entity_type TEXT NOT NULL,
+				entity_id TEXT NOT NULL,
+				previous_data TEXT DEFAULT '',
+				new_data TEXT DEFAULT '',
+				timestamp DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				undone INTEGER DEFAULT 0
+			)`,
+			insertSQL: "SELECT id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone FROM action_log",
+		},
+	}
+
+	// Build old-to-new ID mapping for action_log.entity_id rewriting
+	idMap := make(map[string]map[string]string) // entityType -> oldID -> newID
+
+	for _, m := range migrations {
+		// Check if old table exists with integer PK (idempotency)
+		hasIntPK, err := db.tableHasIntegerPK(m.name)
+		if err != nil {
+			return fmt.Errorf("check %s PK type: %w", m.name, err)
+		}
+		if !hasIntPK {
+			continue // Already migrated or fresh DB
+		}
+
+		// Drop any leftover temp table from previous failed migrations
+		if _, err := db.conn.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %s_new", m.name)); err != nil {
+			return fmt.Errorf("drop leftover %s_new: %w", m.name, err)
+		}
+
+		// Create new table
+		if _, err := db.conn.Exec(m.createSQL); err != nil {
+			return fmt.Errorf("create %s_new: %w", m.name, err)
+		}
+
+		// Read ALL old rows into memory first (MaxOpenConns=1 means we can't
+		// hold an open cursor and execute INSERTs simultaneously)
+		rows, err := db.conn.Query(m.insertSQL)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", m.name, err)
+		}
+
+		cols, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			return fmt.Errorf("columns %s: %w", m.name, err)
+		}
+		nCols := len(cols)
+
+		var allRows [][]interface{}
+		for rows.Next() {
+			vals := make([]interface{}, nCols)
+			ptrs := make([]interface{}, nCols)
+			for i := range vals {
+				ptrs[i] = &vals[i]
+			}
+			if err := rows.Scan(ptrs...); err != nil {
+				rows.Close()
+				return fmt.Errorf("scan %s: %w", m.name, err)
+			}
+			allRows = append(allRows, vals)
+		}
+		rows.Close()
+
+		// Track ID mappings for action_log rewriting
+		if m.entityType != "" {
+			idMap[m.entityType] = make(map[string]string)
+		}
+
+		// Build INSERT template
+		placeholders := "?"
+		for i := 1; i < nCols; i++ {
+			placeholders += ", ?"
+		}
+		insertSQL := fmt.Sprintf("INSERT INTO %s_new (%s) VALUES (%s)",
+			m.name, colList(cols), placeholders)
+
+		// Insert rows with new text IDs
+		for _, vals := range allRows {
+			newID, err := generateTextID(m.prefix)
+			if err != nil {
+				return fmt.Errorf("generate ID for %s: %w", m.name, err)
+			}
+
+			oldID := fmt.Sprintf("%v", vals[0])
+			if m.entityType != "" {
+				idMap[m.entityType][oldID] = newID
+			}
+
+			vals[0] = newID
+
+			if _, err := db.conn.Exec(insertSQL, vals...); err != nil {
+				return fmt.Errorf("insert %s_new: %w", m.name, err)
+			}
+		}
+
+		// Drop old, rename new
+		if _, err := db.conn.Exec(fmt.Sprintf("DROP TABLE %s", m.name)); err != nil {
+			return fmt.Errorf("drop %s: %w", m.name, err)
+		}
+		if _, err := db.conn.Exec(fmt.Sprintf("ALTER TABLE %s_new RENAME TO %s", m.name, m.name)); err != nil {
+			return fmt.Errorf("rename %s_new: %w", m.name, err)
+		}
+	}
+
+	// Rewrite action_log.entity_id for handoff references
+	for entityType, mapping := range idMap {
+		for oldID, newID := range mapping {
+			if _, err := db.conn.Exec(
+				`UPDATE action_log SET entity_id = ? WHERE entity_type = ? AND entity_id = ?`,
+				newID, entityType, oldID,
+			); err != nil {
+				return fmt.Errorf("rewrite action_log entity_id (%s %s->%s): %w", entityType, oldID, newID, err)
+			}
+		}
+	}
+
+	// Recreate indexes
+	indexSQL := `
+CREATE INDEX IF NOT EXISTS idx_logs_issue ON logs(issue_id);
+CREATE INDEX IF NOT EXISTS idx_logs_work_session ON logs(work_session_id);
+CREATE INDEX IF NOT EXISTS idx_logs_timestamp ON logs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_handoffs_issue ON handoffs(issue_id);
+CREATE INDEX IF NOT EXISTS idx_handoffs_timestamp ON handoffs(timestamp);
+CREATE INDEX IF NOT EXISTS idx_git_snapshots_issue ON git_snapshots(issue_id);
+CREATE INDEX IF NOT EXISTS idx_issue_files_issue ON issue_files(issue_id);
+CREATE INDEX IF NOT EXISTS idx_comments_issue ON comments(issue_id);
+CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);
+CREATE INDEX IF NOT EXISTS idx_action_log_session ON action_log(session_id);
+CREATE INDEX IF NOT EXISTS idx_action_log_timestamp ON action_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, action_type);
+`
+	if _, err := db.conn.Exec(indexSQL); err != nil {
+		return fmt.Errorf("recreate indexes: %w", err)
+	}
+
+	return nil
+}
+
+// tableHasIntegerPK checks if the given table's primary key is INTEGER type
+func (db *DB) tableHasIntegerPK(table string) (bool, error) {
+	exists, err := db.tableExists(table)
+	if err != nil || !exists {
+		return false, err
+	}
+
+	rows, err := db.conn.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if pk == 1 && name == "id" {
+			return ctype == "INTEGER", nil
+		}
+	}
+	return false, nil
+}
+
+// colList joins column names with commas
+func colList(cols []string) string {
+	result := cols[0]
+	for _, c := range cols[1:] {
+		result += ", " + c
+	}
+	return result
 }
