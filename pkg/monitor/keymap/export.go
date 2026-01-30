@@ -34,6 +34,7 @@ var contextToSidecar = map[Context]string{
 	ContextForm:              "td-form",
 	ContextTDQHelp:           "td-tdq-help",
 	ContextBoardEditor:       "td-board-editor",
+	ContextCloseConfirm:      "td-close-confirm",
 }
 
 // commandMetadata defines display info and priority for each command.

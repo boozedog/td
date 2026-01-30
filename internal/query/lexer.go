@@ -143,6 +143,17 @@ func (l *Lexer) nextToken() Token {
 		return Token{Type: TokenEOF, Pos: l.pos, Line: l.line, Column: l.column}
 	}
 
+	// Strip shell escape backslashes before operator characters
+	// Agents often escape ! as \! to avoid bash history expansion
+	if l.pos < len(l.input) && l.input[l.pos] == '\\' {
+		if l.pos+1 < len(l.input) {
+			next := l.input[l.pos+1]
+			if next == '!' || next == '<' || next == '>' || next == '=' || next == '~' {
+				l.advance() // skip the backslash
+			}
+		}
+	}
+
 	startPos := l.pos
 	startLine := l.line
 	startCol := l.column

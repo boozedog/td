@@ -22,6 +22,20 @@ var createCmd = &cobra.Command{
 	Long:    `Create a new issue with optional flags for type, priority, labels, and more.`,
 	GroupID: "core",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Route "td new task Title" → td create --type task "Title"
+		// When first arg is a known type and there are more args, treat it as --type
+		if len(args) >= 2 {
+			candidate := strings.ToLower(args[0])
+			normalized := models.NormalizeType(candidate)
+			if models.IsValidType(normalized) {
+				typeFlag, _ := cmd.Flags().GetString("type")
+				if typeFlag == "" {
+					cmd.Flags().Set("type", string(normalized))
+				}
+				args = args[1:]
+			}
+		}
+
 		baseDir := getBaseDir()
 
 		database, err := db.Open(baseDir)

@@ -24,11 +24,21 @@ var taskCreateCmd = &cobra.Command{
 Examples:
   td task create "Implement login endpoint"
   td task create "Fix auth bug" --priority P1`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		title, _ := cmd.Flags().GetString("title")
+		if len(args) == 0 && title == "" {
+			return fmt.Errorf("requires a title argument or --title flag")
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Set type=task on this command's flags so createCmd.RunE reads it correctly
 		if err := cmd.Flags().Set("type", "task"); err != nil {
 			return err
+		}
+		if len(args) == 0 {
+			title, _ := cmd.Flags().GetString("title")
+			args = []string{title}
 		}
 		return createCmd.RunE(cmd, args)
 	},
@@ -90,6 +100,7 @@ func init() {
 	taskCmd.AddCommand(taskListCmd)
 
 	// Copy relevant flags from createCmd to taskCreateCmd
+	taskCreateCmd.Flags().String("title", "", "Issue title")
 	taskCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	taskCreateCmd.Flags().StringP("description", "d", "", "Description text")
 	taskCreateCmd.Flags().String("labels", "", "Comma-separated labels")

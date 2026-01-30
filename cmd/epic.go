@@ -24,11 +24,21 @@ var epicCreateCmd = &cobra.Command{
 Examples:
   td epic create "Multi-user support"
   td epic create "Auth system" --priority P0`,
-	Args: cobra.ExactArgs(1),
+	Args: func(cmd *cobra.Command, args []string) error {
+		title, _ := cmd.Flags().GetString("title")
+		if len(args) == 0 && title == "" {
+			return fmt.Errorf("requires a title argument or --title flag")
+		}
+		return nil
+	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Set type=epic on this command's flags so createCmd.RunE reads it correctly
 		if err := cmd.Flags().Set("type", "epic"); err != nil {
 			return err
+		}
+		if len(args) == 0 {
+			title, _ := cmd.Flags().GetString("title")
+			args = []string{title}
 		}
 		return createCmd.RunE(cmd, args)
 	},
@@ -90,6 +100,7 @@ func init() {
 	epicCmd.AddCommand(epicListCmd)
 
 	// Copy relevant flags from createCmd to epicCreateCmd
+	epicCreateCmd.Flags().String("title", "", "Issue title")
 	epicCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	epicCreateCmd.Flags().StringP("description", "d", "", "Description text")
 	epicCreateCmd.Flags().String("labels", "", "Comma-separated labels")

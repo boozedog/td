@@ -23,6 +23,9 @@ func (m Model) currentContext() keymap.Context {
 	if m.HelpOpen {
 		return keymap.ContextHelp
 	}
+	if m.CloseConfirmOpen {
+		return keymap.ContextCloseConfirm
+	}
 	if m.ConfirmOpen {
 		return keymap.ContextConfirm
 	}

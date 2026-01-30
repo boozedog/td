@@ -235,6 +235,22 @@ var updateCmd = &cobra.Command{
 			}
 
 			fmt.Printf("UPDATED %s\n", issueID)
+
+			// Add inline comment if --comment/-m or -c was provided
+			commentText, _ := cmd.Flags().GetString("comment")
+			if commentText == "" {
+				commentText, _ = cmd.Flags().GetString("note")
+			}
+			if commentText != "" && sess != nil {
+				comment := &models.Comment{
+					IssueID:   issueID,
+					SessionID: sess.ID,
+					Text:      commentText,
+				}
+				if err := database.AddComment(comment); err != nil {
+					output.Warning("failed to add comment to %s: %v", issueID, err)
+				}
+			}
 		}
 
 		return nil
@@ -258,4 +274,7 @@ func init() {
 	updateCmd.Flags().String("blocks", "", "Replace blocked issues")
 	updateCmd.Flags().Bool("append", false, "Append to text fields instead of replacing")
 	updateCmd.Flags().String("status", "", "New status (open, in_progress, in_review, blocked, closed)")
+	updateCmd.Flags().StringP("comment", "m", "", "Add a comment to the updated issue(s)")
+	updateCmd.Flags().StringP("note", "c", "", "Alias for --comment")
+	updateCmd.Flags().MarkHidden("note")
 }

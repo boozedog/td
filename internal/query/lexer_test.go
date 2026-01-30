@@ -420,6 +420,95 @@ func TestLexerOperators(t *testing.T) {
 	}
 }
 
+// TestLexerBackslashEscapedOperators tests that shell-escaped operators are handled
+func TestLexerBackslashEscapedOperators(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		expectedTyp TokenType
+		expectedVal string
+	}{
+		{"backslash escaped neq", `\!=`, TokenNeq, "!="},
+		{"backslash escaped not contains", `\!~`, TokenNotContains, "!~"},
+		{"backslash escaped lt", `\<`, TokenLt, "<"},
+		{"backslash escaped gt", `\>`, TokenGt, ">"},
+		{"backslash escaped lte", `\<=`, TokenLte, "<="},
+		{"backslash escaped gte", `\>=`, TokenGte, ">="},
+		{"backslash escaped eq", `\=`, TokenEq, "="},
+		{"backslash escaped contains", `\~`, TokenContains, "~"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lexer := NewLexer(tt.input)
+			tokens, err := lexer.Tokenize()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(tokens) < 1 {
+				t.Fatalf("expected at least 1 token")
+			}
+			if tokens[0].Type != tt.expectedTyp {
+				t.Errorf("expected type %v, got %v", tt.expectedTyp, tokens[0].Type)
+			}
+			if tokens[0].Value != tt.expectedVal {
+				t.Errorf("expected value %q, got %q", tt.expectedVal, tokens[0].Value)
+			}
+		})
+	}
+}
+
+// TestLexerBackslashEscapedFullExpression tests full expressions with shell-escaped operators
+func TestLexerBackslashEscapedFullExpression(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected []TokenType
+	}{
+		{
+			name:  "epic backslash-neq value",
+			input: `epic \!= td-7af41c`,
+			expected: []TokenType{
+				TokenIdent, TokenNeq, TokenIdent, TokenEOF,
+			},
+		},
+		{
+			name:  "field backslash-not-contains value",
+			input: `title \!~ "draft"`,
+			expected: []TokenType{
+				TokenIdent, TokenNotContains, TokenString, TokenEOF,
+			},
+		},
+		{
+			name:  "field backslash-gte date",
+			input: `created \>= 2024-01-15`,
+			expected: []TokenType{
+				TokenIdent, TokenGte, TokenDate, TokenEOF,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lexer := NewLexer(tt.input)
+			tokens, err := lexer.Tokenize()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if len(tokens) != len(tt.expected) {
+				t.Fatalf("expected %d tokens, got %d: %v", len(tt.expected), len(tokens), tokens)
+			}
+
+			for i, tok := range tokens {
+				if tok.Type != tt.expected[i] {
+					t.Errorf("token %d: expected %v, got %v", i, tt.expected[i], tok.Type)
+				}
+			}
+		})
+	}
+}
+
 // TestLexerBooleanOperators tests boolean operator tokenization
 func TestLexerBooleanOperators(t *testing.T) {
 	tests := []struct {
