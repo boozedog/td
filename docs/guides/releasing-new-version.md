@@ -9,7 +9,7 @@ Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Acti
 1. Builds binaries for darwin/linux × amd64/arm64
 2. Creates a GitHub release with binary assets and checksums
 3. Generates a changelog from commits since the last tag
-4. Pushes a Homebrew cask (`Casks/td.rb`) to `marcus/homebrew-tap`
+4. Pushes a Homebrew tap formula (`Casks/td.rb`) to `marcus/homebrew-tap`
 
 ## Prerequisites
 
@@ -17,7 +17,7 @@ Releases are automated via [GoReleaser](https://goreleaser.com/) and GitHub Acti
 - All tests passing (`go test ./...`)
 - On the main branch
 - GitHub CLI authenticated (`gh auth status`)
-- `HOMEBREW_TAP_TOKEN` secret configured on the repo (for Homebrew cask push)
+- `HOMEBREW_TAP_TOKEN` secret configured on the repo (for Homebrew tap push)
 
 ## Release Process
 
@@ -73,7 +73,7 @@ git tag -a vX.Y.Z -m "Release vX.Y.Z: brief description"
 git push origin vX.Y.Z
 ```
 
-Pushing the tag triggers `.github/workflows/release.yml`, which runs GoReleaser to build binaries, create the GitHub release, and update the Homebrew cask.
+Pushing the tag triggers `.github/workflows/release.yml`, which runs GoReleaser to build binaries, create the GitHub release, and update the Homebrew tap.
 
 ### 5. Verify
 
@@ -161,6 +161,6 @@ brew upgrade td && td version
 - [ ] Tag created with `-a` (annotated)
 - [ ] Tag pushed to origin (triggers GoReleaser)
 - [ ] GitHub release has binary assets (automated)
-- [ ] Homebrew cask updated in `marcus/homebrew-tap` (automated)
+- [ ] Homebrew tap updated in `marcus/homebrew-tap` (automated)
 - [ ] `brew install marcus/tap/td` works
 - [ ] `td version` shows correct version

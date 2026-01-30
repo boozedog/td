@@ -2,6 +2,30 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.28.0] - 2026-01-30
+
+### Features
+- Primary key migration to enable future sync support
+- GoReleaser binary releases and Homebrew formula
+
+### Improvements
+- Accessibility improvements
+- Minor fixes from code review
+- Transactional PK migration for safety
+
+### Documentation
+- Release guide wording fixes (cask → tap)
+
+## [v0.27.0] - 2026-01-30
+
+### Features
+- GoReleaser binary releases and Homebrew formula
+- Session migration to database
+
+### Bug Fixes
+- Revert URI DSN for modernc.org/sqlite, extract openConn helper
+- Repair sessions table for DBs where v13 migration didn't apply
+
 ## [v0.26.0] - 2026-01-29
 
 ### Features
