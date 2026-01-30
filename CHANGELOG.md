@@ -2,6 +2,18 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.26.0] - 2026-01-29
+
+### Features
+- Case-insensitive enum values in TDQ query language
+- Much improved board editor modal
+- ContextForm added to sidecar context map
+
+### Bug Fixes
+- Epic field query matched all issues instead of descendants
+- Query language bug fixes
+- Code review bug fix
+
 ## [v0.25.0] - 2026-01-28
 
 ### Features
