@@ -830,8 +830,11 @@ func comparePriority(a, b, op string) bool {
 	b = strings.ToUpper(b)
 	// P0 is highest priority (lowest number)
 	priorityOrder := map[string]int{"P0": 0, "P1": 1, "P2": 2, "P3": 3, "P4": 4}
-	orderA := priorityOrder[a]
-	orderB := priorityOrder[b]
+	orderA, okA := priorityOrder[a]
+	orderB, okB := priorityOrder[b]
+	if !okA || !okB {
+		return false
+	}
 
 	switch op {
 	case OpLt:

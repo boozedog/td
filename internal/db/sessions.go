@@ -174,9 +174,11 @@ func (db *DB) MigrateFileSystemSessions(baseDir string) error {
 	}
 
 	return db.withWriteLock(func() error {
+		var insertFailed bool
+
 		// Migrate .todos/sessions/ directory (agent-scoped + branch-scoped files)
 		if sessErr == nil {
-			filepath.Walk(sessionsPath, func(path string, info os.FileInfo, err error) error {
+			walkErr := filepath.Walk(sessionsPath, func(path string, info os.FileInfo, err error) error {
 				if err != nil || info.IsDir() || !strings.HasSuffix(path, ".json") {
 					return nil
 				}
@@ -192,13 +194,19 @@ func (db *DB) MigrateFileSystemSessions(baseDir string) error {
 				if la.IsZero() {
 					la = fs.StartedAt
 				}
-				db.conn.Exec(`INSERT OR IGNORE INTO sessions
+				_, execErr := db.conn.Exec(`INSERT OR IGNORE INTO sessions
 					(id, name, branch, agent_type, agent_pid, context_id, previous_session_id, started_at, last_activity)
 					VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 					fs.ID, fs.Name, fs.Branch, fs.AgentType, fs.AgentPID,
 					fs.ContextID, fs.PreviousSessionID, fs.StartedAt, la)
+				if execErr != nil {
+					insertFailed = true
+				}
 				return nil
 			})
+			if walkErr != nil {
+				insertFailed = true
+			}
 		}
 
 		// Migrate legacy .todos/session file
@@ -219,21 +227,26 @@ func (db *DB) MigrateFileSystemSessions(baseDir string) error {
 					if la.IsZero() {
 						la = fs.StartedAt
 					}
-					db.conn.Exec(`INSERT OR IGNORE INTO sessions
+					_, execErr := db.conn.Exec(`INSERT OR IGNORE INTO sessions
 						(id, name, branch, agent_type, agent_pid, context_id, previous_session_id, started_at, last_activity)
 						VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 						fs.ID, fs.Name, fs.Branch, fs.AgentType, fs.AgentPID,
 						fs.ContextID, fs.PreviousSessionID, fs.StartedAt, la)
+					if execErr != nil {
+						insertFailed = true
+					}
 				}
 			}
 		}
 
-		// Clean up filesystem after successful migration
-		if sessErr == nil {
-			os.RemoveAll(sessionsPath) // non-fatal if fails
-		}
-		if legErr == nil {
-			os.Remove(legacyPath) // non-fatal if fails
+		// Only clean up filesystem if all inserts succeeded
+		if !insertFailed {
+			if sessErr == nil {
+				os.RemoveAll(sessionsPath)
+			}
+			if legErr == nil {
+				os.Remove(legacyPath)
+			}
 		}
 
 		return nil

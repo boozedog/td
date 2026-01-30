@@ -751,6 +751,24 @@ func TestFunctionArgEnumNormalization(t *testing.T) {
 			},
 			matches: true,
 		},
+		{
+			name:  "all() with mixed-case labels matches",
+			query: "all(status, OPEN)",
+			issue: models.Issue{
+				ID:     "td-fn-07",
+				Status: models.StatusOpen,
+			},
+			matches: true,
+		},
+		{
+			name:  "all() with mixed-case no match",
+			query: "all(status, CLOSED)",
+			issue: models.Issue{
+				ID:     "td-fn-08",
+				Status: models.StatusOpen,
+			},
+			matches: false,
+		},
 	}
 
 	for _, tt := range tests {

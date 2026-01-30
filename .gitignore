@@ -1,6 +1,7 @@
 .todos/
 .sidecar/
 td
+dist/
 
 # Docusaurus
 website/node_modules/
