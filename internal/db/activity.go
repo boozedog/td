@@ -179,7 +179,7 @@ func (db *DB) GetActiveSessions(since time.Time) ([]string, error) {
 // Handoff Functions
 // ============================================================================
 
-// AddHandoff adds a handoff entry
+// AddHandoff adds a handoff entry and logs it to action_log for sync/undo.
 func (db *DB) AddHandoff(handoff *models.Handoff) error {
 	return db.withWriteLock(func() error {
 		handoff.Timestamp = time.Now()
@@ -201,6 +201,29 @@ func (db *DB) AddHandoff(handoff *models.Handoff) error {
 		`, handoff.ID, handoff.IssueID, handoff.SessionID, doneJSON, remainingJSON, decisionsJSON, uncertainJSON, handoff.Timestamp)
 		if err != nil {
 			return err
+		}
+
+		// Log to action_log for sync and undo support
+		newData, _ := json.Marshal(map[string]any{
+			"id":         handoff.ID,
+			"issue_id":   handoff.IssueID,
+			"session_id": handoff.SessionID,
+			"done":       string(doneJSON),
+			"remaining":  string(remainingJSON),
+			"decisions":  string(decisionsJSON),
+			"uncertain":  string(uncertainJSON),
+			"timestamp":  handoff.Timestamp.Format(time.RFC3339),
+		})
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		_, err = db.conn.Exec(`
+			INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+		`, actionID, handoff.SessionID, models.ActionHandoff, "handoff", handoff.ID, string(newData), handoff.Timestamp)
+		if err != nil {
+			return fmt.Errorf("log handoff action: %w", err)
 		}
 
 		return nil
