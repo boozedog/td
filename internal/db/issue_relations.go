@@ -326,10 +326,11 @@ func (db *DB) CascadeUnblockDependents(closedIssueID, sessionID string) (int, []
 // AddDependency adds a dependency between issues
 func (db *DB) AddDependency(issueID, dependsOnID, relationType string) error {
 	return db.withWriteLock(func() error {
+		depID := DependencyID(issueID, dependsOnID, relationType)
 		_, err := db.conn.Exec(`
-			INSERT OR REPLACE INTO issue_dependencies (issue_id, depends_on_id, relation_type)
-			VALUES (?, ?, ?)
-		`, issueID, dependsOnID, relationType)
+			INSERT OR REPLACE INTO issue_dependencies (id, issue_id, depends_on_id, relation_type)
+			VALUES (?, ?, ?, ?)
+		`, depID, issueID, dependsOnID, relationType)
 		return err
 	})
 }
@@ -482,11 +483,8 @@ func (db *DB) GetIssueStatuses(ids []string) (map[string]models.Status, error) {
 // LinkFile links a file to an issue
 func (db *DB) LinkFile(issueID, filePath string, role models.FileRole, sha string) error {
 	return db.withWriteLock(func() error {
-		id, err := generateFileID()
-		if err != nil {
-			return fmt.Errorf("generate ID: %w", err)
-		}
-		_, err = db.conn.Exec(`
+		id := IssueFileID(issueID, filePath)
+		_, err := db.conn.Exec(`
 			INSERT OR REPLACE INTO issue_files (id, issue_id, file_path, role, linked_sha, linked_at)
 			VALUES (?, ?, ?, ?, ?, ?)
 		`, id, issueID, filePath, role, sha, time.Now())

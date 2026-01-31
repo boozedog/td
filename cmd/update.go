@@ -154,13 +154,16 @@ var updateCmd = &cobra.Command{
 				// First get existing deps and remove them
 				existingDeps, _ := database.GetDependencies(issueID)
 				for _, dep := range existingDeps {
-					// Log removal for undo
-					depData, _ := json.Marshal(map[string]string{"issue_id": issueID, "depends_on_id": dep})
+					// Log removal for undo — full row data for sync
+					depID := db.DependencyID(issueID, dep, "depends_on")
+					depData, _ := json.Marshal(map[string]string{
+						"id": depID, "issue_id": issueID, "depends_on_id": dep, "relation_type": "depends_on",
+					})
 					database.LogAction(&models.ActionLog{
 						SessionID:  sess.ID,
 						ActionType: models.ActionRemoveDep,
-						EntityType: "dependency",
-						EntityID:   issueID + ":" + dep,
+						EntityType: "issue_dependencies",
+						EntityID:   depID,
 						NewData:    string(depData),
 					})
 					database.RemoveDependency(issueID, dep)
@@ -169,13 +172,16 @@ var updateCmd = &cobra.Command{
 				if dependsOn != "" {
 					for _, dep := range strings.Split(dependsOn, ",") {
 						dep = strings.TrimSpace(dep)
-						// Log addition for undo
-						depData, _ := json.Marshal(map[string]string{"issue_id": issueID, "depends_on_id": dep})
+						// Log addition for undo — full row data for sync
+						depID := db.DependencyID(issueID, dep, "depends_on")
+						depData, _ := json.Marshal(map[string]string{
+							"id": depID, "issue_id": issueID, "depends_on_id": dep, "relation_type": "depends_on",
+						})
 						database.LogAction(&models.ActionLog{
 							SessionID:  sess.ID,
 							ActionType: models.ActionAddDep,
-							EntityType: "dependency",
-							EntityID:   issueID + ":" + dep,
+							EntityType: "issue_dependencies",
+							EntityID:   depID,
 							NewData:    string(depData),
 						})
 						database.AddDependency(issueID, dep, "depends_on")
@@ -187,13 +193,16 @@ var updateCmd = &cobra.Command{
 				// For blocks, we need to find issues that depend on this one and update them
 				blocked, _ := database.GetBlockedBy(issueID)
 				for _, b := range blocked {
-					// Log removal for undo
-					depData, _ := json.Marshal(map[string]string{"issue_id": b, "depends_on_id": issueID})
+					// Log removal for undo — full row data for sync
+					bDepID := db.DependencyID(b, issueID, "depends_on")
+					depData, _ := json.Marshal(map[string]string{
+						"id": bDepID, "issue_id": b, "depends_on_id": issueID, "relation_type": "depends_on",
+					})
 					database.LogAction(&models.ActionLog{
 						SessionID:  sess.ID,
 						ActionType: models.ActionRemoveDep,
-						EntityType: "dependency",
-						EntityID:   b + ":" + issueID,
+						EntityType: "issue_dependencies",
+						EntityID:   bDepID,
 						NewData:    string(depData),
 					})
 					database.RemoveDependency(b, issueID)
@@ -202,13 +211,16 @@ var updateCmd = &cobra.Command{
 				if blocks != "" {
 					for _, b := range strings.Split(blocks, ",") {
 						b = strings.TrimSpace(b)
-						// Log addition for undo
-						depData, _ := json.Marshal(map[string]string{"issue_id": b, "depends_on_id": issueID})
+						// Log addition for undo — full row data for sync
+						bDepID := db.DependencyID(b, issueID, "depends_on")
+						depData, _ := json.Marshal(map[string]string{
+							"id": bDepID, "issue_id": b, "depends_on_id": issueID, "relation_type": "depends_on",
+						})
 						database.LogAction(&models.ActionLog{
 							SessionID:  sess.ID,
 							ActionType: models.ActionAddDep,
-							EntityType: "dependency",
-							EntityID:   b + ":" + issueID,
+							EntityType: "issue_dependencies",
+							EntityID:   bDepID,
 							NewData:    string(depData),
 						})
 						database.AddDependency(b, issueID, "depends_on")

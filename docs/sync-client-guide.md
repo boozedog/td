@@ -16,8 +16,27 @@ Sync replicates your local td issues, logs, comments, handoffs, and boards to a 
 | Handoffs | Yes |
 | Boards | Yes |
 | Board issues | Yes |
+| Board positions | Yes |
+| Dependencies | Yes |
+| File links | Yes |
 | Sessions | No (local only) |
 | Work sessions | No (local only) |
+
+### Board positions, dependencies, and file links
+
+These entities use deterministic IDs derived from their composite keys via SHA-256:
+
+| Entity | Table | ID prefix | Derived from |
+|---|---|---|---|
+| Board position | `board_issue_positions` | `bip_` | `board_id \| issue_id` |
+| Dependency | `issue_dependencies` | `dep_` | `issue_id \| depends_on_id \| relation_type` |
+| File link | `issue_files` | `ifl_` | `issue_id \| file_path` |
+
+Deterministic IDs ensure the same logical entity produces the same ID across clients, preventing duplicates during sync.
+
+**File path handling:** File paths in `issue_files` are stored repo-relative with forward slashes (e.g., `src/main.go` rather than an absolute path). Files outside the repository root are skipped during sync. Path separators are normalized to forward slashes before ID computation, so the same file produces the same ID on any OS.
+
+**Entity type normalization:** The action_log may record these entities with short names (`board_position`, `dependency`, `file_link`). The sync engine normalizes them to their canonical table names (`board_issue_positions`, `issue_dependencies`, `issue_files`) before pushing. Unrecognized entity types are skipped with a warning.
 
 ### What's automatic vs. manual
 
@@ -308,8 +327,9 @@ Or use `td sync --status` which shows this as the "Pending" count.
 ### How local changes become sync events
 
 1. You run any `td` command that modifies data (create issue, add log, etc.)
-2. The `action_log` table records the action with: action type, entity type, entity ID, new data, previous data, timestamp
+2. The `action_log` table records the action with: action type, entity type, entity ID, full-row payload (`new_data` and `previous_data` as JSON), timestamp
 3. The entry starts with `synced_at = NULL`
+4. Entity types are normalized on push (e.g., `board_position` becomes `board_issue_positions`); unrecognized types are skipped
 
 ### Push flow
 

@@ -87,6 +87,33 @@ CREATE TABLE work_sessions (
     end_sha TEXT DEFAULT ''
 );
 
+CREATE TABLE board_issue_positions (
+    id TEXT PRIMARY KEY,
+    board_id TEXT NOT NULL,
+    issue_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(board_id, issue_id)
+);
+
+CREATE TABLE issue_dependencies (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL,
+    depends_on_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL DEFAULT 'depends_on',
+    UNIQUE(issue_id, depends_on_id, relation_type)
+);
+
+CREATE TABLE issue_files (
+    id TEXT PRIMARY KEY,
+    issue_id TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'implementation',
+    linked_sha TEXT DEFAULT '',
+    linked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(issue_id, file_path)
+);
+
 CREATE TABLE action_log (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
@@ -111,16 +138,19 @@ CREATE TABLE sync_state (
 `
 
 // entityTables lists the tables that hold user data (not action_log or sync_state).
-var entityTables = []string{"issues", "logs", "handoffs", "comments", "boards", "work_sessions"}
+var entityTables = []string{"issues", "logs", "handoffs", "comments", "boards", "work_sessions", "board_issue_positions", "issue_dependencies", "issue_files"}
 
 // validEntities is the set of entity types accepted by the validator.
 var validEntities = map[string]bool{
-	"issues":        true,
-	"logs":          true,
-	"handoffs":      true,
-	"comments":      true,
-	"boards":        true,
-	"work_sessions": true,
+	"issues":                true,
+	"logs":                  true,
+	"handoffs":              true,
+	"comments":              true,
+	"boards":                true,
+	"work_sessions":         true,
+	"board_issue_positions": true,
+	"issue_dependencies":    true,
+	"issue_files":           true,
 }
 
 // SimulatedClient represents a single sync client with its own database.

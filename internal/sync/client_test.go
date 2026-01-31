@@ -234,8 +234,15 @@ func TestGetPendingEvents_EntityTypeNormalization(t *testing.T) {
 		`{"title":"Normalized","status":"open"}`, `{}`, 0, "")
 	insertActionLog(t, db, "al-00000002", "sess1", "create", "issues", "i2",
 		`{"title":"AlreadyCanonical","status":"open"}`, `{}`, 0, "")
-	insertActionLog(t, db, "al-00000003", "sess1", "create", "dependency", "i1:i2",
-		`{"issue_id":"i1","depends_on_id":"i2"}`, `{}`, 0, "")
+	insertActionLog(t, db, "al-00000003", "sess1", "create", "dependency", "dep1",
+		`{"id":"dep1","issue_id":"i1","depends_on_id":"i2","relation_type":"depends_on"}`, `{}`, 0, "")
+	insertActionLog(t, db, "al-00000004", "sess1", "create", "board_position", "bip1",
+		`{"id":"bip1","board_id":"bd-1","issue_id":"i1","position":1,"added_at":"2025-01-01T00:00:00Z"}`, `{}`, 0, "")
+	insertActionLog(t, db, "al-00000005", "sess1", "create", "file_link", "ifl1",
+		`{"id":"ifl1","issue_id":"i1","file_path":"main.go","role":"implementation","linked_sha":"abc","linked_at":"2025-01-01T00:00:00Z"}`, `{}`, 0, "")
+	// unsupported entity type should be skipped
+	insertActionLog(t, db, "al-00000006", "sess1", "create", "unknown_entity", "x1",
+		`{"foo":"bar"}`, `{}`, 0, "")
 
 	tx, _ := db.Begin()
 	defer tx.Rollback()
@@ -244,14 +251,23 @@ func TestGetPendingEvents_EntityTypeNormalization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPendingEvents: %v", err)
 	}
-	if len(events) != 2 {
-		t.Fatalf("got %d events, want 2", len(events))
+	if len(events) != 5 {
+		t.Fatalf("got %d events, want 5", len(events))
 	}
 	if events[0].EntityType != "issues" {
 		t.Errorf("entity type normalize: got %q, want issues", events[0].EntityType)
 	}
 	if events[1].EntityType != "issues" {
 		t.Errorf("entity type canonical: got %q, want issues", events[1].EntityType)
+	}
+	if events[2].EntityType != "issue_dependencies" {
+		t.Errorf("dependency normalize: got %q, want issue_dependencies", events[2].EntityType)
+	}
+	if events[3].EntityType != "board_issue_positions" {
+		t.Errorf("board_position normalize: got %q, want board_issue_positions", events[3].EntityType)
+	}
+	if events[4].EntityType != "issue_files" {
+		t.Errorf("file_link normalize: got %q, want issue_files", events[4].EntityType)
 	}
 }
 

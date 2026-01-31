@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
@@ -373,11 +374,20 @@ var boardMoveCmd = &cobra.Command{
 			return err
 		}
 
-		// Log action for undo
+		// Log action for undo — full row data for sync
+		bipID := db.BoardIssuePosID(board.ID, issue.ID)
+		bipData, _ := json.Marshal(map[string]interface{}{
+			"id":       bipID,
+			"board_id": board.ID,
+			"issue_id": issue.ID,
+			"position": position,
+			"added_at": time.Now().Format(time.RFC3339),
+		})
 		logActionWithSession(baseDir, database, &models.ActionLog{
 			ActionType: models.ActionBoardSetPosition,
-			EntityType: "board_position",
-			EntityID:   fmt.Sprintf("%s:%s", board.ID, issue.ID),
+			EntityType: "board_issue_positions",
+			EntityID:   bipID,
+			NewData:    string(bipData),
 		})
 
 		output.Success("Set %s to position %d on %s", issue.ID, position, board.Name)
@@ -419,11 +429,18 @@ var boardUnpositionCmd = &cobra.Command{
 			return err
 		}
 
-		// Log action for undo
+		// Log action for undo — full row data for sync
+		ubipID := db.BoardIssuePosID(board.ID, issue.ID)
+		ubipData, _ := json.Marshal(map[string]interface{}{
+			"id":       ubipID,
+			"board_id": board.ID,
+			"issue_id": issue.ID,
+		})
 		logActionWithSession(baseDir, database, &models.ActionLog{
 			ActionType: models.ActionBoardUnposition,
-			EntityType: "board_position",
-			EntityID:   fmt.Sprintf("%s:%s", board.ID, issue.ID),
+			EntityType: "board_issue_positions",
+			EntityID:   ubipID,
+			NewData:    string(ubipData),
 		})
 
 		output.Success("Removed explicit position for %s on %s", issue.ID, board.Name)

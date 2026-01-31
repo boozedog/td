@@ -108,10 +108,12 @@ func performUndo(database *db.DB, action *models.ActionLog) error {
 	switch action.EntityType {
 	case "issue":
 		return undoIssueAction(database, action)
-	case "dependency":
+	case "dependency", "issue_dependencies":
 		return undoDependencyAction(database, action)
-	case "file_link":
+	case "file_link", "issue_files":
 		return undoFileLinkAction(database, action)
+	case "board_position", "board_issue_positions":
+		return undoBoardPositionAction(database, action)
 	case "handoff":
 		return undoHandoffAction(database, action)
 	default:
@@ -168,22 +170,51 @@ func undoDependencyAction(database *db.DB, action *models.ActionLog) error {
 
 func undoFileLinkAction(database *db.DB, action *models.ActionLog) error {
 	var linkInfo struct {
-		IssueID  string `json:"issue_id"`
-		FilePath string `json:"file_path"`
-		Role     string `json:"role"`
-		SHA      string `json:"sha"`
+		IssueID   string `json:"issue_id"`
+		FilePath  string `json:"file_path"`
+		Role      string `json:"role"`
+		SHA       string `json:"sha"`        // legacy field
+		LinkedSHA string `json:"linked_sha"` // new canonical field
 	}
 	if err := json.Unmarshal([]byte(action.NewData), &linkInfo); err != nil {
 		return fmt.Errorf("failed to parse file link data: %w", err)
+	}
+	// Prefer linked_sha, fall back to legacy sha
+	sha := linkInfo.LinkedSHA
+	if sha == "" {
+		sha = linkInfo.SHA
 	}
 
 	switch action.ActionType {
 	case models.ActionLinkFile:
 		return database.UnlinkFile(linkInfo.IssueID, linkInfo.FilePath)
 	case models.ActionUnlinkFile:
-		return database.LinkFile(linkInfo.IssueID, linkInfo.FilePath, models.FileRole(linkInfo.Role), linkInfo.SHA)
+		return database.LinkFile(linkInfo.IssueID, linkInfo.FilePath, models.FileRole(linkInfo.Role), sha)
 	default:
 		return fmt.Errorf("cannot undo file link action: %s", action.ActionType)
+	}
+}
+
+func undoBoardPositionAction(database *db.DB, action *models.ActionLog) error {
+	var posInfo struct {
+		BoardID  string `json:"board_id"`
+		IssueID  string `json:"issue_id"`
+		Position int    `json:"position"`
+	}
+	if err := json.Unmarshal([]byte(action.NewData), &posInfo); err != nil {
+		return fmt.Errorf("failed to parse board position data: %w", err)
+	}
+
+	switch action.ActionType {
+	case models.ActionBoardSetPosition:
+		return database.RemoveIssuePosition(posInfo.BoardID, posInfo.IssueID)
+	case models.ActionBoardUnposition:
+		if posInfo.Position > 0 {
+			return database.SetIssuePosition(posInfo.BoardID, posInfo.IssueID, posInfo.Position)
+		}
+		return nil // no position to restore
+	default:
+		return fmt.Errorf("cannot undo board position action: %s", action.ActionType)
 	}
 }
 

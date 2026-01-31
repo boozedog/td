@@ -36,6 +36,12 @@ func normalizeEntityType(entityType string) (string, bool) {
 		return "comments", true
 	case "work_session", "work_sessions":
 		return "work_sessions", true
+	case "board_position", "board_issue_positions":
+		return "board_issue_positions", true
+	case "dependency", "issue_dependencies":
+		return "issue_dependencies", true
+	case "file_link", "issue_files":
+		return "issue_files", true
 	default:
 		return "", false
 	}

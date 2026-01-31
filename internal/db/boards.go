@@ -329,10 +329,11 @@ func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 		}
 
 		// Insert the new position
+		bipID := BoardIssuePosID(boardID, issueID)
 		_, err = tx.Exec(`
-			INSERT INTO board_issue_positions (board_id, issue_id, position, added_at)
-			VALUES (?, ?, ?, ?)
-		`, boardID, issueID, position, time.Now())
+			INSERT INTO board_issue_positions (id, board_id, issue_id, position, added_at)
+			VALUES (?, ?, ?, ?, ?)
+		`, bipID, boardID, issueID, position, time.Now())
 		if err != nil {
 			return err
 		}

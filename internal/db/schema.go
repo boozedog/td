@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 16
+const SchemaVersion = 19
 
 const schema = `
 -- Issues table
@@ -77,10 +77,11 @@ CREATE TABLE IF NOT EXISTS issue_files (
 
 -- Issue dependencies table
 CREATE TABLE IF NOT EXISTS issue_dependencies (
+    id TEXT PRIMARY KEY,
     issue_id TEXT NOT NULL,
     depends_on_id TEXT NOT NULL,
     relation_type TEXT NOT NULL DEFAULT 'depends_on',
-    PRIMARY KEY (issue_id, depends_on_id),
+    UNIQUE(issue_id, depends_on_id, relation_type),
     FOREIGN KEY (issue_id) REFERENCES issues(id),
     FOREIGN KEY (depends_on_id) REFERENCES issues(id)
 );
@@ -353,5 +354,17 @@ CREATE INDEX IF NOT EXISTS idx_sync_conflicts_entity ON sync_conflicts(entity_ty
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_time ON sync_conflicts(overwritten_at);
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_seq ON sync_conflicts(server_seq);
 `,
+	},
+	{
+		Version:     18,
+		Description: "Add deterministic ID columns to composite-key tables for sync",
+		// Handled by custom Go code in migrations.go (migrateDeterministicIDs)
+		SQL: "",
+	},
+	{
+		Version:     19,
+		Description: "Convert absolute file paths to repo-relative in issue_files",
+		// Handled by custom Go code in migrations.go (migrateFilePathsToRelative)
+		SQL: "",
 	},
 }

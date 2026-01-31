@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/dependency"
@@ -232,8 +233,15 @@ Examples:
 		// Link each file
 		count := 0
 		for _, file := range allFiles {
-			// Get absolute path
+			// Get absolute path for SHA computation
 			absPath, _ := filepath.Abs(file)
+
+			// Convert to repo-relative path for storage
+			relPath, err := db.ToRepoRelative(absPath, baseDir)
+			if err != nil {
+				output.Warning("skipping %s: %v", file, err)
+				continue
+			}
 
 			// Compute file SHA for change detection
 			sha, err := computeFileSHA(absPath)
@@ -242,23 +250,26 @@ Examples:
 				sha = "" // Store empty SHA, will be treated as "new"
 			}
 
-			if err := database.LinkFile(issueID, absPath, role, sha); err != nil {
+			if err := database.LinkFile(issueID, relPath, role, sha); err != nil {
 				output.Warning("failed to link %s: %v", file, err)
 				continue
 			}
 
-			// Log action for undo
+			// Log action for undo — full row data for sync
+			iflID := db.IssueFileID(issueID, relPath)
 			linkData, _ := json.Marshal(map[string]string{
-				"issue_id":  issueID,
-				"file_path": absPath,
-				"role":      string(role),
-				"sha":       sha,
+				"id":         iflID,
+				"issue_id":   issueID,
+				"file_path":  relPath,
+				"role":       string(role),
+				"linked_sha": sha,
+				"linked_at":  time.Now().Format(time.RFC3339),
 			})
 			database.LogAction(&models.ActionLog{
 				SessionID:  sess.ID,
 				ActionType: models.ActionLinkFile,
-				EntityType: "file_link",
-				EntityID:   issueID + ":" + absPath,
+				EntityType: "issue_files",
+				EntityID:   iflID,
 				NewData:    string(linkData),
 			})
 
@@ -310,18 +321,21 @@ var unlinkCmd = &cobra.Command{
 		for _, file := range files {
 			matched, _ := filepath.Match(pattern, file.FilePath)
 			if matched || file.FilePath == pattern {
-				// Log action for undo (before unlink so we capture the file info)
+				// Log action for undo (before unlink so we capture the file info) — full row data for sync
+				uiflID := db.IssueFileID(issueID, file.FilePath)
 				linkData, _ := json.Marshal(map[string]string{
-					"issue_id":  issueID,
-					"file_path": file.FilePath,
-					"role":      string(file.Role),
-					"sha":       file.LinkedSHA,
+					"id":         uiflID,
+					"issue_id":   issueID,
+					"file_path":  file.FilePath,
+					"role":       string(file.Role),
+					"linked_sha": file.LinkedSHA,
+					"linked_at":  file.LinkedAt.Format(time.RFC3339),
 				})
 				database.LogAction(&models.ActionLog{
 					SessionID:  sess.ID,
 					ActionType: models.ActionUnlinkFile,
-					EntityType: "file_link",
-					EntityID:   issueID + ":" + file.FilePath,
+					EntityType: "issue_files",
+					EntityID:   uiflID,
 					NewData:    string(linkData),
 				})
 
@@ -408,27 +422,34 @@ var filesCmd = &cobra.Command{
 
 			fmt.Printf("%s:\n", string(role))
 			for _, f := range roleFiles {
+				// Resolve to absolute path for file operations.
+				// Stored paths are repo-relative; resolve against baseDir.
+				absPath := f.FilePath
+				if !filepath.IsAbs(f.FilePath) {
+					absPath = filepath.Join(baseDir, filepath.FromSlash(f.FilePath))
+				}
+
 				// Check file status by comparing SHA
 				status := "[unchanged]"
 				lineStats := ""
 
-				info, err := os.Stat(f.FilePath)
+				info, err := os.Stat(absPath)
 				if os.IsNotExist(err) {
 					status = "[deleted]"
 				} else if err == nil {
 					if f.LinkedSHA == "" {
 						// No SHA stored - treat as new file
 						status = "[new]"
-						lineStats = fmt.Sprintf("+%d", countFileLines(f.FilePath))
+						lineStats = fmt.Sprintf("+%d", countFileLines(absPath))
 					} else {
 						// Compare SHA
-						currentSHA, err := computeFileSHA(f.FilePath)
+						currentSHA, err := computeFileSHA(absPath)
 						if err != nil {
 							status = "[error]"
 						} else if currentSHA != f.LinkedSHA {
 							status = "[modified]"
 							// Compute line diff (simplified: just show current line count)
-							lines := countFileLines(f.FilePath)
+							lines := countFileLines(absPath)
 							lineStats = fmt.Sprintf("~%d lines", lines)
 						}
 					}
@@ -439,11 +460,8 @@ var filesCmd = &cobra.Command{
 					continue
 				}
 
-				// Use relative path if possible
+				// Display the repo-relative path (already stored that way)
 				displayPath := f.FilePath
-				if rel, err := filepath.Rel(baseDir, f.FilePath); err == nil {
-					displayPath = rel
-				}
 
 				if lineStats != "" {
 					fmt.Printf("  %-40s %-12s %s\n", displayPath, status, lineStats)
@@ -463,27 +481,26 @@ var filesCmd = &cobra.Command{
 		if showUntracked {
 			modified, untracked, err := getGitModifiedFiles()
 			if err == nil {
-				// Build set of linked file paths
+				// Build set of linked file paths (repo-relative, forward slashes)
 				linkedPaths := make(map[string]bool)
 				for _, f := range files {
 					linkedPaths[f.FilePath] = true
-					// Also check relative path
-					if rel, err := filepath.Rel(baseDir, f.FilePath); err == nil {
-						linkedPaths[rel] = true
-					}
+					// Also index with OS separators for matching
+					linkedPaths[filepath.FromSlash(f.FilePath)] = true
 				}
 
 				// Filter out files that are already linked
 				var untrackedModified, untrackedNew []string
 				for _, f := range modified {
-					absPath, _ := filepath.Abs(f)
-					if !linkedPaths[f] && !linkedPaths[absPath] {
+					// git status returns repo-relative paths
+					normalized := filepath.ToSlash(f)
+					if !linkedPaths[f] && !linkedPaths[normalized] {
 						untrackedModified = append(untrackedModified, f)
 					}
 				}
 				for _, f := range untracked {
-					absPath, _ := filepath.Abs(f)
-					if !linkedPaths[f] && !linkedPaths[absPath] {
+					normalized := filepath.ToSlash(f)
+					if !linkedPaths[f] && !linkedPaths[normalized] {
 						untrackedNew = append(untrackedNew, f)
 					}
 				}

@@ -17,12 +17,15 @@ import (
 
 // syncableEntities is the set of entity types that can be synced to the local database.
 var syncableEntities = map[string]bool{
-	"issues":        true,
-	"logs":          true,
-	"comments":      true,
-	"handoffs":      true,
-	"boards":        true,
-	"work_sessions": true,
+	"issues":               true,
+	"logs":                 true,
+	"comments":             true,
+	"handoffs":             true,
+	"boards":               true,
+	"work_sessions":        true,
+	"board_issue_positions": true,
+	"issue_dependencies":   true,
+	"issue_files":          true,
 }
 
 var syncEntityValidator tdsync.EntityValidator = func(t string) bool {
