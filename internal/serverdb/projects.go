@@ -58,6 +58,43 @@ func (db *ServerDB) CreateProject(name, description, ownerUserID string) (*Proje
 	return &Project{ID: id, Name: name, Description: description, CreatedAt: now, UpdatedAt: now}, nil
 }
 
+// CreateProjectWithID creates a new project using a pre-generated ID and adds the owner as a member.
+func (db *ServerDB) CreateProjectWithID(id, name, description, ownerUserID string) (*Project, error) {
+	if name == "" {
+		return nil, fmt.Errorf("project name is required")
+	}
+
+	now := time.Now().UTC()
+
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	_, err = tx.Exec(
+		`INSERT INTO projects (id, name, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+		id, name, description, now, now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("insert project: %w", err)
+	}
+
+	_, err = tx.Exec(
+		`INSERT INTO memberships (project_id, user_id, role, invited_by, created_at) VALUES (?, ?, ?, ?, ?)`,
+		id, ownerUserID, RoleOwner, "", now,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("insert owner membership: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit: %w", err)
+	}
+
+	return &Project{ID: id, Name: name, Description: description, CreatedAt: now, UpdatedAt: now}, nil
+}
+
 // GetProject returns a project by ID. If includeSoftDeleted is false, soft-deleted projects are excluded.
 func (db *ServerDB) GetProject(id string, includeSoftDeleted bool) (*Project, error) {
 	query := `SELECT id, name, description, created_at, updated_at, deleted_at FROM projects WHERE id = ?`

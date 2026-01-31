@@ -118,6 +118,16 @@ func (db *ServerDB) setSchemaVersion(version int) error {
 	return err
 }
 
+// NewID generates a project ID (exported for callers that need to pre-generate IDs).
+func NewID() string {
+	id, err := generateID("p_")
+	if err != nil {
+		// crypto/rand failure is fatal
+		panic("generate id: " + err.Error())
+	}
+	return id
+}
+
 // generateID creates a prefixed ID with 8 random hex chars.
 func generateID(prefix string) (string, error) {
 	b := make([]byte, 8)
