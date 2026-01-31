@@ -16,6 +16,8 @@ type contextKey int
 const (
 	ctxKeyAuthUser contextKey = iota
 	ctxKeyRequestID
+	_              // reserved
+	ctxKeyLogger
 )
 
 // AuthUser holds the authenticated user information extracted from the API key.
@@ -38,12 +40,46 @@ func getRequestID(ctx context.Context) string {
 	return id
 }
 
+// logFor returns the context-scoped logger, falling back to the default logger.
+func logFor(ctx context.Context) *slog.Logger {
+	if l, ok := ctx.Value(ctxKeyLogger).(*slog.Logger); ok {
+		return l
+	}
+	return slog.Default()
+}
+
+// loggerMiddleware creates a per-request logger with the request ID and stores it in the context.
+func loggerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		l := slog.Default().With("rid", getRequestID(r.Context()))
+		ctx := context.WithValue(r.Context(), ctxKeyLogger, l)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// metricsMiddleware records request counts and categorizes response status codes.
+func metricsMiddleware(m *Metrics) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			m.RecordRequest()
+			sc := &statusCapture{ResponseWriter: w, code: http.StatusOK}
+			next.ServeHTTP(sc, r)
+			switch {
+			case sc.code >= 500:
+				m.RecordError()
+			case sc.code >= 400:
+				m.RecordClientError()
+			}
+		})
+	}
+}
+
 // recoveryMiddleware catches panics and returns a 500 response.
 func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				slog.Error("panic recovered", "panic", rec, "path", r.URL.Path)
+				logFor(r.Context()).Error("panic recovered", "panic", rec, "path", r.URL.Path)
 				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 			}
 		}()
@@ -87,12 +123,11 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		sc := &statusCapture{ResponseWriter: w, code: http.StatusOK}
 		next.ServeHTTP(sc, r)
-		slog.Info("req",
+		logFor(r.Context()).Info("req",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", sc.code,
 			"dur", time.Since(start).String(),
-			"rid", getRequestID(r.Context()),
 		)
 	})
 }
@@ -115,7 +150,7 @@ func (s *Server) requireAuth(handler http.HandlerFunc) http.HandlerFunc {
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		ak, user, err := s.store.VerifyAPIKey(token)
 		if err != nil {
-			slog.Error("verify api key", "err", err)
+			logFor(r.Context()).Error("verify api key", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to verify key")
 			return
 		}
@@ -133,6 +168,8 @@ func (s *Server) requireAuth(handler http.HandlerFunc) http.HandlerFunc {
 		}
 
 		ctx := context.WithValue(r.Context(), ctxKeyAuthUser, authUser)
+		// Enrich logger with user ID
+		ctx = context.WithValue(ctx, ctxKeyLogger, logFor(ctx).With("uid", user.ID))
 		handler(w, r.WithContext(ctx))
 	}
 }
@@ -153,7 +190,9 @@ func (s *Server) requireProjectAuth(requiredRole string, handler http.HandlerFun
 			return
 		}
 
-		handler(w, r)
+		// Enrich logger with project ID
+		ctx := context.WithValue(r.Context(), ctxKeyLogger, logFor(r.Context()).With("pid", projectID))
+		handler(w, r.WithContext(ctx))
 	})
 }
 

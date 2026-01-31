@@ -13,6 +13,8 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	AllowSignup     bool
 	BaseURL         string
+	LogFormat       string // "json" (default) or "text"
+	LogLevel        string // "debug", "info" (default), "warn", "error"
 }
 
 // LoadConfig reads configuration from environment variables with sensible defaults.
@@ -24,6 +26,8 @@ func LoadConfig() Config {
 		ShutdownTimeout: 30 * time.Second,
 		AllowSignup:     true,
 		BaseURL:         "http://localhost:8080",
+		LogFormat:       "json",
+		LogLevel:        "info",
 	}
 
 	if v := os.Getenv("SYNC_LISTEN_ADDR"); v != "" {
@@ -45,6 +49,12 @@ func LoadConfig() Config {
 	}
 	if v := os.Getenv("SYNC_BASE_URL"); v != "" {
 		cfg.BaseURL = v
+	}
+	if v := os.Getenv("SYNC_LOG_FORMAT"); v != "" {
+		cfg.LogFormat = v
+	}
+	if v := os.Getenv("SYNC_LOG_LEVEL"); v != "" {
+		cfg.LogLevel = v
 	}
 
 	return cfg

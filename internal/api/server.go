@@ -13,19 +13,21 @@ import (
 
 // Server is the HTTP API server for td-sync.
 type Server struct {
-	config Config
-	http   *http.Server
-	store  *serverdb.ServerDB
-	dbPool *ProjectDBPool
-	cancel context.CancelFunc
+	config  Config
+	http    *http.Server
+	store   *serverdb.ServerDB
+	dbPool  *ProjectDBPool
+	metrics *Metrics
+	cancel  context.CancelFunc
 }
 
 // NewServer creates a new Server with the given config and store.
 func NewServer(cfg Config, store *serverdb.ServerDB) (*Server, error) {
 	s := &Server{
-		config: cfg,
-		store:  store,
-		dbPool: NewProjectDBPool(cfg.ProjectDataDir),
+		config:  cfg,
+		store:   store,
+		dbPool:  NewProjectDBPool(cfg.ProjectDataDir),
+		metrics: NewMetrics(),
 	}
 
 	s.http = &http.Server{
@@ -95,8 +97,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	// Health
+	// Health & metrics
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /metricz", s.handleMetrics)
 
 	// Auth (public)
 	mux.HandleFunc("POST /v1/auth/login/start", s.handleLoginStart)
@@ -122,10 +125,19 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /v1/projects/{id}/sync/pull", s.requireProjectAuth(serverdb.RoleReader, s.handleSyncPull))
 	mux.HandleFunc("GET /v1/projects/{id}/sync/status", s.requireProjectAuth(serverdb.RoleReader, s.handleSyncStatus))
 
-	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggingMiddleware, maxBytesMiddleware(10<<20))
+	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20))
 }
 
-// handleHealth returns a simple health check response.
+// handleHealth returns a health check response, pinging the server DB.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.Ping(); err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "error", "detail": "db unreachable"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleMetrics returns a snapshot of server metrics.
+func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, s.metrics.Snapshot())
 }

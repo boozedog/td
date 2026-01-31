@@ -59,6 +59,11 @@ func Open(dbPath string) (*ServerDB, error) {
 	return db, nil
 }
 
+// Ping checks the database connection is alive.
+func (db *ServerDB) Ping() error {
+	return db.conn.Ping()
+}
+
 // Close checkpoints the WAL and closes the database connection.
 func (db *ServerDB) Close() error {
 	db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)")

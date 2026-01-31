@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 
 	"github.com/marcus/td/internal/serverdb"
@@ -42,14 +41,14 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	// Generate project ID and create event DB first to avoid orphaned server record
 	projectID := serverdb.NewID()
 	if _, err := s.dbPool.Create(projectID); err != nil {
-		slog.Error("create project db", "project", projectID, "err", err)
+		logFor(r.Context()).Error("create project db", "project", projectID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to initialize project database")
 		return
 	}
 
 	project, err := s.store.CreateProjectWithID(projectID, req.Name, req.Description, user.UserID)
 	if err != nil {
-		slog.Error("create project", "err", err)
+		logFor(r.Context()).Error("create project", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create project")
 		return
 	}
@@ -63,7 +62,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 
 	projects, err := s.store.ListProjectsForUser(user.UserID)
 	if err != nil {
-		slog.Error("list projects", "err", err)
+		logFor(r.Context()).Error("list projects", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list projects")
 		return
 	}
@@ -82,7 +81,7 @@ func (s *Server) handleGetProject(w http.ResponseWriter, r *http.Request) {
 
 	project, err := s.store.GetProject(projectID, false)
 	if err != nil {
-		slog.Error("get project", "err", err)
+		logFor(r.Context()).Error("get project", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to get project")
 		return
 	}
@@ -113,7 +112,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	// Get current project to fill in unchanged fields
 	current, err := s.store.GetProject(projectID, false)
 	if err != nil {
-		slog.Error("get project for update", "err", err)
+		logFor(r.Context()).Error("get project for update", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to get project")
 		return
 	}
@@ -137,7 +136,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := s.store.UpdateProject(projectID, name, desc)
 	if err != nil {
-		slog.Error("update project", "err", err)
+		logFor(r.Context()).Error("update project", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to update project")
 		return
 	}
@@ -150,7 +149,7 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	projectID := r.PathValue("id")
 
 	if err := s.store.SoftDeleteProject(projectID); err != nil {
-		slog.Error("delete project", "err", err)
+		logFor(r.Context()).Error("delete project", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to delete project")
 		return
 	}

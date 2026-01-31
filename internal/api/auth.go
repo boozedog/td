@@ -69,7 +69,7 @@ func (s *Server) handleLoginStart(w http.ResponseWriter, r *http.Request) {
 	if !s.config.AllowSignup {
 		user, err := s.store.GetUserByEmail(req.Email)
 		if err != nil {
-			slog.Error("check user for login", "err", err)
+			logFor(r.Context()).Error("check user for login", "err", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to check user")
 			return
 		}
@@ -81,7 +81,7 @@ func (s *Server) handleLoginStart(w http.ResponseWriter, r *http.Request) {
 
 	ar, err := s.store.CreateAuthRequest(req.Email)
 	if err != nil {
-		slog.Error("create auth request", "err", err)
+		logFor(r.Context()).Error("create auth request", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create auth request")
 		return
 	}
@@ -110,7 +110,7 @@ func (s *Server) handleLoginPoll(w http.ResponseWriter, r *http.Request) {
 
 	ar, err := s.store.GetAuthRequestByDeviceCode(req.DeviceCode)
 	if err != nil {
-		slog.Error("get auth request", "err", err)
+		logFor(r.Context()).Error("get auth request", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to get auth request")
 		return
 	}
@@ -138,7 +138,7 @@ func (s *Server) handleLoginPoll(w http.ResponseWriter, r *http.Request) {
 	// Status is verified — complete the flow
 	completed, err := s.store.CompleteAuthRequest(ar.DeviceCode)
 	if err != nil {
-		slog.Error("complete auth request", "err", err)
+		logFor(r.Context()).Error("complete auth request", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to complete auth request")
 		return
 	}
@@ -151,12 +151,12 @@ func (s *Server) handleLoginPoll(w http.ResponseWriter, r *http.Request) {
 	expiry := time.Now().UTC().Add(365 * 24 * time.Hour)
 	plaintext, ak, err := s.store.GenerateAPIKey(*completed.UserID, "device-auth", "sync", &expiry)
 	if err != nil {
-		slog.Error("generate api key for device auth", "err", err)
+		logFor(r.Context()).Error("generate api key for device auth", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate api key")
 		return
 	}
 
-	slog.Info("device auth complete", "user_id", *completed.UserID)
+	logFor(r.Context()).Info("device auth complete", "user_id", *completed.UserID)
 
 	if err := s.store.SetAuthRequestAPIKey(completed.ID, ak.ID); err != nil {
 		slog.Warn("set auth request api key", "err", err)
@@ -202,7 +202,7 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 
 	ar, err := s.store.GetAuthRequestByUserCode(userCode)
 	if err != nil {
-		slog.Error("get auth request by user code", "err", err)
+		logFor(r.Context()).Error("get auth request by user code", "err", err)
 		verifyTmpl.Execute(w, verifyPageData{Error: "Something went wrong. Please try again."})
 		return
 	}
@@ -215,7 +215,7 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 	// Look up or create user
 	user, err := s.store.GetUserByEmail(ar.Email)
 	if err != nil {
-		slog.Error("get user by email", "err", err)
+		logFor(r.Context()).Error("get user by email", "err", err)
 		verifyTmpl.Execute(w, verifyPageData{Error: "Something went wrong. Please try again."})
 		return
 	}
@@ -228,19 +228,19 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 		}
 		user, err = s.store.CreateUser(ar.Email)
 		if err != nil {
-			slog.Error("create user during verify", "err", err)
+			logFor(r.Context()).Error("create user during verify", "err", err)
 			verifyTmpl.Execute(w, verifyPageData{Error: "Failed to create account. Please try again."})
 			return
 		}
 	}
 
 	if err := s.store.VerifyAuthRequest(userCode, user.ID); err != nil {
-		slog.Error("verify auth request", "err", err)
+		logFor(r.Context()).Error("verify auth request", "err", err)
 		verifyTmpl.Execute(w, verifyPageData{Error: "Failed to authorize device. Code may have expired."})
 		return
 	}
 
-	slog.Info("device verified", "email", ar.Email)
+	logFor(r.Context()).Info("device verified", "email", ar.Email)
 	verifyTmpl.Execute(w, verifyPageData{Success: true})
 }
 

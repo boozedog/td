@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/marcus/td/internal/api"
@@ -14,9 +15,26 @@ import (
 func main() {
 	cfg := api.LoadConfig()
 
-	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})))
+	var level slog.Level
+	switch strings.ToLower(cfg.LogLevel) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	default:
+		level = slog.LevelInfo
+	}
+
+	opts := &slog.HandlerOptions{Level: level}
+	var handler slog.Handler
+	if strings.ToLower(cfg.LogFormat) == "text" {
+		handler = slog.NewTextHandler(os.Stderr, opts)
+	} else {
+		handler = slog.NewJSONHandler(os.Stderr, opts)
+	}
+	slog.SetDefault(slog.New(handler))
 
 	store, err := serverdb.Open(cfg.ServerDBPath)
 	if err != nil {

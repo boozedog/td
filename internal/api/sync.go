@@ -3,7 +3,6 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -161,14 +160,14 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 
 	db, err := s.dbPool.Get(projectID)
 	if err != nil {
-		slog.Error("get project db", "project", projectID, "err", err)
+		logFor(r.Context()).Error("get project db", "project", projectID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to open project database")
 		return
 	}
 
 	tx, err := db.Begin()
 	if err != nil {
-		slog.Error("begin tx", "err", err)
+		logFor(r.Context()).Error("begin tx", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
@@ -176,16 +175,18 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 
 	result, err := tdsync.InsertServerEvents(tx, events)
 	if err != nil {
-		slog.Error("insert events", "err", err)
+		logFor(r.Context()).Error("insert events", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to insert events")
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		slog.Error("commit tx", "err", err)
+		logFor(r.Context()).Error("commit tx", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to commit")
 		return
 	}
+
+	s.metrics.RecordPushEvents(int64(result.Accepted))
 
 	resp := PushResponse{Accepted: result.Accepted}
 	for _, a := range result.Acks {
@@ -206,6 +207,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 
 // handleSyncPull handles GET /v1/projects/{id}/sync/pull.
 func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
+	s.metrics.RecordPullRequest()
 	projectID := r.PathValue("id")
 
 	afterSeq := int64(0)
@@ -233,14 +235,14 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 
 	db, err := s.dbPool.Get(projectID)
 	if err != nil {
-		slog.Error("get project db", "project", projectID, "err", err)
+		logFor(r.Context()).Error("get project db", "project", projectID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to open project database")
 		return
 	}
 
 	tx, err := db.Begin()
 	if err != nil {
-		slog.Error("begin tx", "err", err)
+		logFor(r.Context()).Error("begin tx", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
@@ -248,7 +250,7 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 
 	result, err := tdsync.GetEventsSince(tx, afterSeq, limit, "")
 	if err != nil {
-		slog.Error("get events", "err", err)
+		logFor(r.Context()).Error("get events", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to query events")
 		return
 	}
@@ -283,7 +285,7 @@ func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 
 	db, err := s.dbPool.Get(projectID)
 	if err != nil {
-		slog.Error("get project db", "project", projectID, "err", err)
+		logFor(r.Context()).Error("get project db", "project", projectID, "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to open project database")
 		return
 	}
@@ -293,7 +295,7 @@ func (s *Server) handleSyncStatus(w http.ResponseWriter, r *http.Request) {
 
 	err = db.QueryRow(`SELECT COUNT(*), COALESCE(MAX(server_seq), 0) FROM events`).Scan(&count, &lastSeq)
 	if err != nil {
-		slog.Error("query event count", "err", err)
+		logFor(r.Context()).Error("query event count", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}

@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
 )
 
@@ -48,7 +47,7 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 
 	m, err := s.store.AddMember(projectID, req.UserID, req.Role, user.UserID)
 	if err != nil {
-		slog.Error("add member", "err", err)
+		logFor(r.Context()).Error("add member", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to add member")
 		return
 	}
@@ -68,7 +67,7 @@ func (s *Server) handleListMembers(w http.ResponseWriter, r *http.Request) {
 
 	members, err := s.store.ListMembers(projectID)
 	if err != nil {
-		slog.Error("list members", "err", err)
+		logFor(r.Context()).Error("list members", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list members")
 		return
 	}
@@ -104,7 +103,7 @@ func (s *Server) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.store.UpdateMemberRole(projectID, targetUserID, req.Role); err != nil {
-		slog.Error("update member", "err", err)
+		logFor(r.Context()).Error("update member", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to update member")
 		return
 	}
@@ -118,7 +117,7 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 	targetUserID := r.PathValue("userID")
 
 	if err := s.store.RemoveMember(projectID, targetUserID); err != nil {
-		slog.Error("remove member", "err", err)
+		logFor(r.Context()).Error("remove member", "err", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to remove member")
 		return
 	}
