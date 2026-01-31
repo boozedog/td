@@ -153,8 +153,8 @@ func NewHarness(t *testing.T, numClients int, projectID string) *Harness {
 		Validator:  func(entityType string) bool { return validEntities[entityType] },
 	}
 
-	// Create server DB
-	serverDB, err := sql.Open("sqlite3", ":memory:")
+	// Create server DB with shared cache + WAL mode for concurrent access
+	serverDB, err := sql.Open("sqlite3", "file::memory:?mode=memory&cache=shared&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		t.Fatalf("open server db: %v", err)
 	}
@@ -568,6 +568,52 @@ func (h *Harness) CountEntities(clientID, entityType string) int {
 		h.t.Fatalf("count %s: %v", entityType, err)
 	}
 	return count
+}
+
+// PushWithoutMark sends pending events to the server but skips MarkEventsSynced.
+// This simulates a crash after the server accepts events but before the client records the acks.
+func (h *Harness) PushWithoutMark(clientID, projectID string) (tdsync.PushResult, error) {
+	c, ok := h.Clients[clientID]
+	if !ok {
+		return tdsync.PushResult{}, fmt.Errorf("unknown client: %s", clientID)
+	}
+	serverDB, ok := h.ProjectDBs[projectID]
+	if !ok {
+		return tdsync.PushResult{}, fmt.Errorf("unknown project: %s", projectID)
+	}
+
+	clientTx, err := c.DB.Begin()
+	if err != nil {
+		return tdsync.PushResult{}, fmt.Errorf("begin client tx: %w", err)
+	}
+
+	events, err := tdsync.GetPendingEvents(clientTx, c.DeviceID, c.SessionID)
+	if err != nil {
+		clientTx.Rollback()
+		return tdsync.PushResult{}, fmt.Errorf("get pending: %w", err)
+	}
+	clientTx.Rollback() // read-only, don't mark anything
+
+	if len(events) == 0 {
+		return tdsync.PushResult{}, nil
+	}
+
+	serverTx, err := serverDB.Begin()
+	if err != nil {
+		return tdsync.PushResult{}, fmt.Errorf("begin server tx: %w", err)
+	}
+
+	result, err := tdsync.InsertServerEvents(serverTx, events)
+	if err != nil {
+		serverTx.Rollback()
+		return tdsync.PushResult{}, fmt.Errorf("insert server events: %w", err)
+	}
+
+	if err := serverTx.Commit(); err != nil {
+		return tdsync.PushResult{}, fmt.Errorf("commit server tx: %w", err)
+	}
+
+	return result, nil
 }
 
 // PullAll fetches all new events from the server (including own device) and applies them.

@@ -2,6 +2,7 @@ package syncharness
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -995,4 +996,189 @@ func TestPartialPayloadDropsColumns(t *testing.T) {
 	if priority == "P1" {
 		t.Fatalf("client-B: priority should NOT be 'P1' after partial update (INSERT OR REPLACE drops old row)")
 	}
+}
+
+// ─── Test 18: Concurrent push — two goroutines push simultaneously ───
+
+func TestConcurrentPush(t *testing.T) {
+	h := NewHarness(t, 3, proj) // A, B push concurrently; C verifies
+
+	// A creates 10 issues
+	for i := 0; i < 10; i++ {
+		id := fmt.Sprintf("td-CPA%03d", i)
+		if err := h.Mutate("client-A", "create", "issues", id, map[string]any{
+			"title": fmt.Sprintf("A-%d", i), "status": "open",
+		}); err != nil {
+			t.Fatalf("mutate A: %v", err)
+		}
+	}
+
+	// B creates 10 issues (different IDs)
+	for i := 0; i < 10; i++ {
+		id := fmt.Sprintf("td-CPB%03d", i)
+		if err := h.Mutate("client-B", "create", "issues", id, map[string]any{
+			"title": fmt.Sprintf("B-%d", i), "status": "open",
+		}); err != nil {
+			t.Fatalf("mutate B: %v", err)
+		}
+	}
+
+	// Push simultaneously from A and B
+	var wg sync.WaitGroup
+	var errA, errB error
+	var resA, resB tdsync.PushResult
+
+	wg.Add(2)
+	start := make(chan struct{})
+
+	go func() {
+		defer wg.Done()
+		<-start
+		resA, errA = h.Push("client-A", proj)
+	}()
+	go func() {
+		defer wg.Done()
+		<-start
+		resB, errB = h.Push("client-B", proj)
+	}()
+
+	close(start) // fire both at once
+	wg.Wait()
+
+	if errA != nil {
+		t.Fatalf("push A: %v", errA)
+	}
+	if errB != nil {
+		t.Fatalf("push B: %v", errB)
+	}
+
+	// All 20 events should be accepted
+	totalAccepted := resA.Accepted + resB.Accepted
+	if totalAccepted != 20 {
+		t.Fatalf("expected 20 accepted total, got %d (A=%d B=%d)", totalAccepted, resA.Accepted, resB.Accepted)
+	}
+
+	// Verify server_seqs are sequential with no gaps
+	allSeqs := make(map[int64]bool)
+	for _, ack := range resA.Acks {
+		allSeqs[ack.ServerSeq] = true
+	}
+	for _, ack := range resB.Acks {
+		if allSeqs[ack.ServerSeq] {
+			t.Fatalf("duplicate server_seq %d between A and B", ack.ServerSeq)
+		}
+		allSeqs[ack.ServerSeq] = true
+	}
+	for seq := int64(1); seq <= 20; seq++ {
+		if !allSeqs[seq] {
+			t.Fatalf("gap in server_seqs: missing seq %d", seq)
+		}
+	}
+
+	// Duplicate push should accept 0
+	resA2, err := h.Push("client-A", proj)
+	if err != nil {
+		t.Fatalf("re-push A: %v", err)
+	}
+	if resA2.Accepted != 0 {
+		t.Fatalf("re-push A: expected 0 accepted, got %d", resA2.Accepted)
+	}
+
+	// C pulls all events and verifies convergence
+	if _, err := h.Pull("client-C", proj); err != nil {
+		t.Fatalf("pull C: %v", err)
+	}
+
+	// A and B also pull to converge
+	if _, err := h.PullAll("client-A", proj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+	if _, err := h.PullAll("client-B", proj); err != nil {
+		t.Fatalf("pullAll B: %v", err)
+	}
+
+	h.AssertConverged(proj)
+
+	for _, cid := range []string{"client-A", "client-B", "client-C"} {
+		count := h.CountEntities(cid, "issues")
+		if count != 20 {
+			t.Fatalf("%s: expected 20 issues, got %d", cid, count)
+		}
+	}
+}
+
+// ─── Test 19: Crash recovery — client re-pushes after skipping MarkEventsSynced ───
+
+func TestCrashRecovery(t *testing.T) {
+	h := NewHarness(t, 2, proj)
+
+	// A creates 5 issues
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("td-CR%03d", i)
+		if err := h.Mutate("client-A", "create", "issues", id, map[string]any{
+			"title": fmt.Sprintf("Crash %d", i), "status": "open",
+		}); err != nil {
+			t.Fatalf("mutate A: %v", err)
+		}
+	}
+
+	// A pushes but "crashes" — server accepts but client doesn't mark synced
+	res1, err := h.PushWithoutMark("client-A", proj)
+	if err != nil {
+		t.Fatalf("push-without-mark: %v", err)
+	}
+	if res1.Accepted != 5 {
+		t.Fatalf("first push: expected 5 accepted, got %d", res1.Accepted)
+	}
+
+	// A "recovers" and pushes the same events again
+	res2, err := h.Push("client-A", proj)
+	if err != nil {
+		t.Fatalf("re-push: %v", err)
+	}
+	// Server should dedup all — 0 accepted, 5 rejected as duplicates
+	if res2.Accepted != 0 {
+		t.Fatalf("re-push: expected 0 accepted (dedup), got %d", res2.Accepted)
+	}
+	if len(res2.Rejected) != 5 {
+		t.Fatalf("re-push: expected 5 rejected, got %d", len(res2.Rejected))
+	}
+	for _, r := range res2.Rejected {
+		if r.Reason != "duplicate" {
+			t.Fatalf("re-push: expected reason 'duplicate', got %q", r.Reason)
+		}
+	}
+
+	// B pulls and sees exactly one copy of each event
+	if _, err := h.Pull("client-B", proj); err != nil {
+		t.Fatalf("pull B: %v", err)
+	}
+
+	count := h.CountEntities("client-B", "issues")
+	if count != 5 {
+		t.Fatalf("client-B: expected 5 issues (no duplicates), got %d", count)
+	}
+
+	// Verify each issue exists exactly once with correct data
+	for i := 0; i < 5; i++ {
+		id := fmt.Sprintf("td-CR%03d", i)
+		ent := h.QueryEntity("client-B", "issues", id)
+		if ent == nil {
+			t.Fatalf("client-B: %s not found", id)
+		}
+		title, _ := ent["title"].(string)
+		expected := fmt.Sprintf("Crash %d", i)
+		if title != expected {
+			t.Fatalf("client-B: %s expected title %q, got %q", id, expected, title)
+		}
+	}
+
+	// A's events are now marked synced (from the re-push MarkEventsSynced path,
+	// but since they were rejected as duplicates, MarkEventsSynced gets no acks).
+	// A should still be able to converge by pulling all.
+	if _, err := h.PullAll("client-A", proj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+
+	h.AssertConverged(proj)
 }

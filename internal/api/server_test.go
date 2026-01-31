@@ -566,6 +566,153 @@ func TestPushWithWriterSucceeds(t *testing.T) {
 	}
 }
 
+func TestPushRateLimit(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "ratelimit@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "ratelimit-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	pushURL := fmt.Sprintf("/v1/projects/%s/sync/push", project.ID)
+
+	// Send 61 push requests; first 60 should succeed, 61st should be 429
+	for i := 1; i <= 61; i++ {
+		pushBody := PushRequest{
+			DeviceID:  fmt.Sprintf("dev-rl-%d", i),
+			SessionID: fmt.Sprintf("sess-rl-%d", i),
+			Events: []EventInput{
+				{
+					ClientActionID:  int64(i),
+					ActionType:      "create",
+					EntityType:      "issues",
+					EntityID:        fmt.Sprintf("i_rl_%03d", i),
+					Payload:         json.RawMessage(`{"title":"rate limit test"}`),
+					ClientTimestamp: "2025-01-01T00:00:00Z",
+				},
+			},
+		}
+
+		w = doRequest(srv, "POST", pushURL, token, pushBody)
+
+		if i <= 60 {
+			if w.Code != http.StatusOK {
+				t.Fatalf("push %d: expected 200, got %d: %s", i, w.Code, w.Body.String())
+			}
+		} else {
+			if w.Code != http.StatusTooManyRequests {
+				t.Fatalf("push %d: expected 429 (rate limited), got %d: %s", i, w.Code, w.Body.String())
+			}
+		}
+	}
+}
+
+func TestLongSessionPagination(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "pagination@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "pagination-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	pushURL := fmt.Sprintf("/v1/projects/%s/sync/push", project.ID)
+	pullURL := fmt.Sprintf("/v1/projects/%s/sync/pull", project.ID)
+
+	// Push 5000 events in batches of 1000 (maxPushBatch)
+	totalEvents := 5000
+	batchSize := 1000
+	for batch := 0; batch < totalEvents/batchSize; batch++ {
+		events := make([]EventInput, batchSize)
+		for i := range events {
+			idx := batch*batchSize + i + 1
+			events[i] = EventInput{
+				ClientActionID:  int64(idx),
+				ActionType:      "create",
+				EntityType:      "issues",
+				EntityID:        fmt.Sprintf("i_pg_%05d", idx),
+				Payload:         json.RawMessage(`{"title":"pagination"}`),
+				ClientTimestamp: "2025-01-01T00:00:00Z",
+			}
+		}
+
+		w = doRequest(srv, "POST", pushURL, token, PushRequest{
+			DeviceID:  "dev-pg",
+			SessionID: "sess-pg",
+			Events:    events,
+		})
+		if w.Code != http.StatusOK {
+			t.Fatalf("push batch %d: expected 200, got %d: %s", batch, w.Code, w.Body.String())
+		}
+		var pushResp PushResponse
+		json.NewDecoder(w.Body).Decode(&pushResp)
+		if pushResp.Accepted != batchSize {
+			t.Fatalf("push batch %d: expected %d accepted, got %d", batch, batchSize, pushResp.Accepted)
+		}
+	}
+
+	// Pull with limit=1000, paginating with after_server_seq cursor
+	var allPulled []PullEvent
+	afterSeq := int64(0)
+	pageLimit := 1000
+	pages := 0
+
+	for {
+		url := fmt.Sprintf("%s?after_server_seq=%d&limit=%d", pullURL, afterSeq, pageLimit)
+		w = doRequest(srv, "GET", url, token, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("pull page %d: expected 200, got %d: %s", pages, w.Code, w.Body.String())
+		}
+
+		var pullResp PullResponse
+		json.NewDecoder(w.Body).Decode(&pullResp)
+
+		if len(pullResp.Events) == 0 {
+			break
+		}
+
+		allPulled = append(allPulled, pullResp.Events...)
+		afterSeq = pullResp.LastServerSeq
+		pages++
+
+		if pages < totalEvents/pageLimit {
+			// Intermediate pages should have HasMore=true
+			if !pullResp.HasMore {
+				t.Fatalf("page %d: expected has_more=true", pages)
+			}
+		}
+
+		if !pullResp.HasMore {
+			break
+		}
+	}
+
+	// Verify total pulled equals total pushed
+	if len(allPulled) != totalEvents {
+		t.Fatalf("expected %d events total, got %d", totalEvents, len(allPulled))
+	}
+
+	// Verify server_seqs are sequential with no gaps or duplicates
+	seenSeqs := make(map[int64]bool)
+	for i, ev := range allPulled {
+		expectedSeq := int64(i + 1)
+		if ev.ServerSeq != expectedSeq {
+			t.Fatalf("event %d: expected server_seq %d, got %d", i, expectedSeq, ev.ServerSeq)
+		}
+		if seenSeqs[ev.ServerSeq] {
+			t.Fatalf("duplicate server_seq %d", ev.ServerSeq)
+		}
+		seenSeqs[ev.ServerSeq] = true
+	}
+}
+
 func TestPushWithReaderFails403(t *testing.T) {
 	srv, store := newTestServer(t)
 	_, token1 := createTestUser(t, store, "owner@test.com")
@@ -606,6 +753,101 @@ func TestPushWithReaderFails403(t *testing.T) {
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token2, pushBody)
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("reader push: expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPullExcludeClient(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, tokenA := createTestUser(t, store, "userA@test.com")
+	_, tokenB := createTestUser(t, store, "userB@test.com")
+
+	// Create project as user A
+	w := doRequest(srv, "POST", "/v1/projects", tokenA, CreateProjectRequest{Name: "exclude-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Add user B as writer
+	userB, _ := store.GetUserByEmail("userB@test.com")
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), tokenA, AddMemberRequest{
+		UserID: userB.ID, Role: "writer",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("add member: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+
+	deviceA := "device-A-excl"
+	deviceB := "device-B-excl"
+
+	// User A pushes 3 events
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), tokenA, PushRequest{
+		DeviceID: deviceA, SessionID: "sess-A",
+		Events: []EventInput{
+			{ClientActionID: 1, ActionType: "create", EntityType: "issues", EntityID: "i_A1", Payload: json.RawMessage(`{"title":"A1"}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+			{ClientActionID: 2, ActionType: "create", EntityType: "issues", EntityID: "i_A2", Payload: json.RawMessage(`{"title":"A2"}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+			{ClientActionID: 3, ActionType: "create", EntityType: "issues", EntityID: "i_A3", Payload: json.RawMessage(`{"title":"A3"}`), ClientTimestamp: "2025-01-01T00:00:02Z"},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("push A: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// User B pushes 2 events
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), tokenB, PushRequest{
+		DeviceID: deviceB, SessionID: "sess-B",
+		Events: []EventInput{
+			{ClientActionID: 1, ActionType: "create", EntityType: "issues", EntityID: "i_B1", Payload: json.RawMessage(`{"title":"B1"}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+			{ClientActionID: 2, ActionType: "create", EntityType: "issues", EntityID: "i_B2", Payload: json.RawMessage(`{"title":"B2"}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("push B: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Pull with exclude_client=deviceA — should only get B's events
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/pull?after_server_seq=0&exclude_client=%s", project.ID, deviceA), tokenA, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("pull exclude A: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var pullExcl PullResponse
+	json.NewDecoder(w.Body).Decode(&pullExcl)
+
+	if len(pullExcl.Events) != 2 {
+		t.Fatalf("pull exclude A: expected 2 events (B's only), got %d", len(pullExcl.Events))
+	}
+	for _, ev := range pullExcl.Events {
+		if ev.DeviceID == deviceA {
+			t.Fatalf("pull exclude A: found event from device A (should be excluded): %s", ev.EntityID)
+		}
+		if ev.DeviceID != deviceB {
+			t.Fatalf("pull exclude A: unexpected device_id %q", ev.DeviceID)
+		}
+	}
+
+	// Pull without exclude_client — should get all 5 events
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/pull?after_server_seq=0", project.ID), tokenA, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("pull all: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var pullAll PullResponse
+	json.NewDecoder(w.Body).Decode(&pullAll)
+
+	if len(pullAll.Events) != 5 {
+		t.Fatalf("pull all: expected 5 events, got %d", len(pullAll.Events))
+	}
+
+	// Verify we have events from both devices
+	deviceCounts := map[string]int{}
+	for _, ev := range pullAll.Events {
+		deviceCounts[ev.DeviceID]++
+	}
+	if deviceCounts[deviceA] != 3 {
+		t.Fatalf("pull all: expected 3 events from device A, got %d", deviceCounts[deviceA])
+	}
+	if deviceCounts[deviceB] != 2 {
+		t.Fatalf("pull all: expected 2 events from device B, got %d", deviceCounts[deviceB])
 	}
 }
 
