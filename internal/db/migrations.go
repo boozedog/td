@@ -137,6 +137,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 					continue
 				}
 			}
+			if migration.Version == 16 {
+				if err := db.migrateSyncState(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 16 (sync_state): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if migration.Version == 15 {
 				if err := db.migrateToTextIDs(); err != nil {
 					return migrationsRun, fmt.Errorf("migration 15 (text IDs): %w", err)
@@ -552,6 +562,45 @@ func scanForIntegerPK(rows *sql.Rows) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// migrateSyncState creates sync_state table and adds sync columns to action_log (idempotent).
+func (db *DB) migrateSyncState() error {
+	// Create sync_state table
+	_, err := db.conn.Exec(`CREATE TABLE IF NOT EXISTS sync_state (
+		project_id TEXT PRIMARY KEY,
+		last_pushed_action_id INTEGER DEFAULT 0,
+		last_pulled_server_seq INTEGER DEFAULT 0,
+		last_sync_at DATETIME,
+		sync_disabled INTEGER DEFAULT 0
+	)`)
+	if err != nil {
+		return fmt.Errorf("create sync_state: %w", err)
+	}
+
+	// Add synced_at column if missing
+	hasSyncedAt, err := db.columnExists("action_log", "synced_at")
+	if err != nil {
+		return fmt.Errorf("check synced_at: %w", err)
+	}
+	if !hasSyncedAt {
+		if _, err := db.conn.Exec(`ALTER TABLE action_log ADD COLUMN synced_at DATETIME`); err != nil {
+			return fmt.Errorf("add synced_at: %w", err)
+		}
+	}
+
+	// Add server_seq column if missing
+	hasServerSeq, err := db.columnExists("action_log", "server_seq")
+	if err != nil {
+		return fmt.Errorf("check server_seq: %w", err)
+	}
+	if !hasServerSeq {
+		if _, err := db.conn.Exec(`ALTER TABLE action_log ADD COLUMN server_seq INTEGER`); err != nil {
+			return fmt.Errorf("add server_seq: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // colList joins column names with commas

@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 15
+const SchemaVersion = 16
 
 const schema = `
 -- Issues table
@@ -320,5 +320,20 @@ CREATE INDEX IF NOT EXISTS idx_comments_created_at ON comments(created_at);`,
 		Description: "Migrate integer PK tables to text IDs for sync compatibility",
 		// Handled by custom Go code in migrations.go (migrateToTextIDs)
 		SQL: "",
+	},
+	{
+		Version:     16,
+		Description: "Add sync_state table and sync columns to action_log",
+		SQL: `
+CREATE TABLE IF NOT EXISTS sync_state (
+    project_id TEXT PRIMARY KEY,
+    last_pushed_action_id INTEGER DEFAULT 0,
+    last_pulled_server_seq INTEGER DEFAULT 0,
+    last_sync_at DATETIME,
+    sync_disabled INTEGER DEFAULT 0
+);
+ALTER TABLE action_log ADD COLUMN synced_at DATETIME;
+ALTER TABLE action_log ADD COLUMN server_seq INTEGER;
+`,
 	},
 }
