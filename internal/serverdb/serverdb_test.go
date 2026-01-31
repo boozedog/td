@@ -403,6 +403,167 @@ func TestRemoveLastOwner(t *testing.T) {
 	}
 }
 
+func TestAddMemberDuplicate(t *testing.T) {
+	db := newTestDB(t)
+	owner, _ := db.CreateUser("o@test.com")
+	writer, _ := db.CreateUser("w@test.com")
+	p, _ := db.CreateProject("proj", "", owner.ID)
+
+	_, err := db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.AddMember(p.ID, writer.ID, RoleReader, owner.ID)
+	if err == nil {
+		t.Fatal("expected error adding duplicate member")
+	}
+}
+
+func TestAddMemberVerifyAccess(t *testing.T) {
+	db := newTestDB(t)
+	owner, _ := db.CreateUser("o@test.com")
+	writer, _ := db.CreateUser("w@test.com")
+	p, _ := db.CreateProject("proj", "", owner.ID)
+
+	// Before adding, writer has no access
+	m, _ := db.GetMembership(p.ID, writer.ID)
+	if m != nil {
+		t.Fatal("writer should not be a member yet")
+	}
+	if err := db.CanPushEvents(p.ID, writer.ID); err == nil {
+		t.Fatal("writer should not be able to push before being added")
+	}
+
+	// Add as writer
+	_, err := db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Now writer has push access
+	if err := db.CanPushEvents(p.ID, writer.ID); err != nil {
+		t.Fatalf("writer should be able to push: %v", err)
+	}
+}
+
+func TestRoleBasedAuthorization_WriterCanPush_ReaderCannot(t *testing.T) {
+	db := newTestDB(t)
+	owner, _ := db.CreateUser("o@test.com")
+	writer, _ := db.CreateUser("w@test.com")
+	reader, _ := db.CreateUser("r@test.com")
+	p, _ := db.CreateProject("proj", "", owner.ID)
+
+	db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+	db.AddMember(p.ID, reader.ID, RoleReader, owner.ID)
+
+	// Writer can push
+	if err := db.CanPushEvents(p.ID, writer.ID); err != nil {
+		t.Fatalf("writer should push: %v", err)
+	}
+	// Reader cannot push
+	if err := db.CanPushEvents(p.ID, reader.ID); err == nil {
+		t.Fatal("reader should NOT push")
+	}
+	// Reader can pull
+	if err := db.CanPullEvents(p.ID, reader.ID); err != nil {
+		t.Fatalf("reader should pull: %v", err)
+	}
+}
+
+func TestRoleUpgradeTakesEffect(t *testing.T) {
+	db := newTestDB(t)
+	owner, _ := db.CreateUser("o@test.com")
+	user, _ := db.CreateUser("u@test.com")
+	p, _ := db.CreateProject("proj", "", owner.ID)
+
+	db.AddMember(p.ID, user.ID, RoleReader, owner.ID)
+
+	// Reader cannot push
+	if err := db.CanPushEvents(p.ID, user.ID); err == nil {
+		t.Fatal("reader should not push")
+	}
+
+	// Upgrade to writer
+	if err := db.UpdateMemberRole(p.ID, user.ID, RoleWriter); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now can push
+	if err := db.CanPushEvents(p.ID, user.ID); err != nil {
+		t.Fatalf("upgraded writer should push: %v", err)
+	}
+}
+
+func TestMemberRemovalRevokesAccess(t *testing.T) {
+	db := newTestDB(t)
+	owner, _ := db.CreateUser("o@test.com")
+	writer, _ := db.CreateUser("w@test.com")
+	p, _ := db.CreateProject("proj", "", owner.ID)
+
+	db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+
+	// Writer has access
+	if err := db.CanPushEvents(p.ID, writer.ID); err != nil {
+		t.Fatalf("writer should push: %v", err)
+	}
+
+	// Remove
+	if err := db.RemoveMember(p.ID, writer.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Access revoked
+	if err := db.CanPushEvents(p.ID, writer.ID); err == nil {
+		t.Fatal("removed member should not push")
+	}
+	if err := db.CanPullEvents(p.ID, writer.ID); err == nil {
+		t.Fatal("removed member should not pull")
+	}
+}
+
+func TestCannotRemoveLastOwner_WithMultipleMembers(t *testing.T) {
+	db := newTestDB(t)
+	owner, _ := db.CreateUser("o@test.com")
+	writer, _ := db.CreateUser("w@test.com")
+	p, _ := db.CreateProject("proj", "", owner.ID)
+
+	db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+
+	// Cannot remove sole owner even with other members
+	err := db.RemoveMember(p.ID, owner.ID)
+	if err == nil {
+		t.Fatal("expected error removing last owner")
+	}
+	if !strings.Contains(err.Error(), "last owner") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Writer can still be removed
+	if err := db.RemoveMember(p.ID, writer.ID); err != nil {
+		t.Fatalf("should remove writer: %v", err)
+	}
+}
+
+func TestRemoveOwnerWhenMultipleOwners(t *testing.T) {
+	db := newTestDB(t)
+	owner1, _ := db.CreateUser("o1@test.com")
+	owner2, _ := db.CreateUser("o2@test.com")
+	p, _ := db.CreateProject("proj", "", owner1.ID)
+
+	db.AddMember(p.ID, owner2.ID, RoleOwner, owner1.ID)
+
+	// Can remove one owner when another exists
+	if err := db.RemoveMember(p.ID, owner1.ID); err != nil {
+		t.Fatalf("should remove owner when another exists: %v", err)
+	}
+
+	// Verify owner2 remains
+	m, _ := db.GetMembership(p.ID, owner2.ID)
+	if m == nil || m.Role != RoleOwner {
+		t.Fatal("remaining owner should still be present")
+	}
+}
+
 // --- Sync cursor tests ---
 
 func TestUpsertAndGetSyncCursor(t *testing.T) {

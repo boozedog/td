@@ -336,4 +336,22 @@ ALTER TABLE action_log ADD COLUMN synced_at DATETIME;
 ALTER TABLE action_log ADD COLUMN server_seq INTEGER;
 `,
 	},
+	{
+		Version:     17,
+		Description: "Add sync_conflicts table for overwrite tracking",
+		SQL: `
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    server_seq INTEGER NOT NULL,
+    local_data JSON,
+    remote_data JSON,
+    overwritten_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_entity ON sync_conflicts(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_time ON sync_conflicts(overwritten_at);
+CREATE INDEX IF NOT EXISTS idx_sync_conflicts_seq ON sync_conflicts(server_seq);
+`,
+	},
 }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"time"
@@ -13,6 +14,20 @@ import (
 	"github.com/marcus/td/internal/syncconfig"
 	"github.com/spf13/cobra"
 )
+
+// syncableEntities is the set of entity types that can be synced to the local database.
+var syncableEntities = map[string]bool{
+	"issues":     true,
+	"logs":       true,
+	"comments":   true,
+	"handoffs":   true,
+	"boards":     true,
+	"board_issues": true,
+}
+
+var syncEntityValidator tdsync.EntityValidator = func(t string) bool {
+	return syncableEntities[t]
+}
 
 var syncCmd = &cobra.Command{
 	Use:     "sync",
@@ -199,6 +214,8 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 	lastSeq := state.LastPulledServerSeq
 	totalPulled := 0
 	totalApplied := 0
+	totalOverwrites := 0
+	var allConflicts []tdsync.ConflictRecord
 
 	for {
 		pullResp, err := client.Pull(state.ProjectID, lastSeq, 1000, deviceID)
@@ -239,10 +256,17 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 			return err
 		}
 
-		result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, nil)
+		result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator)
 		if err != nil {
 			tx.Rollback()
 			output.Error("apply events: %v", err)
+			return err
+		}
+
+		// Store conflict records
+		if err := storeConflicts(tx, result.Conflicts); err != nil {
+			tx.Rollback()
+			output.Error("store conflicts: %v", err)
 			return err
 		}
 
@@ -260,6 +284,8 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 
 		totalPulled += len(pullResp.Events)
 		totalApplied += result.Applied
+		totalOverwrites += result.Overwrites
+		allConflicts = append(allConflicts, result.Conflicts...)
 		lastSeq = pullResp.LastServerSeq
 
 		if !pullResp.HasMore {
@@ -271,6 +297,45 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		fmt.Println("Nothing to pull.")
 	} else {
 		fmt.Printf("Pulled %d events (%d applied).\n", totalPulled, totalApplied)
+		if totalOverwrites > 0 {
+			output.Warning("%d local records overwritten by remote changes:", totalOverwrites)
+			maxShow := 10
+			for i, c := range allConflicts {
+				if i >= maxShow {
+					fmt.Printf("  ... and %d more\n", len(allConflicts)-maxShow)
+					break
+				}
+				fmt.Printf("  %s/%s (seq %d)\n", c.EntityType, c.EntityID, c.ServerSeq)
+			}
+		}
+	}
+	return nil
+}
+
+// storeConflicts inserts conflict records into the sync_conflicts table.
+func storeConflicts(tx *sql.Tx, conflicts []tdsync.ConflictRecord) error {
+	if len(conflicts) == 0 {
+		return nil
+	}
+	stmt, err := tx.Prepare(`INSERT INTO sync_conflicts (entity_type, entity_id, server_seq, local_data, remote_data, overwritten_at)
+		VALUES (?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return fmt.Errorf("prepare conflict insert: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, c := range conflicts {
+		localJSON := "null"
+		if c.LocalData != nil {
+			localJSON = string(c.LocalData)
+		}
+		remoteJSON := "null"
+		if c.RemoteData != nil {
+			remoteJSON = string(c.RemoteData)
+		}
+		if _, err := stmt.Exec(c.EntityType, c.EntityID, c.ServerSeq, localJSON, remoteJSON, c.OverwrittenAt); err != nil {
+			return fmt.Errorf("insert conflict %s/%s: %w", c.EntityType, c.EntityID, err)
+		}
 	}
 	return nil
 }

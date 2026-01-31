@@ -8,6 +8,7 @@ import (
 // AddMemberRequest is the JSON body for POST /v1/projects/{id}/members.
 type AddMemberRequest struct {
 	UserID string `json:"user_id"`
+	Email  string `json:"email"`
 	Role   string `json:"role"`
 }
 
@@ -36,8 +37,27 @@ func (s *Server) handleAddMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve email to user ID if email provided without user_id
+	if req.Email != "" && req.UserID == "" {
+		user, err := s.store.GetUserByEmail(req.Email)
+		if err != nil {
+			logFor(r.Context()).Error("lookup user by email", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to look up user")
+			return
+		}
+		if user == nil {
+			user, err = s.store.CreateUser(req.Email)
+			if err != nil {
+				logFor(r.Context()).Error("create user by email", "err", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "failed to create user")
+				return
+			}
+		}
+		req.UserID = user.ID
+	}
+
 	if req.UserID == "" {
-		writeError(w, http.StatusBadRequest, "bad_request", "user_id is required")
+		writeError(w, http.StatusBadRequest, "bad_request", "user_id or email is required")
 		return
 	}
 	if req.Role == "" {

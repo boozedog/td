@@ -3,6 +3,7 @@ package sync
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -339,6 +340,253 @@ func TestApplyRemoteEvents_PartialFailure(t *testing.T) {
 	db.QueryRow("SELECT COUNT(*) FROM issues").Scan(&count)
 	if count != 2 {
 		t.Fatalf("issues count: got %d, want 2", count)
+	}
+}
+
+func TestApplyRemoteEvents_ConflictTracking(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Create initial row
+	tx := beginTx(t, db)
+	p1, _ := json.Marshal(map[string]any{"title": "local", "status": "open"})
+	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	tx.Commit()
+
+	// Apply remote event that overwrites
+	remotePayload, _ := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data":       map[string]any{"title": "remote", "status": "closed"},
+	})
+	events := []Event{{
+		ServerSeq:  42,
+		DeviceID:   "other-device",
+		ActionType: "update",
+		EntityType: "issues",
+		EntityID:   "i1",
+		Payload:    remotePayload,
+	}}
+
+	tx = beginTx(t, db)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	tx.Commit()
+
+	if result.Overwrites != 1 {
+		t.Fatalf("expected 1 overwrite, got %d", result.Overwrites)
+	}
+	if len(result.Conflicts) != 1 {
+		t.Fatalf("expected 1 conflict, got %d", len(result.Conflicts))
+	}
+
+	c := result.Conflicts[0]
+	if c.ServerSeq != 42 {
+		t.Errorf("conflict ServerSeq=%d, want 42", c.ServerSeq)
+	}
+	if c.EntityType != "issues" || c.EntityID != "i1" {
+		t.Errorf("conflict entity=%s/%s, want issues/i1", c.EntityType, c.EntityID)
+	}
+
+	var local map[string]any
+	if err := json.Unmarshal(c.LocalData, &local); err != nil {
+		t.Fatalf("unmarshal LocalData: %v", err)
+	}
+	if local["title"] != "local" {
+		t.Errorf("LocalData title=%v, want 'local'", local["title"])
+	}
+
+	var remote map[string]any
+	if err := json.Unmarshal(c.RemoteData, &remote); err != nil {
+		t.Fatalf("unmarshal RemoteData: %v", err)
+	}
+	if remote["title"] != "remote" {
+		t.Errorf("RemoteData title=%v, want 'remote'", remote["title"])
+	}
+}
+
+func TestApplyRemoteEvents_MultipleOverwritesProduceConflicts(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Seed two local rows
+	tx := beginTx(t, db)
+	p1, _ := json.Marshal(map[string]any{"title": "local-A", "status": "open"})
+	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
+		t.Fatalf("seed i1: %v", err)
+	}
+	p2, _ := json.Marshal(map[string]any{"title": "local-B", "status": "open"})
+	if _, err := upsertEntity(tx, "issues", "i2", p2); err != nil {
+		t.Fatalf("seed i2: %v", err)
+	}
+	tx.Commit()
+
+	// Apply batch of remote events that overwrite both
+	makePayload := func(title, status string) []byte {
+		b, _ := json.Marshal(map[string]any{
+			"schema_version": 1,
+			"new_data":       map[string]any{"title": title, "status": status},
+		})
+		return b
+	}
+
+	events := []Event{
+		{ServerSeq: 10, DeviceID: "other", ActionType: "update", EntityType: "issues", EntityID: "i1", Payload: makePayload("remote-A", "closed")},
+		{ServerSeq: 11, DeviceID: "other", ActionType: "update", EntityType: "issues", EntityID: "i2", Payload: makePayload("remote-B", "closed")},
+	}
+
+	tx = beginTx(t, db)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	tx.Commit()
+
+	if result.Applied != 2 {
+		t.Fatalf("Applied=%d, want 2", result.Applied)
+	}
+	if result.Overwrites != 2 {
+		t.Fatalf("Overwrites=%d, want 2", result.Overwrites)
+	}
+	if len(result.Conflicts) != 2 {
+		t.Fatalf("Conflicts=%d, want 2", len(result.Conflicts))
+	}
+
+	// Verify each conflict has correct server seq and entity
+	for i, c := range result.Conflicts {
+		expectedSeq := int64(10 + i)
+		expectedID := fmt.Sprintf("i%d", i+1)
+		if c.ServerSeq != expectedSeq {
+			t.Errorf("conflict[%d] ServerSeq=%d, want %d", i, c.ServerSeq, expectedSeq)
+		}
+		if c.EntityID != expectedID {
+			t.Errorf("conflict[%d] EntityID=%s, want %s", i, c.EntityID, expectedID)
+		}
+	}
+}
+
+func TestApplyRemoteEvents_DeleteDoesNotProduceConflict(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Seed a local row
+	tx := beginTx(t, db)
+	p, _ := json.Marshal(map[string]any{"title": "local", "status": "open"})
+	if _, err := upsertEntity(tx, "issues", "i1", p); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	tx.Commit()
+
+	// Apply a delete event from remote
+	deletePayload, _ := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data":       map[string]any{},
+	})
+	events := []Event{
+		{ServerSeq: 50, DeviceID: "other", ActionType: "delete", EntityType: "issues", EntityID: "i1", Payload: deletePayload},
+	}
+
+	tx = beginTx(t, db)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	tx.Commit()
+
+	if result.Applied != 1 {
+		t.Fatalf("Applied=%d, want 1", result.Applied)
+	}
+	if result.Overwrites != 0 {
+		t.Fatalf("Overwrites=%d, want 0 (delete should not count)", result.Overwrites)
+	}
+	if len(result.Conflicts) != 0 {
+		t.Fatalf("Conflicts=%d, want 0 (delete should not produce conflict)", len(result.Conflicts))
+	}
+
+	// Verify row is actually deleted
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count)
+	if count != 0 {
+		t.Fatal("row should be deleted")
+	}
+}
+
+func TestApplyRemoteEvents_ConflictDataCorrectness(t *testing.T) {
+	db := setupClientDB(t)
+
+	// Seed with specific local data
+	tx := beginTx(t, db)
+	localFields, _ := json.Marshal(map[string]any{
+		"title":    "my-local-title",
+		"status":   "in_progress",
+		"priority": "high",
+	})
+	if _, err := upsertEntity(tx, "issues", "i1", localFields); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	tx.Commit()
+
+	// Remote overwrites with different data
+	remoteFields := map[string]any{
+		"title":    "remote-title",
+		"status":   "closed",
+		"priority": "low",
+	}
+	remotePayload, _ := json.Marshal(map[string]any{
+		"schema_version": 1,
+		"new_data":       remoteFields,
+	})
+	events := []Event{{
+		ServerSeq: 99, DeviceID: "other", ActionType: "update",
+		EntityType: "issues", EntityID: "i1", Payload: remotePayload,
+	}}
+
+	tx = beginTx(t, db)
+	result, err := ApplyRemoteEvents(tx, events, "my-device", testValidator)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	tx.Commit()
+
+	if len(result.Conflicts) != 1 {
+		t.Fatalf("expected 1 conflict, got %d", len(result.Conflicts))
+	}
+
+	c := result.Conflicts[0]
+
+	// Verify LocalData has the original values
+	var local map[string]any
+	if err := json.Unmarshal(c.LocalData, &local); err != nil {
+		t.Fatalf("unmarshal LocalData: %v", err)
+	}
+	if local["title"] != "my-local-title" {
+		t.Errorf("LocalData title=%v, want 'my-local-title'", local["title"])
+	}
+	if local["status"] != "in_progress" {
+		t.Errorf("LocalData status=%v, want 'in_progress'", local["status"])
+	}
+
+	// Verify RemoteData has the new values
+	var remote map[string]any
+	if err := json.Unmarshal(c.RemoteData, &remote); err != nil {
+		t.Fatalf("unmarshal RemoteData: %v", err)
+	}
+	if remote["title"] != "remote-title" {
+		t.Errorf("RemoteData title=%v, want 'remote-title'", remote["title"])
+	}
+	if remote["status"] != "closed" {
+		t.Errorf("RemoteData status=%v, want 'closed'", remote["status"])
+	}
+	if remote["priority"] != "low" {
+		t.Errorf("RemoteData priority=%v, want 'low'", remote["priority"])
+	}
+
+	// Verify OverwrittenAt is recent
+	if c.OverwrittenAt.IsZero() {
+		t.Error("OverwrittenAt should not be zero")
+	}
+	if time.Since(c.OverwrittenAt) > 5*time.Second {
+		t.Error("OverwrittenAt should be recent")
 	}
 }
 

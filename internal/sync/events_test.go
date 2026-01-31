@@ -51,7 +51,7 @@ func TestUpsertEntity_Create(t *testing.T) {
 		"title":  "first issue",
 		"status": "open",
 	})
-	err := upsertEntity(tx, "issues", "i1", payload)
+	_, err := upsertEntity(tx, "issues", "i1", payload)
 	if err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestUpsertEntity_Update(t *testing.T) {
 	// Insert
 	tx := beginTx(t, db)
 	p1, _ := json.Marshal(map[string]any{"title": "old", "status": "open"})
-	if err := upsertEntity(tx, "issues", "i1", p1); err != nil {
+	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
 		t.Fatalf("insert: %v", err)
 	}
 	tx.Commit()
@@ -81,7 +81,7 @@ func TestUpsertEntity_Update(t *testing.T) {
 	// Upsert with new title
 	tx = beginTx(t, db)
 	p2, _ := json.Marshal(map[string]any{"title": "new", "status": "closed"})
-	if err := upsertEntity(tx, "issues", "i1", p2); err != nil {
+	if _, err := upsertEntity(tx, "issues", "i1", p2); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	tx.Commit()
@@ -99,7 +99,7 @@ func TestUpsertExistingEntity(t *testing.T) {
 	// Create with title+status
 	tx := beginTx(t, db)
 	p1, _ := json.Marshal(map[string]any{"title": "orig", "status": "open"})
-	if err := upsertEntity(tx, "issues", "i1", p1); err != nil {
+	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	tx.Commit()
@@ -107,7 +107,7 @@ func TestUpsertExistingEntity(t *testing.T) {
 	// Upsert with completely different data
 	tx = beginTx(t, db)
 	p2, _ := json.Marshal(map[string]any{"title": "replaced", "priority": "high"})
-	if err := upsertEntity(tx, "issues", "i1", p2); err != nil {
+	if _, err := upsertEntity(tx, "issues", "i1", p2); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	tx.Commit()
@@ -134,7 +134,7 @@ func TestPartialPayloadDropsColumns(t *testing.T) {
 	// Create with title+status+priority
 	tx := beginTx(t, db)
 	p1, _ := json.Marshal(map[string]any{"title": "full", "status": "open", "priority": "high"})
-	if err := upsertEntity(tx, "issues", "i1", p1); err != nil {
+	if _, err := upsertEntity(tx, "issues", "i1", p1); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	tx.Commit()
@@ -142,7 +142,7 @@ func TestPartialPayloadDropsColumns(t *testing.T) {
 	// Upsert with only title
 	tx = beginTx(t, db)
 	p2, _ := json.Marshal(map[string]any{"title": "partial"})
-	if err := upsertEntity(tx, "issues", "i1", p2); err != nil {
+	if _, err := upsertEntity(tx, "issues", "i1", p2); err != nil {
 		t.Fatalf("upsert: %v", err)
 	}
 	tx.Commit()
@@ -166,7 +166,7 @@ func TestNilPayload(t *testing.T) {
 	tx := beginTx(t, db)
 	defer tx.Rollback()
 
-	err := ApplyEvent(tx, Event{
+	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
 		EntityType: "issues",
 		EntityID:   "i1",
@@ -182,7 +182,7 @@ func TestEmptyEntityID(t *testing.T) {
 	tx := beginTx(t, db)
 	defer tx.Rollback()
 
-	err := ApplyEvent(tx, Event{
+	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
 		EntityType: "issues",
 		EntityID:   "",
@@ -198,7 +198,7 @@ func TestMalformedJSON(t *testing.T) {
 	tx := beginTx(t, db)
 	defer tx.Rollback()
 
-	err := ApplyEvent(tx, Event{
+	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
 		EntityType: "issues",
 		EntityID:   "i1",
@@ -214,7 +214,7 @@ func TestColumnNameInjection(t *testing.T) {
 	tx := beginTx(t, db)
 	defer tx.Rollback()
 
-	err := ApplyEvent(tx, Event{
+	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
 		EntityType: "issues",
 		EntityID:   "i1",
@@ -229,7 +229,7 @@ func TestDeleteEntity(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
 	p, _ := json.Marshal(map[string]any{"title": "bye"})
-	upsertEntity(tx, "issues", "i1", p)
+	_, _ = upsertEntity(tx, "issues", "i1", p)
 	tx.Commit()
 
 	tx = beginTx(t, db)
@@ -258,7 +258,7 @@ func TestSoftDeleteEntity(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
 	p, _ := json.Marshal(map[string]any{"title": "soft"})
-	upsertEntity(tx, "issues", "i1", p)
+	_, _ = upsertEntity(tx, "issues", "i1", p)
 	tx.Commit()
 
 	now := time.Now().UTC()
@@ -289,7 +289,7 @@ func TestApplyEvent_UnknownAction(t *testing.T) {
 	tx := beginTx(t, db)
 	defer tx.Rollback()
 
-	err := ApplyEvent(tx, Event{
+	_, err := ApplyEvent(tx, Event{
 		ActionType: "bogus",
 		EntityType: "issues",
 		EntityID:   "i1",
@@ -304,7 +304,7 @@ func TestApplyEvent_InvalidEntityType(t *testing.T) {
 	tx := beginTx(t, db)
 	defer tx.Rollback()
 
-	err := ApplyEvent(tx, Event{
+	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
 		EntityType: "users",
 		EntityID:   "u1",
@@ -320,7 +320,7 @@ func TestApplyEvent_Create(t *testing.T) {
 	tx := beginTx(t, db)
 
 	payload, _ := json.Marshal(map[string]any{"title": "via apply", "status": "open"})
-	err := ApplyEvent(tx, Event{
+	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
 		EntityType: "issues",
 		EntityID:   "i1",
@@ -344,13 +344,13 @@ func TestApplyEvent_Update(t *testing.T) {
 	// Create first
 	tx := beginTx(t, db)
 	p1, _ := json.Marshal(map[string]any{"title": "orig", "status": "open"})
-	ApplyEvent(tx, Event{ActionType: "create", EntityType: "issues", EntityID: "i1", Payload: p1}, testValidator)
+	_, _ = ApplyEvent(tx, Event{ActionType: "create", EntityType: "issues", EntityID: "i1", Payload: p1}, testValidator)
 	tx.Commit()
 
 	// Update
 	tx = beginTx(t, db)
 	p2, _ := json.Marshal(map[string]any{"title": "updated", "status": "closed"})
-	err := ApplyEvent(tx, Event{ActionType: "update", EntityType: "issues", EntityID: "i1", Payload: p2}, testValidator)
+	_, err := ApplyEvent(tx, Event{ActionType: "update", EntityType: "issues", EntityID: "i1", Payload: p2}, testValidator)
 	if err != nil {
 		t.Fatalf("apply update: %v", err)
 	}
@@ -361,4 +361,86 @@ func TestApplyEvent_Update(t *testing.T) {
 	if title != "updated" || status != "closed" {
 		t.Fatalf("got title=%q status=%q", title, status)
 	}
+}
+
+func TestUpsertEntity_OverwriteDetection(t *testing.T) {
+	db := setupDB(t)
+
+	// First insert should not be an overwrite
+	tx := beginTx(t, db)
+	p1, _ := json.Marshal(map[string]any{"title": "first"})
+	res, err := upsertEntity(tx, "issues", "i1", p1)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if res.Overwritten {
+		t.Fatal("first insert should not be an overwrite")
+	}
+	if res.OldData != nil {
+		t.Fatal("first insert should have nil OldData")
+	}
+	tx.Commit()
+
+	// Second insert to same ID should be an overwrite
+	tx = beginTx(t, db)
+	p2, _ := json.Marshal(map[string]any{"title": "second"})
+	res, err = upsertEntity(tx, "issues", "i1", p2)
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	if !res.Overwritten {
+		t.Fatal("second insert to same ID should be an overwrite")
+	}
+	if res.OldData == nil {
+		t.Fatal("overwrite should capture OldData")
+	}
+	// Verify OldData contains the previous title
+	var old map[string]any
+	if err := json.Unmarshal(res.OldData, &old); err != nil {
+		t.Fatalf("unmarshal OldData: %v", err)
+	}
+	if old["title"] != "first" {
+		t.Fatalf("OldData title=%v, want 'first'", old["title"])
+	}
+	tx.Commit()
+
+	// Insert to different ID should not be an overwrite
+	tx = beginTx(t, db)
+	p3, _ := json.Marshal(map[string]any{"title": "other"})
+	res, err = upsertEntity(tx, "issues", "i2", p3)
+	if err != nil {
+		t.Fatalf("insert i2: %v", err)
+	}
+	if res.Overwritten {
+		t.Fatal("insert to new ID should not be an overwrite")
+	}
+	tx.Commit()
+}
+
+func TestApplyEvent_OverwriteTracking(t *testing.T) {
+	db := setupDB(t)
+
+	// Create
+	tx := beginTx(t, db)
+	p1, _ := json.Marshal(map[string]any{"title": "orig"})
+	overwritten, err := ApplyEvent(tx, Event{ActionType: "create", EntityType: "issues", EntityID: "i1", Payload: p1}, testValidator)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if overwritten {
+		t.Fatal("create should not report overwrite")
+	}
+	tx.Commit()
+
+	// Update same entity
+	tx = beginTx(t, db)
+	p2, _ := json.Marshal(map[string]any{"title": "changed"})
+	overwritten, err = ApplyEvent(tx, Event{ActionType: "update", EntityType: "issues", EntityID: "i1", Payload: p2}, testValidator)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if !overwritten {
+		t.Fatal("update to existing entity should report overwrite")
+	}
+	tx.Commit()
 }

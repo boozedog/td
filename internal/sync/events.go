@@ -13,57 +13,107 @@ import (
 
 var validColumnName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
+// applyResult holds the outcome of applying a single event.
+type applyResult struct {
+	Overwritten bool
+	OldData     json.RawMessage // non-nil only when Overwritten is true
+}
+
 // ApplyEvent applies a single sync event to the database within the given transaction.
 // The validator is called to check that the entity type is allowed before any SQL is executed.
-func ApplyEvent(tx *sql.Tx, event Event, validator EntityValidator) error {
+// Returns true if an existing row was overwritten (create/update only).
+func ApplyEvent(tx *sql.Tx, event Event, validator EntityValidator) (bool, error) {
+	res, err := applyEvent(tx, event, validator)
+	if err != nil {
+		return false, err
+	}
+	return res.Overwritten, nil
+}
+
+// applyEvent is the internal version that also returns old row data on overwrite.
+func applyEvent(tx *sql.Tx, event Event, validator EntityValidator) (applyResult, error) {
 	if !validator(event.EntityType) {
-		return fmt.Errorf("invalid entity type: %q", event.EntityType)
+		return applyResult{}, fmt.Errorf("invalid entity type: %q", event.EntityType)
 	}
 
 	if event.EntityID == "" {
-		return fmt.Errorf("empty entity ID for %q event", event.ActionType)
+		return applyResult{}, fmt.Errorf("empty entity ID for %q event", event.ActionType)
 	}
 
 	switch event.ActionType {
 	case "create", "update":
 		return upsertEntity(tx, event.EntityType, event.EntityID, event.Payload)
 	case "delete":
-		return deleteEntity(tx, event.EntityType, event.EntityID)
+		return applyResult{}, deleteEntity(tx, event.EntityType, event.EntityID)
 	case "soft_delete":
-		return softDeleteEntity(tx, event.EntityType, event.EntityID, event.ClientTimestamp)
+		return applyResult{}, softDeleteEntity(tx, event.EntityType, event.EntityID, event.ClientTimestamp)
 	default:
-		return fmt.Errorf("unknown action type: %q", event.ActionType)
+		return applyResult{}, fmt.Errorf("unknown action type: %q", event.ActionType)
 	}
 }
 
 // upsertEntity inserts or replaces a row using the JSON payload fields.
-func upsertEntity(tx *sql.Tx, entityType, entityID string, newData json.RawMessage) error {
+// Returns applyResult with Overwritten=true and OldData populated if an existing row was replaced.
+func upsertEntity(tx *sql.Tx, entityType, entityID string, newData json.RawMessage) (applyResult, error) {
 	if newData == nil {
-		return fmt.Errorf("upsert %s/%s: nil payload", entityType, entityID)
+		return applyResult{}, fmt.Errorf("upsert %s/%s: nil payload", entityType, entityID)
 	}
 
 	var fields map[string]any
 	if err := json.Unmarshal(newData, &fields); err != nil {
-		return fmt.Errorf("upsert %s/%s: unmarshal payload: %w", entityType, entityID, err)
+		return applyResult{}, fmt.Errorf("upsert %s/%s: unmarshal payload: %w", entityType, entityID, err)
 	}
 
 	if len(fields) == 0 {
-		return fmt.Errorf("upsert %s/%s: payload has no fields", entityType, entityID)
+		return applyResult{}, fmt.Errorf("upsert %s/%s: payload has no fields", entityType, entityID)
 	}
+
+	// Check for existing row and capture its data before overwrite
+	var oldData json.RawMessage
+	overwritten := false
+	checkQuery := fmt.Sprintf("SELECT * FROM %s WHERE id = ?", entityType)
+	rows, err := tx.Query(checkQuery, entityID)
+	if err != nil {
+		return applyResult{}, fmt.Errorf("check existing %s/%s: %w", entityType, entityID, err)
+	}
+	cols, _ := rows.Columns()
+	if rows.Next() {
+		overwritten = true
+		vals := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+		if scanErr := rows.Scan(ptrs...); scanErr != nil {
+			slog.Debug("scan existing row", "table", entityType, "id", entityID, "err", scanErr)
+		} else {
+			rowMap := make(map[string]any, len(cols))
+			for i, c := range cols {
+				rowMap[c] = vals[i]
+			}
+			if marshalData, marshalErr := json.Marshal(rowMap); marshalErr != nil {
+				slog.Warn("marshal old data", "table", entityType, "id", entityID, "err", marshalErr)
+			} else {
+				oldData = marshalData
+			}
+		}
+	}
+	// Close before INSERT to release shared lock
+	rows.Close()
 
 	fields["id"] = entityID
 
-	cols, placeholders, vals, err := buildInsert(fields)
+	colStr, placeholders, insertVals, err := buildInsert(fields)
 	if err != nil {
-		return fmt.Errorf("upsert %s/%s: %w", entityType, entityID, err)
+		return applyResult{}, fmt.Errorf("upsert %s/%s: %w", entityType, entityID, err)
 	}
-	query := fmt.Sprintf("INSERT OR REPLACE INTO %s (%s) VALUES (%s)", entityType, cols, placeholders)
+	query := fmt.Sprintf("INSERT OR REPLACE INTO %s (%s) VALUES (%s)", entityType, colStr, placeholders)
 
 	slog.Debug("upsert", "table", entityType, "id", entityID)
-	if _, err := tx.Exec(query, vals...); err != nil {
-		return fmt.Errorf("upsert %s/%s: %w", entityType, entityID, err)
+	if _, err := tx.Exec(query, insertVals...); err != nil {
+		return applyResult{}, fmt.Errorf("upsert %s/%s: %w", entityType, entityID, err)
 	}
-	return nil
+	return applyResult{Overwritten: overwritten, OldData: oldData}, nil
 }
 
 // deleteEntity hard-deletes a row. No-op if the row does not exist.

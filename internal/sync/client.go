@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"time"
 )
 
 // mapActionType converts td's action_log action types to sync event action types.
@@ -115,10 +116,22 @@ func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator 
 			ServerSeq:       ev.ServerSeq,
 		}
 
-		if err := ApplyEvent(tx, applyEv, validator); err != nil {
+		res, err := applyEvent(tx, applyEv, validator)
+		if err != nil {
 			slog.Warn("apply remote: apply event", "seq", ev.ServerSeq, "err", err)
 			result.Failed = append(result.Failed, FailedEvent{ServerSeq: ev.ServerSeq, Error: err})
 			continue
+		}
+		if res.Overwritten {
+			result.Overwrites++
+			result.Conflicts = append(result.Conflicts, ConflictRecord{
+				EntityType:    ev.EntityType,
+				EntityID:      ev.EntityID,
+				ServerSeq:     ev.ServerSeq,
+				LocalData:     res.OldData,
+				RemoteData:    wrapper.NewData,
+				OverwrittenAt: time.Now().UTC(),
+			})
 		}
 
 		result.Applied++

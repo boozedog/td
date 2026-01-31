@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var validRoles = map[string]bool{"owner": true, "writer": true, "reader": true}
+
 var syncProjectCmd = &cobra.Command{
 	Use:     "sync-project",
 	Aliases: []string{"sp"},
@@ -128,6 +130,170 @@ var syncProjectListCmd = &cobra.Command{
 	},
 }
 
+var syncProjectMembersCmd = &cobra.Command{
+	Use:   "members",
+	Short: "List project members",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !syncconfig.IsAuthenticated() {
+			output.Error("not logged in (run: td auth login)")
+			return fmt.Errorf("not authenticated")
+		}
+
+		baseDir := getBaseDir()
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("open database: %v", err)
+			return err
+		}
+		defer database.Close()
+
+		syncState, err := database.GetSyncState()
+		if err != nil || syncState == nil {
+			output.Error("project not linked (run: td sync-project link <id>)")
+			return fmt.Errorf("not linked")
+		}
+
+		client := syncclient.New(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), "")
+		members, err := client.ListMembers(syncState.ProjectID)
+		if err != nil {
+			output.Error("list members: %v", err)
+			return err
+		}
+
+		if len(members) == 0 {
+			fmt.Println("No members.")
+			return nil
+		}
+
+		fmt.Printf("%-36s  %-10s  %s\n", "USER ID", "ROLE", "ADDED")
+		for _, m := range members {
+			fmt.Printf("%-36s  %-10s  %s\n", m.UserID, m.Role, m.CreatedAt)
+		}
+		return nil
+	},
+}
+
+var syncProjectInviteCmd = &cobra.Command{
+	Use:   "invite <email> [role]",
+	Short: "Invite a user to the project by email",
+	Args:  cobra.RangeArgs(1, 2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !syncconfig.IsAuthenticated() {
+			output.Error("not logged in (run: td auth login)")
+			return fmt.Errorf("not authenticated")
+		}
+
+		baseDir := getBaseDir()
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("open database: %v", err)
+			return err
+		}
+		defer database.Close()
+
+		syncState, err := database.GetSyncState()
+		if err != nil || syncState == nil {
+			output.Error("project not linked (run: td sync-project link <id>)")
+			return fmt.Errorf("not linked")
+		}
+
+		email := args[0]
+		role := "writer"
+		if len(args) > 1 {
+			role = args[1]
+		}
+		if !validRoles[role] {
+			output.Error("invalid role %q (must be owner, writer, or reader)", role)
+			return fmt.Errorf("invalid role: %s", role)
+		}
+
+		client := syncclient.New(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), "")
+		m, err := client.AddMember(syncState.ProjectID, email, role)
+		if err != nil {
+			output.Error("invite member: %v", err)
+			return err
+		}
+
+		output.Success("Invited %s as %s (user %s)", email, m.Role, m.UserID)
+		return nil
+	},
+}
+
+var syncProjectKickCmd = &cobra.Command{
+	Use:   "kick <user-id>",
+	Short: "Remove a member from the project",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !syncconfig.IsAuthenticated() {
+			output.Error("not logged in (run: td auth login)")
+			return fmt.Errorf("not authenticated")
+		}
+
+		baseDir := getBaseDir()
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("open database: %v", err)
+			return err
+		}
+		defer database.Close()
+
+		syncState, err := database.GetSyncState()
+		if err != nil || syncState == nil {
+			output.Error("project not linked (run: td sync-project link <id>)")
+			return fmt.Errorf("not linked")
+		}
+
+		client := syncclient.New(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), "")
+		if err := client.RemoveMember(syncState.ProjectID, args[0]); err != nil {
+			output.Error("remove member: %v", err)
+			return err
+		}
+
+		output.Success("Removed member %s", args[0])
+		return nil
+	},
+}
+
+var syncProjectRoleCmd = &cobra.Command{
+	Use:   "role <user-id> <role>",
+	Short: "Change a member's role",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !syncconfig.IsAuthenticated() {
+			output.Error("not logged in (run: td auth login)")
+			return fmt.Errorf("not authenticated")
+		}
+
+		baseDir := getBaseDir()
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("open database: %v", err)
+			return err
+		}
+		defer database.Close()
+
+		syncState, err := database.GetSyncState()
+		if err != nil || syncState == nil {
+			output.Error("project not linked (run: td sync-project link <id>)")
+			return fmt.Errorf("not linked")
+		}
+
+		if !validRoles[args[1]] {
+			output.Error("invalid role %q (must be owner, writer, or reader)", args[1])
+			return fmt.Errorf("invalid role: %s", args[1])
+		}
+
+		client := syncclient.New(syncconfig.GetServerURL(), syncconfig.GetAPIKey(), "")
+		if err := client.UpdateMemberRole(syncState.ProjectID, args[0], args[1]); err != nil {
+			output.Error("update role: %v", err)
+			return err
+		}
+
+		output.Success("Updated %s to %s", args[0], args[1])
+		return nil
+	},
+}
+
 func init() {
 	syncProjectCreateCmd.Flags().String("description", "", "Project description")
 
@@ -135,5 +301,9 @@ func init() {
 	syncProjectCmd.AddCommand(syncProjectLinkCmd)
 	syncProjectCmd.AddCommand(syncProjectUnlinkCmd)
 	syncProjectCmd.AddCommand(syncProjectListCmd)
+	syncProjectCmd.AddCommand(syncProjectMembersCmd)
+	syncProjectCmd.AddCommand(syncProjectInviteCmd)
+	syncProjectCmd.AddCommand(syncProjectKickCmd)
+	syncProjectCmd.AddCommand(syncProjectRoleCmd)
 	rootCmd.AddCommand(syncProjectCmd)
 }

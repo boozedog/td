@@ -5,6 +5,61 @@ import (
 	"time"
 )
 
+// SyncConflict represents a row from the sync_conflicts table.
+type SyncConflict struct {
+	ID            int64
+	EntityType    string
+	EntityID      string
+	ServerSeq     int64
+	LocalData     string
+	RemoteData    string
+	OverwrittenAt time.Time
+}
+
+// GetRecentConflicts returns recent sync conflicts, ordered by most recent first.
+// If since is non-nil, only conflicts after that time are returned.
+func (db *DB) GetRecentConflicts(limit int, since *time.Time) ([]SyncConflict, error) {
+	var rows *sql.Rows
+	var err error
+
+	if since != nil {
+		rows, err = db.conn.Query(`
+			SELECT id, entity_type, entity_id, server_seq, COALESCE(local_data,'null'), COALESCE(remote_data,'null'), overwritten_at
+			FROM sync_conflicts
+			WHERE overwritten_at >= ?
+			ORDER BY overwritten_at DESC
+			LIMIT ?
+		`, since.Format("2006-01-02 15:04:05"), limit)
+	} else {
+		rows, err = db.conn.Query(`
+			SELECT id, entity_type, entity_id, server_seq, COALESCE(local_data,'null'), COALESCE(remote_data,'null'), overwritten_at
+			FROM sync_conflicts
+			ORDER BY overwritten_at DESC
+			LIMIT ?
+		`, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var conflicts []SyncConflict
+	for rows.Next() {
+		var c SyncConflict
+		var ts string
+		if err := rows.Scan(&c.ID, &c.EntityType, &c.EntityID, &c.ServerSeq, &c.LocalData, &c.RemoteData, &ts); err != nil {
+			return nil, err
+		}
+		parsed, parseErr := time.Parse("2006-01-02 15:04:05", ts)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		c.OverwrittenAt = parsed
+		conflicts = append(conflicts, c)
+	}
+	return conflicts, rows.Err()
+}
+
 // SyncState holds the sync configuration for a linked project.
 type SyncState struct {
 	ProjectID           string

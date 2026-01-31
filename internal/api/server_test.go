@@ -399,6 +399,216 @@ func TestMemberRoleEnforcement(t *testing.T) {
 	}
 }
 
+func TestListMembers(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token1 := createTestUser(t, store, "owner@test.com")
+	user2ID, _ := createTestUser(t, store, "member@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token1, CreateProjectRequest{Name: "list-members-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Add member
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
+		UserID: user2ID, Role: "writer",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("add member: expected 201, got %d", w.Code)
+	}
+
+	// List members
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var members []MemberResponse
+	json.NewDecoder(w.Body).Decode(&members)
+	if len(members) != 2 {
+		t.Fatalf("expected 2 members, got %d", len(members))
+	}
+
+	// Verify roles
+	roles := map[string]string{}
+	for _, m := range members {
+		roles[m.UserID] = m.Role
+	}
+	if roles[user2ID] != "writer" {
+		t.Fatalf("expected user2 to be writer, got %s", roles[user2ID])
+	}
+}
+
+func TestUpdateMemberRole(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token1 := createTestUser(t, store, "owner@test.com")
+	user2ID, _ := createTestUser(t, store, "member@test.com")
+
+	// Create project and add member as reader
+	w := doRequest(srv, "POST", "/v1/projects", token1, CreateProjectRequest{Name: "update-role-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
+		UserID: user2ID, Role: "reader",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("add: expected 201, got %d", w.Code)
+	}
+
+	// Update role to writer
+	w = doRequest(srv, "PATCH", fmt.Sprintf("/v1/projects/%s/members/%s", project.ID, user2ID), token1, UpdateMemberRequest{
+		Role: "writer",
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("update role: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify by listing
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, nil)
+	var members []MemberResponse
+	json.NewDecoder(w.Body).Decode(&members)
+
+	for _, m := range members {
+		if m.UserID == user2ID && m.Role != "writer" {
+			t.Fatalf("expected writer, got %s", m.Role)
+		}
+	}
+}
+
+func TestRemoveMember(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token1 := createTestUser(t, store, "owner@test.com")
+	user2ID, _ := createTestUser(t, store, "member@test.com")
+
+	// Create project and add member
+	w := doRequest(srv, "POST", "/v1/projects", token1, CreateProjectRequest{Name: "remove-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
+		UserID: user2ID, Role: "writer",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("add: expected 201, got %d", w.Code)
+	}
+
+	// Remove member
+	w = doRequest(srv, "DELETE", fmt.Sprintf("/v1/projects/%s/members/%s", project.ID, user2ID), token1, nil)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("remove: expected 204, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify removed by listing
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, nil)
+	var members []MemberResponse
+	json.NewDecoder(w.Body).Decode(&members)
+	if len(members) != 1 {
+		t.Fatalf("expected 1 member after removal, got %d", len(members))
+	}
+}
+
+func TestPushWithWriterSucceeds(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token1 := createTestUser(t, store, "owner@test.com")
+	_, token2 := createTestUser(t, store, "writer@test.com")
+	user2ID, _ := store.GetUserByEmail("writer@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token1, CreateProjectRequest{Name: "push-writer-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Add user2 as writer
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
+		UserID: user2ID.ID, Role: "writer",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("add writer: expected 201, got %d", w.Code)
+	}
+
+	// Writer pushes events
+	pushBody := PushRequest{
+		DeviceID:  "dev2",
+		SessionID: "sess2",
+		Events: []EventInput{
+			{
+				ClientActionID:  1,
+				ActionType:      "create",
+				EntityType:      "issues",
+				EntityID:        "i_writer_001",
+				Payload:         json.RawMessage(`{"title":"from writer"}`),
+				ClientTimestamp: "2025-01-01T00:00:00Z",
+			},
+		},
+	}
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token2, pushBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("writer push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var pushResp PushResponse
+	json.NewDecoder(w.Body).Decode(&pushResp)
+	if pushResp.Accepted != 1 {
+		t.Fatalf("expected 1 accepted, got %d", pushResp.Accepted)
+	}
+}
+
+func TestPushWithReaderFails403(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token1 := createTestUser(t, store, "owner@test.com")
+	_, token2 := createTestUser(t, store, "reader@test.com")
+	user2, _ := store.GetUserByEmail("reader@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token1, CreateProjectRequest{Name: "push-reader-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Add user2 as reader
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/members", project.ID), token1, AddMemberRequest{
+		UserID: user2.ID, Role: "reader",
+	})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("add reader: expected 201, got %d", w.Code)
+	}
+
+	// Reader tries to push
+	pushBody := PushRequest{
+		DeviceID:  "dev2",
+		SessionID: "sess2",
+		Events: []EventInput{
+			{
+				ClientActionID:  1,
+				ActionType:      "create",
+				EntityType:      "issues",
+				EntityID:        "i_reader_001",
+				Payload:         json.RawMessage(`{"title":"from reader"}`),
+				ClientTimestamp: "2025-01-01T00:00:00Z",
+			},
+		},
+	}
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token2, pushBody)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("reader push: expected 403, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestSyncStatus(t *testing.T) {
 	srv, store := newTestServer(t)
 	_, token := createTestUser(t, store, "status@test.com")

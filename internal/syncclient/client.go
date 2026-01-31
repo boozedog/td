@@ -191,6 +191,49 @@ func (c *Client) ListProjects() ([]ProjectResponse, error) {
 	return resp, nil
 }
 
+// --- Member types ---
+
+// MemberResponse represents a project member from the server.
+type MemberResponse struct {
+	ProjectID string `json:"project_id"`
+	UserID    string `json:"user_id"`
+	Role      string `json:"role"`
+	InvitedBy string `json:"invited_by"`
+	CreatedAt string `json:"created_at"`
+}
+
+// --- Member methods ---
+
+// AddMember invites a user to a project by email.
+func (c *Client) AddMember(projectID, email, role string) (*MemberResponse, error) {
+	body := map[string]string{"email": email, "role": role}
+	var resp MemberResponse
+	if err := c.do("POST", fmt.Sprintf("/v1/projects/%s/members", projectID), body, &resp); err != nil {
+		return nil, err
+	}
+	return &resp, nil
+}
+
+// ListMembers lists all members of a project.
+func (c *Client) ListMembers(projectID string) ([]MemberResponse, error) {
+	var resp []MemberResponse
+	if err := c.do("GET", fmt.Sprintf("/v1/projects/%s/members", projectID), nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// UpdateMemberRole changes a member's role in a project.
+func (c *Client) UpdateMemberRole(projectID, userID, role string) error {
+	body := map[string]string{"role": role}
+	return c.do("PATCH", fmt.Sprintf("/v1/projects/%s/members/%s", projectID, userID), body, nil)
+}
+
+// RemoveMember removes a user from a project.
+func (c *Client) RemoveMember(projectID, userID string) error {
+	return c.do("DELETE", fmt.Sprintf("/v1/projects/%s/members/%s", projectID, userID), nil, nil)
+}
+
 // --- Sync methods ---
 
 // Push sends local events to the server.

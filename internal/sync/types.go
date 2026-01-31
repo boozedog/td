@@ -1,6 +1,9 @@
 package sync
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // Event represents a single sync action from a device.
 type Event struct {
@@ -45,7 +48,19 @@ type PullResult struct {
 type ApplyResult struct {
 	LastAppliedSeq int64
 	Applied        int
+	Overwrites     int
+	Conflicts      []ConflictRecord
 	Failed         []FailedEvent
+}
+
+// ConflictRecord captures the details of a local row overwritten by a remote event.
+type ConflictRecord struct {
+	EntityType    string
+	EntityID      string
+	ServerSeq     int64
+	LocalData     json.RawMessage
+	RemoteData    json.RawMessage
+	OverwrittenAt time.Time
 }
 
 // FailedEvent records a single event that could not be applied.
