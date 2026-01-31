@@ -424,6 +424,13 @@ var boardUnpositionCmd = &cobra.Command{
 			return err
 		}
 
+		// Capture current position before removal (for undo)
+		oldPos, err := database.GetIssuePosition(board.ID, issue.ID)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
 		if err := database.RemoveIssuePosition(board.ID, issue.ID); err != nil {
 			output.Error("%v", err)
 			return err
@@ -431,10 +438,11 @@ var boardUnpositionCmd = &cobra.Command{
 
 		// Log action for undo — full row data for sync
 		ubipID := db.BoardIssuePosID(board.ID, issue.ID)
-		ubipData, _ := json.Marshal(map[string]interface{}{
+		ubipData, _ := json.Marshal(map[string]any{
 			"id":       ubipID,
 			"board_id": board.ID,
 			"issue_id": issue.ID,
+			"position": oldPos,
 		})
 		logActionWithSession(baseDir, database, &models.ActionLog{
 			ActionType: models.ActionBoardUnposition,

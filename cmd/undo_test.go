@@ -557,3 +557,112 @@ func TestUndoWithInvalidPreviousData(t *testing.T) {
 		t.Error("Expected error when PreviousData is invalid JSON")
 	}
 }
+
+// TestUndoBoardUnposition tests undoing board unposition restores the position
+func TestUndoBoardUnposition(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create board and issue
+	board, err := database.CreateBoard("test-board", "status:open")
+	if err != nil {
+		t.Fatalf("CreateBoard failed: %v", err)
+	}
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Set position, then remove it
+	if err := database.SetIssuePosition(board.ID, issue.ID, 3); err != nil {
+		t.Fatalf("SetIssuePosition failed: %v", err)
+	}
+	if err := database.RemoveIssuePosition(board.ID, issue.ID); err != nil {
+		t.Fatalf("RemoveIssuePosition failed: %v", err)
+	}
+
+	// Create action log with position captured (as the fix does)
+	posData, _ := json.Marshal(map[string]any{
+		"board_id": board.ID,
+		"issue_id": issue.ID,
+		"position": 3,
+	})
+	action := &models.ActionLog{
+		SessionID:  "ses_test",
+		ActionType: models.ActionBoardUnposition,
+		EntityType: "board_issue_positions",
+		EntityID:   board.ID + ":" + issue.ID,
+		NewData:    string(posData),
+	}
+
+	// Undo unposition (should restore position)
+	if err := undoBoardPositionAction(database, action); err != nil {
+		t.Fatalf("undoBoardPositionAction failed: %v", err)
+	}
+
+	// Verify position is restored
+	pos, err := database.GetIssuePosition(board.ID, issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssuePosition failed: %v", err)
+	}
+	if pos != 3 {
+		t.Errorf("Position not restored: got %d, want 3", pos)
+	}
+}
+
+// TestUndoBoardSetPosition tests undoing board set-position removes the position
+func TestUndoBoardSetPosition(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	// Create board and issue
+	board, err := database.CreateBoard("test-board", "status:open")
+	if err != nil {
+		t.Fatalf("CreateBoard failed: %v", err)
+	}
+	issue := &models.Issue{Title: "Test Issue", Status: models.StatusOpen}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// Set position
+	if err := database.SetIssuePosition(board.ID, issue.ID, 5); err != nil {
+		t.Fatalf("SetIssuePosition failed: %v", err)
+	}
+
+	// Create action log for set-position
+	posData, _ := json.Marshal(map[string]any{
+		"board_id": board.ID,
+		"issue_id": issue.ID,
+		"position": 5,
+	})
+	action := &models.ActionLog{
+		SessionID:  "ses_test",
+		ActionType: models.ActionBoardSetPosition,
+		EntityType: "board_issue_positions",
+		EntityID:   board.ID + ":" + issue.ID,
+		NewData:    string(posData),
+	}
+
+	// Undo set-position (should remove position)
+	if err := undoBoardPositionAction(database, action); err != nil {
+		t.Fatalf("undoBoardPositionAction failed: %v", err)
+	}
+
+	// Verify position is removed
+	pos, err := database.GetIssuePosition(board.ID, issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssuePosition failed: %v", err)
+	}
+	if pos != 0 {
+		t.Errorf("Position should be removed: got %d, want 0", pos)
+	}
+}

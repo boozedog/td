@@ -352,6 +352,23 @@ func (db *DB) RemoveIssuePosition(boardID, issueID string) error {
 	})
 }
 
+// GetIssuePosition returns the current position of an issue on a board, or 0 if not positioned.
+func (db *DB) GetIssuePosition(boardID, issueID string) (int, error) {
+	issueID = NormalizeIssueID(issueID)
+	var pos sql.NullInt64
+	err := db.conn.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`, boardID, issueID).Scan(&pos)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	if pos.Valid {
+		return int(pos.Int64), nil
+	}
+	return 0, nil
+}
+
 // GetBoardIssuePositions returns all explicit positions for a board
 func (db *DB) GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, error) {
 	rows, err := db.conn.Query(`
