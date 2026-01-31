@@ -110,9 +110,13 @@ func TestInsertServerEvents_Dedup(t *testing.T) {
 	if len(r2.Rejected) != 3 {
 		t.Fatalf("second: rejected=%d, want 3", len(r2.Rejected))
 	}
-	for _, rej := range r2.Rejected {
+	for i, rej := range r2.Rejected {
 		if rej.Reason != "duplicate" {
 			t.Errorf("rejection reason: got %q, want 'duplicate'", rej.Reason)
+		}
+		// Duplicate rejections should include the original server_seq
+		if rej.ServerSeq != r1.Acks[i].ServerSeq {
+			t.Errorf("rej[%d] ServerSeq: got %d, want %d (original)", i, rej.ServerSeq, r1.Acks[i].ServerSeq)
 		}
 	}
 

@@ -179,15 +179,27 @@ func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		return err
 	}
 
-	acks := make([]tdsync.Ack, len(pushResp.Acks))
+	acks := make([]tdsync.Ack, 0, len(pushResp.Acks)+len(pushResp.Rejected))
 	var maxActionID int64
-	for i, a := range pushResp.Acks {
-		acks[i] = tdsync.Ack{
+	for _, a := range pushResp.Acks {
+		acks = append(acks, tdsync.Ack{
 			ClientActionID: a.ClientActionID,
 			ServerSeq:      a.ServerSeq,
-		}
+		})
 		if a.ClientActionID > maxActionID {
 			maxActionID = a.ClientActionID
+		}
+	}
+	// Treat duplicate rejections as idempotent success — mark them synced too
+	for _, r := range pushResp.Rejected {
+		if r.Reason == "duplicate" && r.ServerSeq > 0 {
+			acks = append(acks, tdsync.Ack{
+				ClientActionID: r.ClientActionID,
+				ServerSeq:      r.ServerSeq,
+			})
+			if r.ClientActionID > maxActionID {
+				maxActionID = r.ClientActionID
+			}
 		}
 	}
 

@@ -35,6 +35,7 @@ type Ack struct {
 type Rejection struct {
 	ClientActionID int64
 	Reason         string
+	ServerSeq      int64 // populated for "duplicate" rejections
 }
 
 // PullResult is the server response to a pull request.

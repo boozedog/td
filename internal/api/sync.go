@@ -71,6 +71,7 @@ type AckResponse struct {
 type RejectResponse struct {
 	ClientActionID int64  `json:"client_action_id"`
 	Reason         string `json:"reason"`
+	ServerSeq      int64  `json:"server_seq,omitempty"`
 }
 
 // PullResponse is the JSON response for a pull request.
@@ -199,6 +200,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		resp.Rejected = append(resp.Rejected, RejectResponse{
 			ClientActionID: r.ClientActionID,
 			Reason:         r.Reason,
+			ServerSeq:      r.ServerSeq,
 		})
 	}
 

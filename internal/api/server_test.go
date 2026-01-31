@@ -161,6 +161,68 @@ func TestPushSuccess(t *testing.T) {
 	}
 }
 
+func TestPushRetryDuplicatesReturnServerSeq(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "retry@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "retry-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	pushBody := PushRequest{
+		DeviceID:  "dev1",
+		SessionID: "sess1",
+		Events: []EventInput{
+			{ClientActionID: 1, ActionType: "create", EntityType: "issues", EntityID: "i_001", Payload: json.RawMessage(`{"title":"test"}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+			{ClientActionID: 2, ActionType: "create", EntityType: "issues", EntityID: "i_002", Payload: json.RawMessage(`{"title":"test2"}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+		},
+	}
+
+	// First push — should succeed
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, pushBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("first push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var firstResp PushResponse
+	json.NewDecoder(w.Body).Decode(&firstResp)
+	if firstResp.Accepted != 2 {
+		t.Fatalf("first push: expected 2 accepted, got %d", firstResp.Accepted)
+	}
+
+	// Retry push (same events) — simulates crash before marking synced
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, pushBody)
+	if w.Code != http.StatusOK {
+		t.Fatalf("retry push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var retryResp PushResponse
+	json.NewDecoder(w.Body).Decode(&retryResp)
+
+	if retryResp.Accepted != 0 {
+		t.Fatalf("retry: expected 0 accepted, got %d", retryResp.Accepted)
+	}
+	if len(retryResp.Rejected) != 2 {
+		t.Fatalf("retry: expected 2 rejected, got %d", len(retryResp.Rejected))
+	}
+
+	// Duplicate rejections must include server_seq so client can mark synced
+	for i, rej := range retryResp.Rejected {
+		if rej.Reason != "duplicate" {
+			t.Errorf("rej[%d] reason: got %q, want 'duplicate'", i, rej.Reason)
+		}
+		if rej.ServerSeq <= 0 {
+			t.Errorf("rej[%d] server_seq: got %d, want >0", i, rej.ServerSeq)
+		}
+		// Should match original ack's server_seq
+		if rej.ServerSeq != firstResp.Acks[i].ServerSeq {
+			t.Errorf("rej[%d] server_seq: got %d, want %d (original)", i, rej.ServerSeq, firstResp.Acks[i].ServerSeq)
+		}
+	}
+}
+
 func TestPullSuccess(t *testing.T) {
 	srv, store := newTestServer(t)
 	_, token := createTestUser(t, store, "pull@test.com")

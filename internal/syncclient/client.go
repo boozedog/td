@@ -105,6 +105,7 @@ type AckResponse struct {
 type RejectResponse struct {
 	ClientActionID int64  `json:"client_action_id"`
 	Reason         string `json:"reason"`
+	ServerSeq      int64  `json:"server_seq,omitempty"`
 }
 
 // PullResponse is the response from a pull request.

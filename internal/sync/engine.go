@@ -77,10 +77,19 @@ func InsertServerEvents(tx *sql.Tx, events []Event) (PushResult, error) {
 		}
 
 		if rows == 0 {
-			// Duplicate
+			// Duplicate — look up existing server_seq so client can mark synced
+			var existingSeq int64
+			err := tx.QueryRow(
+				`SELECT server_seq FROM events WHERE device_id=? AND session_id=? AND client_action_id=?`,
+				ev.DeviceID, ev.SessionID, ev.ClientActionID,
+			).Scan(&existingSeq)
+			if err != nil {
+				slog.Warn("duplicate lookup failed", "aid", ev.ClientActionID, "err", err)
+			}
 			result.Rejected = append(result.Rejected, Rejection{
 				ClientActionID: ev.ClientActionID,
 				Reason:         "duplicate",
+				ServerSeq:      existingSeq,
 			})
 			continue
 		}
