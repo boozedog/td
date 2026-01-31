@@ -1,0 +1,143 @@
+package sync
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+)
+
+// mapActionType converts td's action_log action types to sync event action types.
+func mapActionType(tdAction string) string {
+	switch tdAction {
+	case "create":
+		return "create"
+	case "delete":
+		return "delete"
+	default:
+		return "update"
+	}
+}
+
+// GetPendingEvents reads unsynced, non-undone action_log rows and returns them as Events.
+// It uses rowid for ordering and as ClientActionID.
+func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
+	rows, err := tx.Query(`
+		SELECT rowid, id, action_type, entity_type, entity_id, new_data, previous_data, timestamp
+		FROM action_log
+		WHERE synced_at IS NULL AND undone = 0
+		ORDER BY rowid ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("query pending events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []Event
+	for rows.Next() {
+		var (
+			rowid                                                int64
+			id, actionType, entityType, entityID, tsStr          string
+			newDataStr, prevDataStr                              sql.NullString
+		)
+		if err := rows.Scan(&rowid, &id, &actionType, &entityType, &entityID, &newDataStr, &prevDataStr, &tsStr); err != nil {
+			return nil, fmt.Errorf("scan action_log row: %w", err)
+		}
+
+		clientTS, err := parseTimestamp(tsStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse timestamp rowid=%d: %w", rowid, err)
+		}
+
+		// Build payload wrapper with schema_version, new_data, previous_data
+		newData := json.RawMessage("{}")
+		if newDataStr.Valid && newDataStr.String != "" {
+			newData = json.RawMessage(newDataStr.String)
+		}
+		prevData := json.RawMessage("{}")
+		if prevDataStr.Valid && prevDataStr.String != "" {
+			prevData = json.RawMessage(prevDataStr.String)
+		}
+
+		payload := map[string]any{
+			"schema_version": 1,
+			"new_data":       newData,
+			"previous_data":  prevData,
+		}
+		payloadBytes, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal payload rowid=%d: %w", rowid, err)
+		}
+
+		events = append(events, Event{
+			ClientActionID:  rowid,
+			DeviceID:        deviceID,
+			SessionID:       sessionID,
+			ActionType:      mapActionType(actionType),
+			EntityType:      entityType,
+			EntityID:        entityID,
+			Payload:         payloadBytes,
+			ClientTimestamp: clientTS,
+			ServerSeq:       0,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration: %w", err)
+	}
+	return events, nil
+}
+
+// ApplyRemoteEvents applies a batch of remote events to the local database.
+// Events with invalid entity types are logged and added to the Failed list.
+func ApplyRemoteEvents(tx *sql.Tx, events []Event, myDeviceID string, validator EntityValidator) (ApplyResult, error) {
+	var result ApplyResult
+
+	for _, ev := range events {
+		// Extract new_data from the payload wrapper
+		var wrapper struct {
+			NewData json.RawMessage `json:"new_data"`
+		}
+		if err := json.Unmarshal(ev.Payload, &wrapper); err != nil {
+			slog.Warn("apply remote: unmarshal payload", "seq", ev.ServerSeq, "err", err)
+			result.Failed = append(result.Failed, FailedEvent{ServerSeq: ev.ServerSeq, Error: err})
+			continue
+		}
+
+		// Build event with raw new_data as payload for ApplyEvent
+		applyEv := Event{
+			ClientActionID:  ev.ClientActionID,
+			DeviceID:        ev.DeviceID,
+			SessionID:       ev.SessionID,
+			ActionType:      ev.ActionType,
+			EntityType:      ev.EntityType,
+			EntityID:        ev.EntityID,
+			Payload:         wrapper.NewData,
+			ClientTimestamp: ev.ClientTimestamp,
+			ServerSeq:       ev.ServerSeq,
+		}
+
+		if err := ApplyEvent(tx, applyEv, validator); err != nil {
+			slog.Warn("apply remote: apply event", "seq", ev.ServerSeq, "err", err)
+			result.Failed = append(result.Failed, FailedEvent{ServerSeq: ev.ServerSeq, Error: err})
+			continue
+		}
+
+		result.Applied++
+		result.LastAppliedSeq = ev.ServerSeq
+	}
+
+	return result, nil
+}
+
+// MarkEventsSynced updates action_log rows with their server-assigned sequence numbers.
+func MarkEventsSynced(tx *sql.Tx, acks []Ack) error {
+	for _, ack := range acks {
+		_, err := tx.Exec(
+			`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP, server_seq = ? WHERE rowid = ?`,
+			ack.ServerSeq, ack.ClientActionID,
+		)
+		if err != nil {
+			return fmt.Errorf("mark synced rowid=%d: %w", ack.ClientActionID, err)
+		}
+	}
+	return nil
+}

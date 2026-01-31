@@ -1,0 +1,364 @@
+package sync
+
+import (
+	"database/sql"
+	"encoding/json"
+	"testing"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+)
+
+const testSchema = `CREATE TABLE issues (
+	id         TEXT PRIMARY KEY,
+	title      TEXT,
+	status     TEXT,
+	priority   TEXT,
+	created_at DATETIME,
+	updated_at DATETIME,
+	deleted_at DATETIME
+);`
+
+var testValidator EntityValidator = func(t string) bool { return t == "issues" }
+
+func setupDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(testSchema); err != nil {
+		t.Fatalf("create schema: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
+
+func beginTx(t *testing.T, db *sql.DB) *sql.Tx {
+	t.Helper()
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("begin tx: %v", err)
+	}
+	return tx
+}
+
+func TestUpsertEntity_Create(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+
+	payload, _ := json.Marshal(map[string]any{
+		"title":  "first issue",
+		"status": "open",
+	})
+	err := upsertEntity(tx, "issues", "i1", payload)
+	if err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	tx.Commit()
+
+	var title, status string
+	err = db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if title != "first issue" || status != "open" {
+		t.Fatalf("got title=%q status=%q", title, status)
+	}
+}
+
+func TestUpsertEntity_Update(t *testing.T) {
+	db := setupDB(t)
+
+	// Insert
+	tx := beginTx(t, db)
+	p1, _ := json.Marshal(map[string]any{"title": "old", "status": "open"})
+	if err := upsertEntity(tx, "issues", "i1", p1); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	tx.Commit()
+
+	// Upsert with new title
+	tx = beginTx(t, db)
+	p2, _ := json.Marshal(map[string]any{"title": "new", "status": "closed"})
+	if err := upsertEntity(tx, "issues", "i1", p2); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	tx.Commit()
+
+	var title, status string
+	db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
+	if title != "new" || status != "closed" {
+		t.Fatalf("got title=%q status=%q", title, status)
+	}
+}
+
+func TestUpsertExistingEntity(t *testing.T) {
+	db := setupDB(t)
+
+	// Create with title+status
+	tx := beginTx(t, db)
+	p1, _ := json.Marshal(map[string]any{"title": "orig", "status": "open"})
+	if err := upsertEntity(tx, "issues", "i1", p1); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	tx.Commit()
+
+	// Upsert with completely different data
+	tx = beginTx(t, db)
+	p2, _ := json.Marshal(map[string]any{"title": "replaced", "priority": "high"})
+	if err := upsertEntity(tx, "issues", "i1", p2); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	tx.Commit()
+
+	var title string
+	var priority sql.NullString
+	var status sql.NullString
+	db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority)
+	if title != "replaced" {
+		t.Fatalf("title should be replaced, got %q", title)
+	}
+	if priority.Valid && priority.String != "high" {
+		t.Fatalf("priority should be high, got %q", priority.String)
+	}
+	// status should be NULL since the new payload didn't include it (INSERT OR REPLACE replaces full row)
+	if status.Valid {
+		t.Fatalf("status should be NULL after full row replace, got %q", status.String)
+	}
+}
+
+func TestPartialPayloadDropsColumns(t *testing.T) {
+	db := setupDB(t)
+
+	// Create with title+status+priority
+	tx := beginTx(t, db)
+	p1, _ := json.Marshal(map[string]any{"title": "full", "status": "open", "priority": "high"})
+	if err := upsertEntity(tx, "issues", "i1", p1); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	tx.Commit()
+
+	// Upsert with only title
+	tx = beginTx(t, db)
+	p2, _ := json.Marshal(map[string]any{"title": "partial"})
+	if err := upsertEntity(tx, "issues", "i1", p2); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	tx.Commit()
+
+	var title string
+	var status, priority sql.NullString
+	db.QueryRow("SELECT title, status, priority FROM issues WHERE id = ?", "i1").Scan(&title, &status, &priority)
+	if title != "partial" {
+		t.Fatalf("title should be partial, got %q", title)
+	}
+	if status.Valid {
+		t.Fatalf("status should be NULL, got %q", status.String)
+	}
+	if priority.Valid {
+		t.Fatalf("priority should be NULL, got %q", priority.String)
+	}
+}
+
+func TestNilPayload(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "i1",
+		Payload:    nil,
+	}, testValidator)
+	if err == nil {
+		t.Fatal("expected error for nil payload")
+	}
+}
+
+func TestEmptyEntityID(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "",
+		Payload:    []byte(`{"title":"test"}`),
+	}, testValidator)
+	if err == nil {
+		t.Fatal("expected error for empty entity ID")
+	}
+}
+
+func TestMalformedJSON(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "i1",
+		Payload:    []byte("not json"),
+	}, testValidator)
+	if err == nil {
+		t.Fatal("expected error for malformed JSON")
+	}
+}
+
+func TestColumnNameInjection(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "i1",
+		Payload:    []byte(`{"bad; DROP TABLE issues": "hacked"}`),
+	}, testValidator)
+	if err == nil {
+		t.Fatal("expected error for SQL injection column name")
+	}
+}
+
+func TestDeleteEntity(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	p, _ := json.Marshal(map[string]any{"title": "bye"})
+	upsertEntity(tx, "issues", "i1", p)
+	tx.Commit()
+
+	tx = beginTx(t, db)
+	if err := deleteEntity(tx, "issues", "i1"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	tx.Commit()
+
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count)
+	if count != 0 {
+		t.Fatalf("expected 0 rows, got %d", count)
+	}
+}
+
+func TestDeleteEntity_Missing(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	if err := deleteEntity(tx, "issues", "nonexistent"); err != nil {
+		t.Fatalf("delete missing should not error: %v", err)
+	}
+	tx.Commit()
+}
+
+func TestSoftDeleteEntity(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	p, _ := json.Marshal(map[string]any{"title": "soft"})
+	upsertEntity(tx, "issues", "i1", p)
+	tx.Commit()
+
+	now := time.Now().UTC()
+	tx = beginTx(t, db)
+	if err := softDeleteEntity(tx, "issues", "i1", now); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+	tx.Commit()
+
+	var deletedAt sql.NullTime
+	db.QueryRow("SELECT deleted_at FROM issues WHERE id = ?", "i1").Scan(&deletedAt)
+	if !deletedAt.Valid {
+		t.Fatal("deleted_at should be set")
+	}
+}
+
+func TestSoftDeleteEntity_Missing(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	if err := softDeleteEntity(tx, "issues", "nonexistent", time.Now()); err != nil {
+		t.Fatalf("soft delete missing should not error: %v", err)
+	}
+	tx.Commit()
+}
+
+func TestApplyEvent_UnknownAction(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	err := ApplyEvent(tx, Event{
+		ActionType: "bogus",
+		EntityType: "issues",
+		EntityID:   "i1",
+	}, testValidator)
+	if err == nil {
+		t.Fatal("expected error for unknown action")
+	}
+}
+
+func TestApplyEvent_InvalidEntityType(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "users",
+		EntityID:   "u1",
+		Payload:    []byte(`{"name":"bad"}`),
+	}, testValidator)
+	if err == nil {
+		t.Fatal("expected error for invalid entity type")
+	}
+}
+
+func TestApplyEvent_Create(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+
+	payload, _ := json.Marshal(map[string]any{"title": "via apply", "status": "open"})
+	err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "i1",
+		Payload:    payload,
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("apply create: %v", err)
+	}
+	tx.Commit()
+
+	var title string
+	db.QueryRow("SELECT title FROM issues WHERE id = ?", "i1").Scan(&title)
+	if title != "via apply" {
+		t.Fatalf("got title=%q", title)
+	}
+}
+
+func TestApplyEvent_Update(t *testing.T) {
+	db := setupDB(t)
+
+	// Create first
+	tx := beginTx(t, db)
+	p1, _ := json.Marshal(map[string]any{"title": "orig", "status": "open"})
+	ApplyEvent(tx, Event{ActionType: "create", EntityType: "issues", EntityID: "i1", Payload: p1}, testValidator)
+	tx.Commit()
+
+	// Update
+	tx = beginTx(t, db)
+	p2, _ := json.Marshal(map[string]any{"title": "updated", "status": "closed"})
+	err := ApplyEvent(tx, Event{ActionType: "update", EntityType: "issues", EntityID: "i1", Payload: p2}, testValidator)
+	if err != nil {
+		t.Fatalf("apply update: %v", err)
+	}
+	tx.Commit()
+
+	var title, status string
+	db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
+	if title != "updated" || status != "closed" {
+		t.Fatalf("got title=%q status=%q", title, status)
+	}
+}
