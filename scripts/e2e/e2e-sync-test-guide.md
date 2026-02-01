@@ -18,6 +18,7 @@ scripts/e2e/
 bash scripts/e2e/run-all.sh          # run all tests
 bash scripts/e2e/run-all.sh --full   # include real-data tests
 bash scripts/e2e/test_basic_sync.sh  # run one test
+bash scripts/e2e/test_alternating_actions.sh --actions 8  # alternating multi-actor test
 ```
 
 Each test gets its own random port and temp directory. Tests can run sequentially via `run-all.sh` (not parallel — each builds binaries independently).
@@ -28,6 +29,14 @@ These depend on local databases and are only run with `--full`:
 
 - `test_sync_real_data.sh` — runs against a single issues DB (default `$HOME/code/td/.todos/issues.db` or a custom path).
 - `test_sync_real_data_all_projects.sh` — reads `~/.config/sidecar/config.json` and runs the same test for every project DB it finds.
+
+## Alternating actions test
+
+`test_alternating_actions.sh` alternates Alice/Bob mutations across issues (create → start → log → comment → review → approve) plus board operations, then compares final DB state.
+
+```bash
+bash scripts/e2e/test_alternating_actions.sh --actions 6
+```
 
 ## Writing a New Test
 
