@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 21
+const SchemaVersion = 22
 
 const schema = `
 -- Issues table
@@ -394,6 +394,14 @@ CREATE TABLE IF NOT EXISTS sync_history (
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_sync_history_ts ON sync_history(timestamp);
+`,
+	},
+	{
+		Version:     22,
+		Description: "Sparse positioning: drop unique position index, re-space with gaps",
+		SQL: `
+DROP INDEX IF EXISTS idx_board_positions_position;
+UPDATE board_issue_positions SET position = position * 65536;
 `,
 	},
 }
