@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
@@ -357,6 +358,29 @@ func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 		}
 	}
 
+	// Record sync history
+	ackMap := make(map[int64]int64) // clientActionID -> serverSeq
+	for _, a := range acks {
+		ackMap[a.ClientActionID] = a.ServerSeq
+	}
+	var historyEntries []db.SyncHistoryEntry
+	for _, ev := range events {
+		if seq, ok := ackMap[ev.ClientActionID]; ok {
+			historyEntries = append(historyEntries, db.SyncHistoryEntry{
+				Direction:  "push",
+				ActionType: ev.ActionType,
+				EntityType: ev.EntityType,
+				EntityID:   ev.EntityID,
+				ServerSeq:  seq,
+				DeviceID:   deviceID,
+				Timestamp:  time.Now(),
+			})
+		}
+	}
+	if err := db.RecordSyncHistoryTx(tx, historyEntries); err != nil {
+		slog.Debug("sync: record push history", "err", err)
+	}
+
 	if err := tx.Commit(); err != nil {
 		output.Error("commit: %v", err)
 		return err
@@ -431,6 +455,23 @@ func runPull(database *db.DB, client *syncclient.Client, state *db.SyncState, de
 			tx.Rollback()
 			output.Error("update sync state: %v", err)
 			return err
+		}
+
+		// Record sync history
+		var historyEntries []db.SyncHistoryEntry
+		for _, ev := range events {
+			historyEntries = append(historyEntries, db.SyncHistoryEntry{
+				Direction:  "pull",
+				ActionType: ev.ActionType,
+				EntityType: ev.EntityType,
+				EntityID:   ev.EntityID,
+				ServerSeq:  ev.ServerSeq,
+				DeviceID:   ev.DeviceID,
+				Timestamp:  time.Now(),
+			})
+		}
+		if err := db.RecordSyncHistoryTx(tx, historyEntries); err != nil {
+			slog.Debug("sync: record pull history", "err", err)
 		}
 
 		if err := tx.Commit(); err != nil {

@@ -139,6 +139,8 @@ var startupSyncSkipCommands = map[string]bool{
 }
 
 // autoSyncOnStartup runs a one-time push+pull at process start if configured.
+// Does NOT set debounce timestamp — the post-mutation sync in PersistentPostRun
+// must still fire for commands that create data after the startup sync.
 func autoSyncOnStartup(cmdName string) {
 	if !syncconfig.GetAutoSyncOnStart() {
 		return
@@ -146,10 +148,6 @@ func autoSyncOnStartup(cmdName string) {
 	if startupSyncSkipCommands[cmdName] {
 		return
 	}
-	// Set debounce timestamp before sync to prevent concurrent post-mutation sync
-	autoSyncMu.Lock()
-	lastAutoSyncAt = time.Now()
-	autoSyncMu.Unlock()
 
 	autoSyncOnce()
 }
@@ -203,6 +201,23 @@ func autoSyncPull(database *db.DB, client *syncclient.Client, state *db.SyncStat
 		if _, err := tx.Exec(`UPDATE sync_state SET last_pulled_server_seq = ?, last_sync_at = CURRENT_TIMESTAMP`, pullResp.LastServerSeq); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("update sync state: %w", err)
+		}
+
+		// Record sync history
+		var historyEntries []db.SyncHistoryEntry
+		for _, ev := range events {
+			historyEntries = append(historyEntries, db.SyncHistoryEntry{
+				Direction:  "pull",
+				ActionType: ev.ActionType,
+				EntityType: ev.EntityType,
+				EntityID:   ev.EntityID,
+				ServerSeq:  ev.ServerSeq,
+				DeviceID:   ev.DeviceID,
+				Timestamp:  time.Now(),
+			})
+		}
+		if err := db.RecordSyncHistoryTx(tx, historyEntries); err != nil {
+			slog.Debug("autosync: record pull history", "err", err)
 		}
 
 		if err := tx.Commit(); err != nil {
@@ -289,6 +304,33 @@ func autoSyncPush(database *db.DB, client *syncclient.Client, state *db.SyncStat
 		if _, err := tx.Exec(`UPDATE sync_state SET last_pushed_action_id = ?, last_sync_at = CURRENT_TIMESTAMP`, maxActionID); err != nil {
 			return fmt.Errorf("update state: %w", err)
 		}
+	}
+
+	// Record sync history
+	ackMap := make(map[int64]int64)
+	for _, a := range acks {
+		ackMap[a.ClientActionID] = a.ServerSeq
+	}
+	var historyEntries []db.SyncHistoryEntry
+	for _, ev := range events {
+		if seq, ok := ackMap[ev.ClientActionID]; ok {
+			historyEntries = append(historyEntries, db.SyncHistoryEntry{
+				Direction:  "push",
+				ActionType: ev.ActionType,
+				EntityType: ev.EntityType,
+				EntityID:   ev.EntityID,
+				ServerSeq:  seq,
+				DeviceID:   deviceID,
+				Timestamp:  time.Now(),
+			})
+		}
+	}
+	if err := db.RecordSyncHistoryTx(tx, historyEntries); err != nil {
+		slog.Debug("autosync: record push history", "err", err)
+	}
+	// Prune old entries
+	if err := db.PruneSyncHistory(tx, 500); err != nil {
+		slog.Debug("autosync: prune history", "err", err)
 	}
 
 	if err := tx.Commit(); err != nil {
