@@ -26,7 +26,7 @@ for arg in "$@"; do
             echo "  (default)      Run automated convergence test"
             echo "  --manual       Set up server + 2 clients, print shell instructions, wait"
             echo "  --auto-sync    Enable auto-sync (default: off, manual td sync)"
-            echo "  --seed <path>  Seed both clients with an existing issues.db"
+            echo "  --seed <path>  Seed bob with an existing issues.db (syncs up to alice)"
             exit 0
             ;;
         *)
@@ -249,10 +249,16 @@ if [ "$MODE" = "manual" ]; then
         PROMPT_B='export PS1="\[\e[1;36m\]bob\[\e[0m\] \[\e[38;5;242m\]td-sync\[\e[0m\] \$ "'
     fi
 
+    # Log files for client-side debug output (visible in the logs pane)
+    LOG_A="$WORKDIR/alice.log"
+    LOG_B="$WORKDIR/bob.log"
+    touch "$LOG_A" "$LOG_B"
+
     cat > "$WORKDIR/shell-a.env" <<ENVEOF
 export HOME="$HOME_A"
 export PATH="$WORKDIR:\$PATH"
 export TD_SESSION_ID="$SESSION_ID_A"
+export TD_LOG_FILE="$LOG_A"
 $PROMPT_A
 cd "$CLIENT_A_DIR"
 ENVEOF
@@ -261,6 +267,7 @@ ENVEOF
 export HOME="$HOME_B"
 export PATH="$WORKDIR:\$PATH"
 export TD_SESSION_ID="$SESSION_ID_B"
+export TD_LOG_FILE="$LOG_B"
 $PROMPT_B
 cd "$CLIENT_B_DIR"
 ENVEOF
@@ -284,12 +291,17 @@ ENVEOF
         tmux send-keys -t "$TMUX_SESSION" "source $WORKDIR/shell-b.env" Enter
         tmux send-keys -t "$TMUX_SESSION" "echo ''; echo '$HINTS'; echo 'Ready as bob@test.local (client B)'; echo ''" Enter
 
-        # Focus left pane
+        # Bottom pane for logs (server + client logs interleaved)
+        tmux split-window -v -t "$TMUX_SESSION:.0" -l 12 "$USER_SHELL"
+        tmux send-keys -t "$TMUX_SESSION" "echo 'Tailing server + client logs...'; tail -f $WORKDIR/server.log $LOG_A $LOG_B" Enter
+
+        # Focus alice pane (top-left)
         tmux select-pane -t "$TMUX_SESSION:.0"
 
         echo ""
         echo -e "${GREEN}${BOLD}Launching tmux session: $TMUX_SESSION${NC}"
         echo -e "${DIM}Close all panes or detach (Ctrl-B d) to tear down.${NC}"
+        echo -e "${DIM}Bottom pane: server + client logs${NC}"
         echo ""
 
         # Attach — blocks until user detaches or closes all panes

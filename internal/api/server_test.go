@@ -1308,3 +1308,160 @@ func TestSyncStatus(t *testing.T) {
 		t.Fatalf("expected last_server_seq >= 3, got %d", status.LastServerSeq)
 	}
 }
+
+func TestPushRejectsOversizedBatch(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "oversize@test.com")
+
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "oversize-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	pushURL := fmt.Sprintf("/v1/projects/%s/sync/push", project.ID)
+
+	// Build a batch of 1001 events (one over the limit)
+	events := make([]EventInput, 1001)
+	for i := range events {
+		events[i] = EventInput{
+			ClientActionID:  int64(i + 1),
+			ActionType:      "create",
+			EntityType:      "issues",
+			EntityID:        fmt.Sprintf("i_over_%05d", i+1),
+			Payload:         json.RawMessage(`{"title":"oversize"}`),
+			ClientTimestamp: "2025-01-01T00:00:00Z",
+		}
+	}
+
+	w = doRequest(srv, "POST", pushURL, token, PushRequest{
+		DeviceID:  "dev-over",
+		SessionID: "sess-over",
+		Events:    events,
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized batch, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Exactly 1000 should succeed
+	events = events[:1000]
+	w = doRequest(srv, "POST", pushURL, token, PushRequest{
+		DeviceID:  "dev-over",
+		SessionID: "sess-over",
+		Events:    events,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for 1000-event batch, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestPushBatchedClientSimulation(t *testing.T) {
+	// Simulates client-side batching: 1500 events pushed in 3 batches of 500.
+	// Verifies acks accumulate correctly and all events are pullable.
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "batch@test.com")
+
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "batch-test"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	pushURL := fmt.Sprintf("/v1/projects/%s/sync/push", project.ID)
+	pullURL := fmt.Sprintf("/v1/projects/%s/sync/pull", project.ID)
+
+	totalEvents := 1500
+	batchSize := 500 // matches pushBatchSize in cmd/sync.go
+
+	// Build all events
+	allEvents := make([]EventInput, totalEvents)
+	for i := range allEvents {
+		allEvents[i] = EventInput{
+			ClientActionID:  int64(i + 1),
+			ActionType:      "create",
+			EntityType:      "issues",
+			EntityID:        fmt.Sprintf("i_batch_%05d", i+1),
+			Payload:         json.RawMessage(`{"title":"batched"}`),
+			ClientTimestamp: "2025-01-01T00:00:00Z",
+		}
+	}
+
+	// Push in batches (simulating client batching logic)
+	var totalAccepted int
+	var allAcks []AckResponse
+	batchCount := 0
+
+	for i := 0; i < len(allEvents); i += batchSize {
+		end := i + batchSize
+		if end > len(allEvents) {
+			end = len(allEvents)
+		}
+		batch := allEvents[i:end]
+
+		w = doRequest(srv, "POST", pushURL, token, PushRequest{
+			DeviceID:  "dev-batch",
+			SessionID: "sess-batch",
+			Events:    batch,
+		})
+		if w.Code != http.StatusOK {
+			t.Fatalf("push batch %d: expected 200, got %d: %s", batchCount, w.Code, w.Body.String())
+		}
+
+		var pushResp PushResponse
+		json.NewDecoder(w.Body).Decode(&pushResp)
+		totalAccepted += pushResp.Accepted
+		allAcks = append(allAcks, pushResp.Acks...)
+		batchCount++
+	}
+
+	// Verify batch count
+	expectedBatches := (totalEvents + batchSize - 1) / batchSize
+	if batchCount != expectedBatches {
+		t.Fatalf("expected %d batches, got %d", expectedBatches, batchCount)
+	}
+
+	// Verify total accepted
+	if totalAccepted != totalEvents {
+		t.Fatalf("expected %d accepted, got %d", totalEvents, totalAccepted)
+	}
+
+	// Verify acks cover all events
+	if len(allAcks) != totalEvents {
+		t.Fatalf("expected %d acks, got %d", totalEvents, len(allAcks))
+	}
+
+	// Verify server_seqs in acks are sequential
+	for i, ack := range allAcks {
+		expectedSeq := int64(i + 1)
+		if ack.ServerSeq != expectedSeq {
+			t.Fatalf("ack %d: expected server_seq %d, got %d", i, expectedSeq, ack.ServerSeq)
+		}
+	}
+
+	// Pull all events back and verify count
+	var allPulled []PullEvent
+	afterSeq := int64(0)
+	for {
+		url := fmt.Sprintf("%s?after_server_seq=%d&limit=1000", pullURL, afterSeq)
+		w = doRequest(srv, "GET", url, token, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("pull: expected 200, got %d: %s", w.Code, w.Body.String())
+		}
+		var pullResp PullResponse
+		json.NewDecoder(w.Body).Decode(&pullResp)
+		if len(pullResp.Events) == 0 {
+			break
+		}
+		allPulled = append(allPulled, pullResp.Events...)
+		afterSeq = pullResp.LastServerSeq
+		if !pullResp.HasMore {
+			break
+		}
+	}
+
+	if len(allPulled) != totalEvents {
+		t.Fatalf("expected %d pulled events, got %d", totalEvents, len(allPulled))
+	}
+}
