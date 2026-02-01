@@ -15,7 +15,7 @@ Premium feature opportunities for td, organized by tier.
 
 **E2E Encryption** - Encrypt event payloads client-side so the server is zero-knowledge. Key management via project-scoped symmetric keys. Differentiator: most PM tools can read your data.
 
-**SSO / SAML / OIDC** - Login with Okta/Google Workspace. Current device-code auth is fine for indie devs but a blocker for org adoption.
+**SSO / SAML / OIDC** - Login with Okta/Google Workspace. Current device-code auth is fine for indie devs but a blocker for org adoption. Implementation via **WorkOS** - single API that handles SAML/OIDC connections to all major IdPs (Okta, Azure AD, Google Workspace). Go SDK available. Also provides Directory Sync (SCIM) which covers the enterprise provisioning feature. Free for core auth, SSO priced per-connection (pass cost through to enterprise customers).
 
 **Audit Log & Compliance** - Immutable, exportable audit trail of who did what and when. Event sourcing already exists - this is mostly a reporting/export layer. SOC2/ISO-minded teams pay for this.
 
@@ -56,6 +56,23 @@ Premium feature opportunities for td, organized by tier.
 | **Usage-based (events/month)** | Scales with adoption | Unpredictable revenue, discourages usage |
 
 **Recommendation**: Open-core with managed hosting as primary revenue, plus enterprise license keys for self-hosted.
+
+### Per-User Pricing
+
+Per-seat pricing is the most natural fit for td. Each syncing user is already a distinct entity (API key, device ID, membership role), so metering is straightforward with no new infrastructure.
+
+| Tier | Price | Includes |
+|---|---|---|
+| **Free** | $0 | 1 project, 3 members, self-hosted sync only |
+| **Pro** | ~$8-12/user/month | Managed hosting, unlimited projects, E2E encryption, priority support |
+| **Team** | ~$15-20/user/month | Pro + integrations, webhooks, analytics dashboard, granular permissions |
+| **Enterprise** | Custom | Team + SSO/SAML, SCIM, audit logs, web view, data residency, SLA |
+
+Key considerations:
+- **Count human users, not agents.** AI agents operate under a human's session/device - charging per-agent would penalize the core use case and create friction. One seat = one human, unlimited agents.
+- **Free tier should be generous enough for solo devs.** The funnel is: solo dev tries td locally -> adds sync -> invites a teammate -> hits the free limit -> upgrades. The 3-member free limit is the natural conversion point.
+- **Annual discount** (e.g. 2 months free) incentivizes commitment and reduces churn.
+- **Billing by project owner.** The project owner's plan determines what features are available to all members. Members don't need their own paid plan to use a paid project - this simplifies adoption within teams.
 
 ### Priority order for implementation
 
