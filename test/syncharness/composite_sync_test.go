@@ -542,3 +542,83 @@ func TestBoardPosition_ConflictRecording(t *testing.T) {
 		t.Fatalf("conflict for board_issue_positions/%s not found in %v", posID, applyResult.Conflicts)
 	}
 }
+
+// ─── Board duplicate name sync test ───
+
+func TestBoardDuplicateName_Sync(t *testing.T) {
+	h := NewHarness(t, 2, compProj)
+
+	boardIDA := "bd-dupA"
+	boardIDB := "bd-dupB"
+	boardName := "My Board"
+
+	// Client A creates a board with name "My Board"
+	err := h.Mutate("client-A", "create", "boards", boardIDA, map[string]any{
+		"name":       boardName,
+		"query":      "",
+		"is_builtin": 0,
+		"view_mode":  "swimlanes",
+	})
+	if err != nil {
+		t.Fatalf("mutate A: %v", err)
+	}
+
+	// Client B creates a different board with the same name
+	err = h.Mutate("client-B", "create", "boards", boardIDB, map[string]any{
+		"name":       boardName,
+		"query":      "",
+		"is_builtin": 0,
+		"view_mode":  "swimlanes",
+	})
+	if err != nil {
+		t.Fatalf("mutate B: %v", err)
+	}
+
+	// Both push
+	if _, err := h.Push("client-A", compProj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+	if _, err := h.Push("client-B", compProj); err != nil {
+		t.Fatalf("push B: %v", err)
+	}
+
+	// Both PullAll to converge
+	if _, err := h.PullAll("client-A", compProj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+	if _, err := h.PullAll("client-B", compProj); err != nil {
+		t.Fatalf("pullAll B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	// Both boards must still exist on both clients (no silent deletion)
+	for _, cid := range []string{"client-A", "client-B"} {
+		entA := h.QueryEntity(cid, "boards", boardIDA)
+		if entA == nil {
+			t.Fatalf("%s: board %s was silently deleted", cid, boardIDA)
+		}
+		entB := h.QueryEntity(cid, "boards", boardIDB)
+		if entB == nil {
+			t.Fatalf("%s: board %s was silently deleted", cid, boardIDB)
+		}
+
+		// Verify both have the same name
+		nameA, _ := entA["name"].(string)
+		nameB, _ := entB["name"].(string)
+		if nameA != boardName {
+			t.Fatalf("%s: board A name = %q, want %q", cid, nameA, boardName)
+		}
+		if nameB != boardName {
+			t.Fatalf("%s: board B name = %q, want %q", cid, nameB, boardName)
+		}
+	}
+
+	// Verify total board count is 2 on both clients
+	for _, cid := range []string{"client-A", "client-B"} {
+		count := h.CountEntities(cid, "boards")
+		if count != 2 {
+			t.Fatalf("%s: expected 2 boards, got %d", cid, count)
+		}
+	}
+}

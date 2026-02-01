@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 22
+const SchemaVersion = 23
 
 const schema = `
 -- Issues table
@@ -402,6 +402,25 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_ts ON sync_history(timestamp);
 		SQL: `
 DROP INDEX IF EXISTS idx_board_positions_position;
 UPDATE board_issue_positions SET position = position * 65536;
+`,
+	},
+	{
+		Version:     23,
+		Description: "Drop UNIQUE(name) on boards to prevent sync data loss",
+		SQL: `
+CREATE TABLE boards_new (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL COLLATE NOCASE,
+    last_viewed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    query TEXT NOT NULL DEFAULT '',
+    is_builtin INTEGER NOT NULL DEFAULT 0,
+    view_mode TEXT NOT NULL DEFAULT 'swimlanes'
+);
+INSERT INTO boards_new SELECT * FROM boards;
+DROP TABLE boards;
+ALTER TABLE boards_new RENAME TO boards;
 `,
 	},
 }

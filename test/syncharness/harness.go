@@ -40,7 +40,7 @@ CREATE INDEX IF NOT EXISTS idx_action_log_entity_type ON action_log(entity_id, a
 -- boards (migration v9/v10/v11)
 CREATE TABLE IF NOT EXISTS boards (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    name TEXT NOT NULL COLLATE NOCASE,
     last_viewed_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

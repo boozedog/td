@@ -100,6 +100,7 @@ func (db *DB) GetBoardByName(name string) (*models.Board, error) {
 	err := db.conn.QueryRow(`
 		SELECT id, name, query, is_builtin, view_mode, last_viewed_at, created_at, updated_at
 		FROM boards WHERE name = ? COLLATE NOCASE
+		ORDER BY created_at ASC LIMIT 1
 	`, name).Scan(
 		&board.ID, &board.Name, &board.Query, &isBuiltin, &board.ViewMode, &lastViewedAt,
 		&board.CreatedAt, &board.UpdatedAt,
