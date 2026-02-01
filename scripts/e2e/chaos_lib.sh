@@ -1146,11 +1146,8 @@ verify_convergence() {
     # Issues — compare non-deleted issues. Due to known sync limitation (INSERT OR
     # REPLACE can resurrect deleted rows), one client may have extra non-deleted issues.
     # We compare the common set: issues present on both sides should match exactly.
-    # Session fields (implementer_session, reviewer_session, creator_session) are
-    # excluded from strict comparison — concurrent status transitions can legitimately
-    # produce different session assignments under LWW conflict resolution.
     local issues_a issues_b
-    local issue_cols="id, title, description, status, type, priority, points, labels, parent_id, acceptance, minor, sprint, created_branch"
+    local issue_cols="id, title, description, status, type, priority, points, labels, parent_id, acceptance, minor, sprint, created_branch, implementer_session, reviewer_session, creator_session"
     issues_a=$(sqlite3 "$db_a" "SELECT $issue_cols FROM issues WHERE deleted_at IS NULL ORDER BY id;")
     issues_b=$(sqlite3 "$db_b" "SELECT $issue_cols FROM issues WHERE deleted_at IS NULL ORDER BY id;")
     if [ "$issues_a" = "$issues_b" ]; then
@@ -1226,23 +1223,17 @@ verify_convergence() {
     deps_b=$(sqlite3 "$db_b" "SELECT issue_id, depends_on_id, relation_type FROM issue_dependencies ORDER BY issue_id, depends_on_id;")
     assert_eq "dependencies match" "$deps_a" "$deps_b"
 
-    # Boards — board names and is_builtin must match exactly. Query field can
-    # diverge under concurrent board_edit operations (LWW conflict resolution).
+    # Boards — all fields must match exactly after sync convergence.
     local boards_struct_a boards_struct_b
-    boards_struct_a=$(sqlite3 "$db_a" "SELECT name, is_builtin FROM boards ORDER BY name;")
-    boards_struct_b=$(sqlite3 "$db_b" "SELECT name, is_builtin FROM boards ORDER BY name;")
+    boards_struct_a=$(sqlite3 "$db_a" "SELECT name, is_builtin, query FROM boards ORDER BY name;")
+    boards_struct_b=$(sqlite3 "$db_b" "SELECT name, is_builtin, query FROM boards ORDER BY name;")
     assert_eq "boards match" "$boards_struct_a" "$boards_struct_b"
 
-    # Board issue positions — positions for non-deleted issues on common boards should
-    # match. Extra positions can exist due to issue resurrection (INSERT OR REPLACE).
+    # Board issue positions — must match exactly after sync convergence.
     local pos_a pos_b
     pos_a=$(sqlite3 "$db_a" "SELECT bp.board_id, bp.issue_id, bp.position FROM board_issue_positions bp JOIN issues i ON bp.issue_id = i.id WHERE i.deleted_at IS NULL ORDER BY bp.board_id, bp.issue_id;")
     pos_b=$(sqlite3 "$db_b" "SELECT bp.board_id, bp.issue_id, bp.position FROM board_issue_positions bp JOIN issues i ON bp.issue_id = i.id WHERE i.deleted_at IS NULL ORDER BY bp.board_id, bp.issue_id;")
-    if [ "$pos_a" = "$pos_b" ]; then
-        _ok "board positions match"
-    else
-        _ok "board positions diverge (known sync limitation: concurrent edits or resurrected issues)"
-    fi
+    assert_eq "board positions match" "$pos_a" "$pos_b"
 
     # Issue files
     local files_a files_b
@@ -1270,11 +1261,7 @@ verify_convergence() {
     done
     count_a=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM board_issue_positions;")
     count_b=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM board_issue_positions;")
-    if [ "$count_a" -eq "$count_b" ]; then
-        _ok "board_issue_positions row count"
-    else
-        _ok "board_issue_positions row count diverges (known sync limitation: $count_a vs $count_b)"
-    fi
+    assert_eq "board_issue_positions row count" "$count_a" "$count_b"
 }
 
 # ============================================================
