@@ -19,6 +19,7 @@ bash scripts/e2e/run-all.sh          # run all tests
 bash scripts/e2e/run-all.sh --full   # include real-data tests
 bash scripts/e2e/test_basic_sync.sh  # run one test
 bash scripts/e2e/test_alternating_actions.sh --actions 8  # alternating multi-actor test
+bash scripts/e2e/test_chaos_sync.sh --actions 100  # chaos stress test
 ```
 
 Each test gets its own random port and temp directory. Tests can run sequentially via `run-all.sh` (not parallel — each builds binaries independently).
@@ -37,6 +38,36 @@ These depend on local databases and are only run with `--full`:
 ```bash
 bash scripts/e2e/test_alternating_actions.sh --actions 6
 ```
+
+## Chaos sync test
+
+`test_chaos_sync.sh` is a comprehensive stress test that randomly exercises every td mutation type across two syncing clients. It randomly selects from ~28 action types (create, update, delete, status transitions, comments, logs, dependencies, boards, handoffs) with realistic frequency weights, generates arbitrary-length content, and verifies full DB convergence after sync.
+
+```bash
+bash scripts/e2e/test_chaos_sync.sh                              # default: 100 actions
+bash scripts/e2e/test_chaos_sync.sh --actions 500                # more actions
+bash scripts/e2e/test_chaos_sync.sh --duration 60                # run for 60 seconds
+bash scripts/e2e/test_chaos_sync.sh --seed 42 --actions 50       # reproducible
+bash scripts/e2e/test_chaos_sync.sh --sync-mode aggressive       # sync after every action
+bash scripts/e2e/test_chaos_sync.sh --conflict-rate 30 --verbose # 30% simultaneous mutations
+```
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `--actions N` | `100` | Total actions to perform |
+| `--duration N` | — | Run for N seconds (overrides --actions) |
+| `--seed N` | `$$` | RANDOM seed for reproducibility |
+| `--sync-mode MODE` | `adaptive` | `adaptive` (3-10 action batches), `aggressive` (every action), `random` (25% chance) |
+| `--verbose` | off | Print every action detail |
+| `--conflict-rate N` | `20` | % of rounds where both clients mutate before syncing |
+| `--batch-min N` | `3` | Min actions between syncs (adaptive mode) |
+| `--batch-max N` | `10` | Max actions between syncs (adaptive mode) |
+
+The action library lives in `chaos_lib.sh`. Each action type has an `exec_<action>` function that handles preconditions, state tracking, and expected-failure detection.
+
+## Extending the chaos test
+
+When adding new syncable mutations to td, add a corresponding `exec_<action>` function in `chaos_lib.sh` and register it in the `ACTION_WEIGHTS` array. This ensures the new feature gets exercised under randomized multi-client conditions. Follow the existing pattern: check preconditions, run the command, update state tracking, handle expected failures.
 
 ## Writing a New Test
 

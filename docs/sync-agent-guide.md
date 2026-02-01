@@ -120,10 +120,13 @@ The bash harness (`scripts/e2e/harness.sh`) builds both binaries, starts a serve
 | `test_autosync_propagation.sh` | Auto-sync with debounce, status updates propagate |
 | `test_autosync_on_start_list.sh` | on_start sync, create/review workflow |
 | `test_alternating_actions.sh` | Multi-round alternating mutations, DB convergence |
+| `test_chaos_sync.sh` | Randomized stress test: ~28 action types, arbitrary content, conflict injection, full convergence |
 | `test_sync_real_data.sh` | Real DB seed, push batching, backfill (--full only) |
 | `test_sync_real_data_all_projects.sh` | All local project DBs (--full only) |
 
 See [e2e-sync-test-guide.md](../scripts/e2e/e2e-sync-test-guide.md) for writing new e2e tests.
+
+**Extending the chaos test**: When adding new sync features or syncable mutations, add a corresponding `exec_<action>` function in `scripts/e2e/chaos_lib.sh` and register it in the `ACTION_WEIGHTS` array. This ensures new features are exercised under randomized multi-client conditions with conflict injection and convergence verification.
 
 ## Related docs
 
