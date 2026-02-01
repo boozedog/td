@@ -209,10 +209,10 @@ func TestGetPendingEvents_ActionTypeMapping(t *testing.T) {
 		{"al-00000008", "reopen", "issues", "update"},
 		{"al-00000009", "remove_dependency", "issue_dependencies", "delete"},
 		{"al-00000010", "unlink_file", "issue_files", "delete"},
-		{"al-00000011", "board_unposition", "board_position", "delete"},
+		{"al-00000011", "board_unposition", "board_position", "soft_delete"},
 		{"al-00000012", "board_delete", "boards", "delete"},
 		{"al-00000013", "board_set_position", "board_position", "create"},
-		{"al-00000014", "board_remove_issue", "board_position", "delete"},
+		{"al-00000014", "board_remove_issue", "board_position", "soft_delete"},
 		{"al-00000015", "add_dependency", "issue_dependencies", "create"},
 		{"al-00000016", "link_file", "issue_files", "create"},
 		{"al-00000017", "board_create", "boards", "create"},
@@ -864,15 +864,15 @@ func TestGetPendingEvents_RealActionTypesIntegration(t *testing.T) {
 		t.Fatalf("got %d events, want 4", len(events))
 	}
 
-	// Every real action type above should map to "delete"
+	// Real action types should map to delete or soft_delete as appropriate
 	expected := []struct {
 		entityType string
 		actionType string
 	}{
 		{"issue_dependencies", "delete"},
 		{"issue_files", "delete"},
-		{"board_issue_positions", "delete"},
-		{"board_issue_positions", "delete"},
+		{"board_issue_positions", "soft_delete"},
+		{"board_issue_positions", "soft_delete"},
 	}
 
 	for i, exp := range expected {

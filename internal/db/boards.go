@@ -213,8 +213,8 @@ func (db *DB) DeleteBoard(id string) error {
 			return fmt.Errorf("cannot delete builtin board")
 		}
 
-		// Delete positions first
-		_, err = db.conn.Exec(`DELETE FROM board_issue_positions WHERE board_id = ?`, id)
+		// Soft-delete positions first
+		_, err = db.conn.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, time.Now().UTC(), id)
 		if err != nil {
 			return err
 		}
@@ -311,19 +311,26 @@ func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 		}
 		defer tx.Rollback()
 
-		// Remove existing position for this issue
-		_, err = tx.Exec(`DELETE FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
-			boardID, issueID)
+		// Check if a (possibly soft-deleted) row exists
+		var existing int
+		err = tx.QueryRow(`SELECT COUNT(*) FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
+			boardID, issueID).Scan(&existing)
 		if err != nil {
 			return err
 		}
 
-		// Insert the new position
-		bipID := BoardIssuePosID(boardID, issueID)
-		_, err = tx.Exec(`
-			INSERT INTO board_issue_positions (id, board_id, issue_id, position, added_at)
-			VALUES (?, ?, ?, ?, ?)
-		`, bipID, boardID, issueID, position, time.Now())
+		if existing > 0 {
+			// Update existing row: set new position and clear deleted_at
+			_, err = tx.Exec(`UPDATE board_issue_positions SET position = ?, deleted_at = NULL, added_at = ? WHERE board_id = ? AND issue_id = ?`,
+				position, time.Now(), boardID, issueID)
+		} else {
+			// Insert new row
+			bipID := BoardIssuePosID(boardID, issueID)
+			_, err = tx.Exec(`
+				INSERT INTO board_issue_positions (id, board_id, issue_id, position, added_at)
+				VALUES (?, ?, ?, ?, ?)
+			`, bipID, boardID, issueID, position, time.Now())
+		}
 		if err != nil {
 			return err
 		}
@@ -390,7 +397,7 @@ func (db *DB) queryBoardPositionsSorted(boardID string) ([]BoardIssuePosition, e
 	rows, err := db.conn.Query(`
 		SELECT board_id, issue_id, position
 		FROM board_issue_positions
-		WHERE board_id = ?
+		WHERE board_id = ? AND deleted_at IS NULL
 		ORDER BY position ASC
 	`, boardID)
 	if err != nil {
@@ -422,7 +429,7 @@ func (db *DB) RespaceBoardPositions(boardID string) ([]RespaceResult, error) {
 		rows, err := tx.Query(`
 			SELECT issue_id, position
 			FROM board_issue_positions
-			WHERE board_id = ?
+			WHERE board_id = ? AND deleted_at IS NULL
 			ORDER BY position ASC
 		`, boardID)
 		if err != nil {
@@ -465,12 +472,12 @@ func (db *DB) RespaceBoardPositions(boardID string) ([]RespaceResult, error) {
 	return results, err
 }
 
-// RemoveIssuePosition removes an explicit position for an issue
+// RemoveIssuePosition soft-deletes an explicit position for an issue by setting deleted_at.
 func (db *DB) RemoveIssuePosition(boardID, issueID string) error {
 	issueID = NormalizeIssueID(issueID)
 	return db.withWriteLock(func() error {
-		_, err := db.conn.Exec(`DELETE FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
-			boardID, issueID)
+		_, err := db.conn.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
+			time.Now().UTC(), boardID, issueID)
 		return err
 	})
 }
@@ -479,7 +486,7 @@ func (db *DB) RemoveIssuePosition(boardID, issueID string) error {
 func (db *DB) GetIssuePosition(boardID, issueID string) (int, error) {
 	issueID = NormalizeIssueID(issueID)
 	var pos sql.NullInt64
-	err := db.conn.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`, boardID, issueID).Scan(&pos)
+	err := db.conn.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`, boardID, issueID).Scan(&pos)
 	if err == sql.ErrNoRows {
 		return 0, nil
 	}
@@ -492,12 +499,12 @@ func (db *DB) GetIssuePosition(boardID, issueID string) (int, error) {
 	return 0, nil
 }
 
-// GetBoardIssuePositions returns all explicit positions for a board
+// GetBoardIssuePositions returns all explicit (non-deleted) positions for a board
 func (db *DB) GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, error) {
 	rows, err := db.conn.Query(`
 		SELECT board_id, issue_id, position
 		FROM board_issue_positions
-		WHERE board_id = ?
+		WHERE board_id = ? AND deleted_at IS NULL
 		ORDER BY position ASC
 	`, boardID)
 	if err != nil {
@@ -521,7 +528,7 @@ func (db *DB) GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, erro
 func (db *DB) GetMaxBoardPosition(boardID string) (int, error) {
 	var maxPos sql.NullInt64
 	err := db.conn.QueryRow(`
-		SELECT MAX(position) FROM board_issue_positions WHERE board_id = ?
+		SELECT MAX(position) FROM board_issue_positions WHERE board_id = ? AND deleted_at IS NULL
 	`, boardID).Scan(&maxPos)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get max position: %w", err)
@@ -545,13 +552,13 @@ func (db *DB) SwapIssuePositions(boardID, id1, id2 string) error {
 
 		// Get positions
 		var pos1, pos2 int
-		err = tx.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
+		err = tx.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
 			boardID, id1).Scan(&pos1)
 		if err != nil {
 			return fmt.Errorf("issue %s not positioned on board", id1)
 		}
 
-		err = tx.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ?`,
+		err = tx.QueryRow(`SELECT position FROM board_issue_positions WHERE board_id = ? AND issue_id = ? AND deleted_at IS NULL`,
 			boardID, id2).Scan(&pos2)
 		if err != nil {
 			return fmt.Errorf("issue %s not positioned on board", id2)

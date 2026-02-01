@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 24
+const SchemaVersion = 25
 
 const schema = `
 -- Issues table
@@ -428,6 +428,12 @@ ALTER TABLE boards_new RENAME TO boards;
 		Version:     24,
 		Description: "Add deterministic id column to work_session_issues for sync",
 		// Handled by custom Go code in migrations.go (migrateWorkSessionIssueIDs)
+		SQL: "",
+	},
+	{
+		Version:     25,
+		Description: "Add deleted_at to board_issue_positions for soft delete sync",
+		// Handled by custom Go code in migrations.go (migrateBoardPositionSoftDelete)
 		SQL: "",
 	},
 }

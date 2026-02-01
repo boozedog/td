@@ -159,6 +159,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 				migrationsRun++
 				continue
 			}
+			if migration.Version == 25 {
+				if err := db.migrateBoardPositionSoftDelete(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 25 (board position soft delete): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if migration.Version == 24 {
 				if err := db.migrateWorkSessionIssueIDs(); err != nil {
 					return migrationsRun, fmt.Errorf("migration 24 (work_session_issue IDs): %w", err)
@@ -1278,4 +1288,18 @@ func (db *DB) migrateWorkSessionIssueIDs() error {
 	}
 
 	return tx.Commit()
+}
+
+// migrateBoardPositionSoftDelete adds deleted_at column to board_issue_positions
+// if it doesn't already exist. This enables soft deletes for sync convergence.
+func (db *DB) migrateBoardPositionSoftDelete() error {
+	exists, err := db.columnExists("board_issue_positions", "deleted_at")
+	if err != nil {
+		return fmt.Errorf("check deleted_at col: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	_, err = db.conn.Exec(`ALTER TABLE board_issue_positions ADD COLUMN deleted_at DATETIME`)
+	return err
 }

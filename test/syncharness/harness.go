@@ -49,13 +49,14 @@ CREATE TABLE IF NOT EXISTS boards (
     view_mode TEXT NOT NULL DEFAULT 'swimlanes'
 );
 
--- board_issue_positions (migration v9, renamed in v10)
+-- board_issue_positions (migration v9, renamed in v10, soft delete v25)
 CREATE TABLE IF NOT EXISTS board_issue_positions (
     id TEXT PRIMARY KEY,
     board_id TEXT NOT NULL,
     issue_id TEXT NOT NULL,
     position INTEGER NOT NULL,
     added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME,
     UNIQUE(board_id, issue_id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_board_positions_position
@@ -233,6 +234,10 @@ func (h *Harness) Mutate(clientID, actionType, entityType, entityID string, data
 	case "delete":
 		if _, err := tx.Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", entityType), entityID); err != nil {
 			return fmt.Errorf("delete: %w", err)
+		}
+	case "soft_delete":
+		if _, err := tx.Exec(fmt.Sprintf("UPDATE %s SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", entityType), entityID); err != nil {
+			return fmt.Errorf("soft_delete: %w", err)
 		}
 	default:
 		return fmt.Errorf("unknown action type: %s", actionType)
