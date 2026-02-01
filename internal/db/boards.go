@@ -282,6 +282,16 @@ func (db *DB) UpdateBoardViewMode(boardID, viewMode string) error {
 // Board Issue Positions
 // ============================================================================
 
+// PositionGap is the spacing between sparse sort keys for board positions.
+const PositionGap = 65536
+
+// RespaceResult records a position change made during a respace operation.
+type RespaceResult struct {
+	IssueID     string
+	OldPosition int
+	NewPosition int
+}
+
 // BoardIssuePosition represents an explicit position for an issue on a board
 type BoardIssuePosition struct {
 	BoardID  string
@@ -289,7 +299,8 @@ type BoardIssuePosition struct {
 	Position int
 }
 
-// SetIssuePosition sets an explicit position for an issue on a board
+// SetIssuePosition sets an explicit sort-key position for an issue on a board.
+// This directly sets the position value without shifting other rows.
 func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 	issueID = NormalizeIssueID(issueID)
 	return db.withWriteLock(func() error {
@@ -306,28 +317,6 @@ func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 			return err
 		}
 
-		// Shift positions >= target by +1 to make room
-		// Use two-step approach to avoid unique constraint violations:
-		// 1. Add large offset to positions being shifted (moves them out of conflict range)
-		// 2. Subtract offset-1 to get final positions (large+offset -> position+1)
-		const shiftOffset = 1000000
-		_, err = tx.Exec(`
-			UPDATE board_issue_positions
-			SET position = position + ?
-			WHERE board_id = ? AND position >= ?
-		`, shiftOffset, boardID, position)
-		if err != nil {
-			return err
-		}
-		_, err = tx.Exec(`
-			UPDATE board_issue_positions
-			SET position = position - ? + 1
-			WHERE board_id = ? AND position >= ?
-		`, shiftOffset, boardID, shiftOffset)
-		if err != nil {
-			return err
-		}
-
 		// Insert the new position
 		bipID := BoardIssuePosID(boardID, issueID)
 		_, err = tx.Exec(`
@@ -340,6 +329,139 @@ func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 
 		return tx.Commit()
 	})
+}
+
+// ComputeInsertPosition computes a sparse sort key for inserting at visual slot (1-based).
+// If the board is empty, returns PositionGap.
+// If slot <= 1 (top): returns min_position - PositionGap.
+// If slot > count (bottom): returns max_position + PositionGap.
+// Otherwise: returns midpoint of positions[slot-2] and positions[slot-1].
+// If the gap between neighbors is < 2, calls RespaceBoardPositions first and recomputes.
+func (db *DB) ComputeInsertPosition(boardID string, slot int) (int, []RespaceResult, error) {
+	positions, err := db.queryBoardPositionsSorted(boardID)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if len(positions) == 0 {
+		return PositionGap, nil, nil
+	}
+
+	if slot <= 1 {
+		return positions[0].Position - PositionGap, nil, nil
+	}
+
+	if slot > len(positions) {
+		return positions[len(positions)-1].Position + PositionGap, nil, nil
+	}
+
+	lo := positions[slot-2].Position
+	hi := positions[slot-1].Position
+	mid := (lo + hi) / 2
+
+	if mid == lo || mid == hi {
+		// Gap exhausted, respace and recompute
+		results, err := db.RespaceBoardPositions(boardID)
+		if err != nil {
+			return 0, nil, fmt.Errorf("respace failed: %w", err)
+		}
+
+		positions, err = db.queryBoardPositionsSorted(boardID)
+		if err != nil {
+			return 0, results, err
+		}
+
+		if slot > len(positions) {
+			return positions[len(positions)-1].Position + PositionGap, results, nil
+		}
+
+		lo = positions[slot-2].Position
+		hi = positions[slot-1].Position
+		mid = (lo + hi) / 2
+		return mid, results, nil
+	}
+
+	return mid, nil, nil
+}
+
+// queryBoardPositionsSorted returns all board positions sorted by position ASC.
+func (db *DB) queryBoardPositionsSorted(boardID string) ([]BoardIssuePosition, error) {
+	rows, err := db.conn.Query(`
+		SELECT board_id, issue_id, position
+		FROM board_issue_positions
+		WHERE board_id = ?
+		ORDER BY position ASC
+	`, boardID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var positions []BoardIssuePosition
+	for rows.Next() {
+		var p BoardIssuePosition
+		if err := rows.Scan(&p.BoardID, &p.IssueID, &p.Position); err != nil {
+			return nil, err
+		}
+		positions = append(positions, p)
+	}
+	return positions, nil
+}
+
+// RespaceBoardPositions reassigns all positions on a board with fresh PositionGap gaps.
+func (db *DB) RespaceBoardPositions(boardID string) ([]RespaceResult, error) {
+	var results []RespaceResult
+	err := db.withWriteLock(func() error {
+		tx, err := db.conn.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		rows, err := tx.Query(`
+			SELECT issue_id, position
+			FROM board_issue_positions
+			WHERE board_id = ?
+			ORDER BY position ASC
+		`, boardID)
+		if err != nil {
+			return err
+		}
+
+		type entry struct {
+			issueID     string
+			oldPosition int
+		}
+		var entries []entry
+		for rows.Next() {
+			var e entry
+			if err := rows.Scan(&e.issueID, &e.oldPosition); err != nil {
+				rows.Close()
+				return err
+			}
+			entries = append(entries, e)
+		}
+		rows.Close()
+
+		for i, e := range entries {
+			newPos := (i + 1) * PositionGap
+			_, err := tx.Exec(`
+				UPDATE board_issue_positions SET position = ?
+				WHERE board_id = ? AND issue_id = ?
+			`, newPos, boardID, e.issueID)
+			if err != nil {
+				return err
+			}
+			results = append(results, RespaceResult{
+				IssueID:     e.issueID,
+				OldPosition: e.oldPosition,
+				NewPosition: newPos,
+			})
+		}
+
+		return tx.Commit()
+	})
+	return results, err
 }
 
 // RemoveIssuePosition removes an explicit position for an issue
