@@ -97,7 +97,7 @@ Auto-sync runs push+pull silently in the background. Enable it in config:
 |---|---|---|
 | `auto.enabled` | `true` | Master switch for all auto-sync |
 | `auto.on_start` | `true` | Push+pull on command startup (skipped for sync/auth/login/version/help) |
-| `auto.debounce` | `"3s"` | Delay after mutating commands before push+pull |
+| `auto.debounce` | `"3s"` | Minimum interval between post-mutation syncs |
 | `auto.interval` | `"5m"` | Periodic push+pull interval (used by the TUI monitor) |
 | `auto.pull` | `true` | Include pull in auto-sync; set `false` for push-only |
 
@@ -114,7 +114,7 @@ Auto-sync runs push+pull silently in the background. Enable it in config:
 **Behavior:**
 
 - **Startup sync**: Runs push+pull on every command start (except sync/auth/login/version/help), if enabled+on_start+authenticated+linked.
-- **Post-mutation sync**: Runs push+pull after mutating commands, debounced (default 3s).
+- **Post-mutation sync**: Runs push+pull after mutating commands, rate-limited to at most once per debounce window (default 3s).
 - **Monitor periodic sync**: Runs push+pull at the configured interval (default 5m).
 - **Pull control**: All auto-sync includes pull by default; set `pull=false` for push-only.
 

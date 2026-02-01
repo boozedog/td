@@ -252,7 +252,7 @@ Auto-sync is configured via `sync.auto` in `~/.config/td/config.json`:
 | Trigger | Config field | Default | Behavior |
 |---------|-------------|---------|----------|
 | Startup | `auto.on_start` | `true` | Push+pull on command start (skipped for sync/auth/login/version/help) |
-| Post-mutation | `auto.debounce` | `"3s"` | Push+pull after mutating commands, debounced |
+| Post-mutation | `auto.debounce` | `"3s"` | Push+pull after mutating commands, rate-limited |
 | Periodic | `auto.interval` | `"5m"` | Push+pull at interval (TUI monitor) |
 | Manual | n/a | n/a | `td sync` command |
 
@@ -671,7 +671,7 @@ File: `~/.config/td/config.json`
 |---|---|---|
 | `auto.enabled` | `true` | Master switch for all auto-sync |
 | `auto.on_start` | `true` | Push+pull on command startup |
-| `auto.debounce` | `"3s"` | Delay after mutations before push+pull |
+| `auto.debounce` | `"3s"` | Minimum interval between post-mutation syncs |
 | `auto.interval` | `"5m"` | Periodic push+pull interval (TUI monitor) |
 | `auto.pull` | `true` | Include pull in auto-sync; `false` for push-only |
 

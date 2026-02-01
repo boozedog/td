@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/marcus/td/internal/db"
@@ -17,8 +18,9 @@ import (
 const autoSyncHTTPTimeout = 5 * time.Second
 
 var (
-	lastAutoSyncAt time.Time
-	autoSyncMu     sync.Mutex
+	lastAutoSyncAt  time.Time
+	autoSyncMu      sync.Mutex
+	autoSyncInFlight int32 // atomic flag: 1 = sync running
 )
 
 // mutatingCommands lists commands that modify local data and should trigger auto-sync.
@@ -43,6 +45,7 @@ var mutatingCommands = map[string]bool{
 	"link":        true,
 	"unlink":      true,
 	"comment":     true,
+	"comments":    true,
 	"undo":        true,
 	"import":      true,
 	"init":        true,
@@ -67,6 +70,11 @@ func AutoSyncEnabled() bool {
 
 // autoSyncOnce runs a push and optional pull silently.
 func autoSyncOnce() {
+	if !atomic.CompareAndSwapInt32(&autoSyncInFlight, 0, 1) {
+		return // another sync already in progress
+	}
+	defer atomic.StoreInt32(&autoSyncInFlight, 0)
+
 	if !AutoSyncEnabled() || !syncconfig.IsAuthenticated() {
 		return
 	}

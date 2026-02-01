@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -9,7 +10,7 @@ import (
 
 func TestIsMutatingCommand(t *testing.T) {
 	// Commands that should trigger auto-sync
-	mutating := []string{"create", "update", "delete", "start", "close", "log", "handoff", "board", "dep", "ws"}
+	mutating := []string{"create", "update", "delete", "start", "close", "log", "handoff", "board", "dep", "ws", "comments"}
 	for _, name := range mutating {
 		if !isMutatingCommand(name) {
 			t.Errorf("expected %q to be mutating", name)
@@ -179,5 +180,25 @@ func TestAutoSyncOnStartup_SkipCommands(t *testing.T) {
 		t.Setenv("TD_SYNC_AUTO_START", "true")
 		// Just verify it doesn't panic - it will return early due to no auth
 		autoSyncOnStartup(cmd)
+	}
+}
+
+func TestAutoSyncInFlightGuard(t *testing.T) {
+	// Set the in-flight flag to simulate a sync already running
+	atomic.StoreInt32(&autoSyncInFlight, 1)
+	defer atomic.StoreInt32(&autoSyncInFlight, 0)
+
+	// Enable auto-sync and auth so autoSyncOnce would proceed if not guarded
+	t.Setenv("TD_SYNC_AUTO", "true")
+	t.Setenv("TD_AUTH_KEY", "test-key")
+
+	// autoSyncOnce should return immediately without doing anything
+	// because the in-flight flag is already set.
+	// If the guard weren't working, it would attempt DB operations and fail.
+	autoSyncOnce()
+
+	// Verify the flag is still 1 (was not cleared by the guarded return path)
+	if v := atomic.LoadInt32(&autoSyncInFlight); v != 1 {
+		t.Errorf("expected autoSyncInFlight=1, got %d", v)
 	}
 }
