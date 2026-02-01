@@ -41,7 +41,7 @@ func (db *DB) GetLogs(issueID string, limit int) ([]models.Log, error) {
 	// Get logs that are either:
 	// 1. Directly assigned to this issue (issue_id = ?)
 	// 2. Work session logs (issue_id = '') from sessions where this issue is tagged
-	query := `SELECT l.id, l.issue_id, l.session_id, l.work_session_id, l.message, l.type, l.timestamp
+	query := `SELECT CAST(l.id AS TEXT), l.issue_id, l.session_id, l.work_session_id, l.message, l.type, l.timestamp
 	          FROM logs l
 	          WHERE l.issue_id = ?
 	          OR (l.issue_id = '' AND l.work_session_id IN (
@@ -81,7 +81,7 @@ func (db *DB) GetLogs(issueID string, limit int) ([]models.Log, error) {
 
 // GetLogsByWorkSession retrieves logs for a specific work session
 func (db *DB) GetLogsByWorkSession(wsID string) ([]models.Log, error) {
-	query := `SELECT id, issue_id, session_id, work_session_id, message, type, timestamp
+	query := `SELECT CAST(id AS TEXT), issue_id, session_id, work_session_id, message, type, timestamp
 	          FROM logs WHERE work_session_id = ? ORDER BY timestamp`
 
 	rows, err := db.conn.Query(query, wsID)
@@ -105,7 +105,7 @@ func (db *DB) GetLogsByWorkSession(wsID string) ([]models.Log, error) {
 
 // GetRecentLogsAll returns recent logs across all issues
 func (db *DB) GetRecentLogsAll(limit int) ([]models.Log, error) {
-	query := `SELECT id, issue_id, session_id, work_session_id, message, type, timestamp
+	query := `SELECT CAST(id AS TEXT), issue_id, session_id, work_session_id, message, type, timestamp
 	          FROM logs ORDER BY timestamp DESC`
 	args := []interface{}{}
 
@@ -198,7 +198,7 @@ func (db *DB) GetLatestHandoff(issueID string) (*models.Handoff, error) {
 	var doneJSON, remainingJSON, decisionsJSON, uncertainJSON string
 
 	err := db.conn.QueryRow(`
-		SELECT id, issue_id, session_id, done, remaining, decisions, uncertain, timestamp
+		SELECT CAST(id AS TEXT), issue_id, session_id, done, remaining, decisions, uncertain, timestamp
 		FROM handoffs WHERE issue_id = ? ORDER BY timestamp DESC LIMIT 1
 	`, issueID).Scan(
 		&handoff.ID, &handoff.IssueID, &handoff.SessionID,
@@ -241,7 +241,7 @@ func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, e
 	var handoffs []models.Handoff
 
 	rows, err := db.conn.Query(`
-		SELECT id, issue_id, session_id, done, remaining, decisions, uncertain, timestamp
+		SELECT CAST(id AS TEXT), issue_id, session_id, done, remaining, decisions, uncertain, timestamp
 		FROM handoffs WHERE timestamp > ? ORDER BY timestamp DESC LIMIT ?
 	`, since, limit)
 	if err != nil {
@@ -305,7 +305,7 @@ func (db *DB) AddComment(comment *models.Comment) error {
 // GetComments retrieves comments for an issue
 func (db *DB) GetComments(issueID string) ([]models.Comment, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, issue_id, session_id, text, created_at
+		SELECT CAST(id AS TEXT), issue_id, session_id, text, created_at
 		FROM comments WHERE issue_id = ? ORDER BY created_at
 	`, issueID)
 	if err != nil {
@@ -326,7 +326,7 @@ func (db *DB) GetComments(issueID string) ([]models.Comment, error) {
 
 // GetRecentCommentsAll returns recent comments across all issues
 func (db *DB) GetRecentCommentsAll(limit int) ([]models.Comment, error) {
-	query := `SELECT id, issue_id, session_id, text, created_at
+	query := `SELECT CAST(id AS TEXT), issue_id, session_id, text, created_at
 	          FROM comments ORDER BY created_at DESC`
 	args := []interface{}{}
 
@@ -385,7 +385,7 @@ func (db *DB) GetLastAction(sessionID string) (*models.ActionLog, error) {
 	var undone int
 
 	err := db.conn.QueryRow(`
-		SELECT id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
+		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
 		FROM action_log
 		WHERE session_id = ? AND undone = 0
 		ORDER BY timestamp DESC LIMIT 1
@@ -416,7 +416,7 @@ func (db *DB) MarkActionUndone(actionID string) error {
 // GetRecentActions returns recent actions for a session
 func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog, error) {
 	query := `
-		SELECT id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
+		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
 		FROM action_log
 		WHERE session_id = ?
 		ORDER BY timestamp DESC`
@@ -454,7 +454,7 @@ func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog,
 // GetRecentActionsAll returns recent action_log entries across all sessions
 func (db *DB) GetRecentActionsAll(limit int) ([]models.ActionLog, error) {
 	query := `
-		SELECT id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
+		SELECT CAST(id AS TEXT), session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone
 		FROM action_log
 		ORDER BY timestamp DESC`
 	args := []interface{}{}
@@ -555,7 +555,7 @@ func (db *DB) GetStartSnapshot(issueID string) (*models.GitSnapshot, error) {
 	var snapshot models.GitSnapshot
 
 	err := db.conn.QueryRow(`
-		SELECT id, issue_id, event, commit_sha, branch, dirty_files, timestamp
+		SELECT CAST(id AS TEXT), issue_id, event, commit_sha, branch, dirty_files, timestamp
 		FROM git_snapshots WHERE issue_id = ? AND event = 'start' ORDER BY timestamp DESC LIMIT 1
 	`, issueID).Scan(
 		&snapshot.ID, &snapshot.IssueID, &snapshot.Event,

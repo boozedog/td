@@ -505,7 +505,7 @@ func (db *DB) UnlinkFile(issueID, filePath string) error {
 // GetLinkedFiles returns files linked to an issue
 func (db *DB) GetLinkedFiles(issueID string) ([]models.IssueFile, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, issue_id, file_path, role, linked_sha, linked_at
+		SELECT CAST(id AS TEXT), issue_id, file_path, role, linked_sha, linked_at
 		FROM issue_files WHERE issue_id = ? ORDER BY role, file_path
 	`, issueID)
 	if err != nil {
