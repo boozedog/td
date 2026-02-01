@@ -85,9 +85,9 @@ type Issue struct {
 	ParentID           string     `json:"parent_id,omitempty"`
 	Acceptance         string     `json:"acceptance,omitempty"`
 	Sprint             string     `json:"sprint,omitempty"`
-	ImplementerSession string     `json:"implementer_session,omitempty"`
-	CreatorSession     string     `json:"creator_session,omitempty"`
-	ReviewerSession    string     `json:"reviewer_session,omitempty"`
+	ImplementerSession string     `json:"implementer_session"`
+	CreatorSession     string     `json:"creator_session"`
+	ReviewerSession    string     `json:"reviewer_session"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 	ClosedAt           *time.Time `json:"closed_at,omitempty"`
