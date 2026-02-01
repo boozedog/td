@@ -14,6 +14,7 @@ What works today:
 - Device auth flow (no SMTP dependency)
 - Team membership with roles (owner/writer/reader)
 - Orphan entity backfill (pre-action-log data gets synthetic create events)
+- Soft deletes for board_issue_positions (prevents resurrection on event replay)
 - Rate limiting, structured logging, health/metrics endpoints
 
 ## Architecture
@@ -66,7 +67,8 @@ Synced entities and their action_log aliases:
 | `handoffs` | `handoff` | handoff, handoffs |
 | `boards` | `boards` | board, boards |
 | `work_sessions` | `work_sessions` | work_session, work_sessions |
-| `board_issue_positions` | `board_position` | board_position, board_issue_positions |
+| `board_issue_positions` | `board_position` | board_position, board_issue_positions (soft_delete for removes) |
+| `work_session_issues` | `work_session_issue` | work_session_issue, work_session_issues |
 | `issue_dependencies` | `dependency` | dependency, issue_dependencies |
 | `issue_files` | `file_link` | file_link, issue_files |
 
@@ -141,7 +143,8 @@ See [e2e-sync-test-guide.md](../scripts/e2e/e2e-sync-test-guide.md) for writing 
 
 ## Known issues
 
-- **Event replay ordering**: "update" events with full JSON snapshots use `INSERT OR REPLACE`, which can re-create rows that were hard-deleted during replay. This causes the pulling client to have slightly more entities than the pushing client in rare cases. The e2e real-data test uses `assert_ge` (alice >= bob) for this reason.
+- **Event replay ordering**: "update" events with full JSON snapshots use `INSERT OR REPLACE`, which can re-create rows that were hard-deleted during replay. `board_issue_positions` is fixed — it now uses soft deletes (`deleted_at` column) so replayed updates don't resurrect removed positions. Other entity types can still re-create hard-deleted rows in rare cases; e2e real-data tests use `assert_ge` for this reason.
+- **Row-level LWW causes field-level data loss** (`td-a729f0`): Concurrent edits to *different fields* of the same issue can lose one client's changes. The sync engine uses `INSERT OR REPLACE` with full row snapshots, so last-write-wins applies to the entire row, not individual columns. Mitigation requires column-level merge or CRDT fields.
 - **Entity type aliases are fragile**: The action_log uses both singular and plural forms inconsistently across the codebase. `normalizeEntityType` and the backfill alias table must stay in sync manually.
 
 ## Future directions
