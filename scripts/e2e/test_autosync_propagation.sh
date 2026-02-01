@@ -7,8 +7,7 @@
 # Bob polls until both the issue and the status change appear.
 # Verifies: issue arrives with correct data, status update propagates.
 #
-# NOTE: `td log` does not yet write to action_log, so log entries
-# don't sync. This test uses `td start` (which does) instead.
+# Uses `td start` to test status update propagation via auto-sync.
 #
 set -euo pipefail
 source "$(dirname "$0")/harness.sh"
