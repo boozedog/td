@@ -557,7 +557,11 @@ func (m Model) copyCurrentIssueToClipboard() (tea.Model, tea.Cmd) {
 		markdown = formatIssueAsMarkdown(issue)
 	}
 
-	if err := copyToClipboard(markdown); err != nil {
+	clipFn := m.ClipboardFn
+	if clipFn == nil {
+		clipFn = copyToClipboard
+	}
+	if err := clipFn(markdown); err != nil {
 		m.StatusMessage = "Copy failed: " + err.Error()
 		m.StatusIsError = true
 	} else {
@@ -588,7 +592,11 @@ func (m Model) copyIssueIDToClipboard() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if err := copyToClipboard(issueID); err != nil {
+	clipFn := m.ClipboardFn
+	if clipFn == nil {
+		clipFn = copyToClipboard
+	}
+	if err := clipFn(issueID); err != nil {
 		m.StatusMessage = "Copy failed: " + err.Error()
 		m.StatusIsError = true
 	} else {

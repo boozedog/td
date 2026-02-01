@@ -174,6 +174,9 @@ type Model struct {
 	DragStartHeights [3]float64 // Pane heights when drag started
 	BaseDir          string     // Base directory for config persistence
 
+	// Clipboard function (nil = real system clipboard)
+	ClipboardFn func(string) error
+
 	// Custom renderers (for embedding with custom theming)
 	PanelRenderer PanelRenderer // Custom panel border renderer (nil = default lipgloss)
 	ModalRenderer ModalRenderer // Custom modal border renderer (nil = default lipgloss)

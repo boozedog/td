@@ -625,6 +625,9 @@ func BenchmarkFormatEpicAsMarkdown(b *testing.B) {
 	}
 }
 
+// noopClipboard is a no-op clipboard function for tests
+func noopClipboard(_ string) error { return nil }
+
 // TestCopyCurrentIssueToClipboard_FromModal tests copying from an open modal
 func TestCopyCurrentIssueToClipboard_FromModal(t *testing.T) {
 	issue := &models.Issue{
@@ -637,6 +640,7 @@ func TestCopyCurrentIssueToClipboard_FromModal(t *testing.T) {
 	}
 
 	m := Model{
+		ClipboardFn: noopClipboard,
 		ModalStack: []ModalEntry{
 			{
 				IssueID: issue.ID,
@@ -681,7 +685,8 @@ func TestCopyCurrentIssueToClipboard_FromPanel(t *testing.T) {
 // TestCopyCurrentIssueToClipboard_NoSelection tests with no issue selected
 func TestCopyCurrentIssueToClipboard_NoSelection(t *testing.T) {
 	m := Model{
-		ModalStack: []ModalEntry{}, // No modal
+		ClipboardFn: noopClipboard,
+		ModalStack:  []ModalEntry{}, // No modal
 		Cursor: map[Panel]int{
 			PanelTaskList: 0,
 		},
@@ -715,6 +720,7 @@ func TestCopyCurrentIssueToClipboard_Epic(t *testing.T) {
 	}
 
 	m := Model{
+		ClipboardFn: noopClipboard,
 		ModalStack: []ModalEntry{
 			{
 				IssueID:   epicIssue.ID,
@@ -746,6 +752,7 @@ func TestCopyIssueIDToClipboard_FromModal(t *testing.T) {
 	}
 
 	m := Model{
+		ClipboardFn: noopClipboard,
 		ModalStack: []ModalEntry{
 			{
 				IssueID: issue.ID,
@@ -782,7 +789,8 @@ func TestCopyIssueIDToClipboard_FromPanel(t *testing.T) {
 	}
 
 	m := Model{
-		ModalStack: []ModalEntry{}, // No modal
+		ClipboardFn: noopClipboard,
+		ModalStack:  []ModalEntry{}, // No modal
 		Cursor: map[Panel]int{
 			PanelTaskList: 0,
 		},
@@ -809,7 +817,8 @@ func TestCopyIssueIDToClipboard_FromPanel(t *testing.T) {
 // TestCopyIssueIDToClipboard_NoSelection tests copying ID with no selection
 func TestCopyIssueIDToClipboard_NoSelection(t *testing.T) {
 	m := Model{
-		ModalStack: []ModalEntry{}, // No modal
+		ClipboardFn: noopClipboard,
+		ModalStack:  []ModalEntry{}, // No modal
 		Cursor: map[Panel]int{
 			PanelTaskList: 0,
 		},
@@ -839,6 +848,7 @@ func TestCopyIssueIDToClipboard_PrefersModal(t *testing.T) {
 	}
 
 	m := Model{
+		ClipboardFn: noopClipboard,
 		ModalStack: []ModalEntry{
 			{
 				IssueID: modalIssue.ID,
