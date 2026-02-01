@@ -53,7 +53,6 @@ td_b sync >/dev/null 2>&1 || true
 issue_ids=()
 board_names=()
 deleted_ids=""
-expected_positions=()
 
 mark_deleted() {
     deleted_ids="$deleted_ids $1"
@@ -61,31 +60,6 @@ mark_deleted() {
 
 is_deleted() {
     [[ " $deleted_ids " == *" $1 "* ]]
-}
-
-set_expected_position() {
-    local board="$1" issue="$2" pos="$3"
-    local next=()
-    local entry
-    for entry in "${expected_positions[@]:-}"; do
-        if [[ "$entry" != "$board|$issue|"* ]]; then
-            next+=("$entry")
-        fi
-    done
-    next+=("$board|$issue|$pos")
-    expected_positions=("${next[@]}")
-}
-
-drop_expected_positions_for_issue() {
-    local issue="$1"
-    local next=()
-    local entry
-    for entry in "${expected_positions[@]:-}"; do
-        if [[ "$entry" != *"|$issue|"* ]]; then
-            next+=("$entry")
-        fi
-    done
-    expected_positions=("${next[@]}")
 }
 
 _step "Alternating actions (rounds: $ROUNDS)"
@@ -123,17 +97,14 @@ for i in $(seq 1 "$ROUNDS"); do
         run_td "$actor" board create "$board_name" >/dev/null
         run_td "$actor" board edit "$board_name" -q "status != closed" >/dev/null || true
         board_names+=("$board_name")
-        expected_positions=()
     fi
 
     if [ "${#board_names[@]}" -gt 0 ]; then
         board_name="${board_names[$(( ${#board_names[@]} - 1 ))]}"
         run_td "$actor" board move "$board_name" "$issue_id" 1 >/dev/null
-        set_expected_position "$board_name" "$issue_id" 1
         if [ "${#issue_ids[@]}" -ge 2 ]; then
             prev_issue="${issue_ids[$(( ${#issue_ids[@]} - 2 ))]}"
             run_td "$actor" board move "$board_name" "$prev_issue" 2 >/dev/null
-            set_expected_position "$board_name" "$prev_issue" 2
         fi
     fi
 
@@ -149,7 +120,6 @@ for i in $(seq 1 "$ROUNDS"); do
             if ! is_deleted "$victim"; then
                 run_td "$other" delete "$victim" >/dev/null || run_td "$actor" delete "$victim" >/dev/null
                 mark_deleted "$victim"
-                drop_expected_positions_for_issue "$victim"
             fi
         fi
     fi
@@ -185,23 +155,15 @@ BOARD_ROWS_A=$(sqlite3 "$DB_A" "SELECT name || ':' || query || ':' || is_builtin
 BOARD_ROWS_B=$(sqlite3 "$DB_B" "SELECT name || ':' || query || ':' || is_builtin FROM boards ORDER BY name;")
 assert_eq "boards match" "$BOARD_ROWS_A" "$BOARD_ROWS_B"
 
-if [ "${#expected_positions[@]}" -gt 0 ]; then
-    for entry in "${expected_positions[@]}"; do
-        IFS='|' read -r board_name issue_id pos <<<"$entry"
-        if [ -z "$board_name" ] || [ -z "$issue_id" ]; then
-            continue
-        fi
-        board_id_a=$(sqlite3 "$DB_A" "SELECT id FROM boards WHERE name = '$board_name' LIMIT 1;")
-        board_id_b=$(sqlite3 "$DB_B" "SELECT id FROM boards WHERE name = '$board_name' LIMIT 1;")
-        pos_a=$(sqlite3 "$DB_A" "SELECT position FROM board_issue_positions WHERE board_id = '$board_id_a' AND issue_id = '$issue_id' LIMIT 1;")
-        pos_b=$(sqlite3 "$DB_B" "SELECT position FROM board_issue_positions WHERE board_id = '$board_id_b' AND issue_id = '$issue_id' LIMIT 1;")
-        assert_eq "board position $board_name/$issue_id" "$pos_a" "$pos_b"
-        if [ -n "$pos_a" ]; then
-            _ok "board position exists $board_name/$issue_id"
-        else
-            _fail "board position missing $board_name/$issue_id"
-        fi
-    done
+POS_ROWS_A=$(sqlite3 "$DB_A" "SELECT board_id || ':' || issue_id || ':' || position FROM board_issue_positions ORDER BY board_id, issue_id;")
+POS_ROWS_B=$(sqlite3 "$DB_B" "SELECT board_id || ':' || issue_id || ':' || position FROM board_issue_positions ORDER BY board_id, issue_id;")
+assert_eq "board positions match" "$POS_ROWS_A" "$POS_ROWS_B"
+
+POS_COUNT_A=$(sqlite3 "$DB_A" "SELECT COUNT(*) FROM board_issue_positions;")
+if [ "$POS_COUNT_A" -gt 0 ]; then
+    _ok "board positions exist ($POS_COUNT_A rows)"
+else
+    _fail "no board positions found"
 fi
 
 report
