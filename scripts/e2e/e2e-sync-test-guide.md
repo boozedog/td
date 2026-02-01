@@ -16,10 +16,18 @@ scripts/e2e/
 
 ```bash
 bash scripts/e2e/run-all.sh          # run all tests
+bash scripts/e2e/run-all.sh --full   # include real-data tests
 bash scripts/e2e/test_basic_sync.sh  # run one test
 ```
 
 Each test gets its own random port and temp directory. Tests can run sequentially via `run-all.sh` (not parallel — each builds binaries independently).
+
+## Real-data tests (manual)
+
+These depend on local databases and are only run with `--full`:
+
+- `test_sync_real_data.sh` — runs against a single issues DB (default `$HOME/code/td/.todos/issues.db` or a custom path).
+- `test_sync_real_data_all_projects.sh` — reads `~/.config/sidecar/config.json` and runs the same test for every project DB it finds.
 
 ## Writing a New Test
 

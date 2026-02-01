@@ -28,6 +28,12 @@ setup
 _step "Seeding bob with real DB (unsynced)"
 sqlite3 "$DB_SOURCE" 'PRAGMA wal_checkpoint(TRUNCATE);' 2>/dev/null || true
 cp "$DB_SOURCE" "$CLIENT_B_DIR/.todos/issues.db"
+
+_step "Running migrations on copied DB"
+if ! UPGRADE_OUT=$(td_b upgrade 2>&1); then
+    _fatal "Migrations failed: $UPGRADE_OUT"
+fi
+
 sqlite3 "$CLIENT_B_DIR/.todos/issues.db" <<'SQL'
 DELETE FROM sync_state;
 DELETE FROM action_log WHERE id IS NULL OR entity_id IS NULL OR entity_id = '';
@@ -58,10 +64,9 @@ td_a sync >/dev/null 2>&1
 ALICE_COUNT=$(td_a list --json --status all -n 10000 2>/dev/null | jq 'length')
 _ok "Alice pulled $ALICE_COUNT issues"
 
-# Some events may have empty payloads (from old schema) that get skipped on apply.
-# Allow a small margin — alice should have at least 95% of bob's issues.
-MIN_EXPECTED=$(( BOB_COUNT * 95 / 100 ))
-assert_ge "alice has most of bob's issues" "$ALICE_COUNT" "$MIN_EXPECTED"
+# Backfill ensures orphan entities get synthetic create events.
+# Expect parity — alice should have at least bob's issues.
+assert_ge "alice has at least bob's issues" "$ALICE_COUNT" "$BOB_COUNT"
 
 # =================================================================
 # Part 2: New mutations on top of real data
