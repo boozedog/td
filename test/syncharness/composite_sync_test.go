@@ -622,3 +622,179 @@ func TestBoardDuplicateName_Sync(t *testing.T) {
 		}
 	}
 }
+
+// ─── Work session issue sync tests ───
+
+func TestWorkSessionIssueTag_Sync(t *testing.T) {
+	h := NewHarness(t, 2, compProj)
+
+	wsID := "ws-wsi1"
+	issueID := "td-wsi1"
+	wsiID := db.WsiID(wsID, issueID)
+
+	// Pre-create work session and issue on both clients
+	for _, cid := range []string{"client-A", "client-B"} {
+		if err := h.Mutate(cid, "create", "work_sessions", wsID, map[string]any{
+			"name": "Test WS", "session_id": "ses-test",
+		}); err != nil {
+			t.Fatalf("create ws on %s: %v", cid, err)
+		}
+		if err := h.Mutate(cid, "create", "issues", issueID, map[string]any{
+			"title": "Test Issue", "status": "open", "type": "task", "priority": "P2",
+		}); err != nil {
+			t.Fatalf("create issue on %s: %v", cid, err)
+		}
+	}
+
+	// Client A tags issue to work session
+	if err := h.Mutate("client-A", "create", "work_session_issues", wsiID, map[string]any{
+		"work_session_id": wsID,
+		"issue_id":        issueID,
+	}); err != nil {
+		t.Fatalf("tag: %v", err)
+	}
+
+	// Push from A, pull on B
+	if _, err := h.Push("client-A", compProj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+	if _, err := h.Pull("client-B", compProj); err != nil {
+		t.Fatalf("pull B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	// Verify B has the tag
+	for _, cid := range []string{"client-A", "client-B"} {
+		ent := h.QueryEntity(cid, "work_session_issues", wsiID)
+		if ent == nil {
+			t.Fatalf("%s: work_session_issue %s not found", cid, wsiID)
+		}
+		if ws, _ := ent["work_session_id"].(string); ws != wsID {
+			t.Fatalf("%s: expected work_session_id %q, got %q", cid, wsID, ws)
+		}
+		if iid, _ := ent["issue_id"].(string); iid != issueID {
+			t.Fatalf("%s: expected issue_id %q, got %q", cid, issueID, iid)
+		}
+	}
+}
+
+func TestWorkSessionIssueUntag_Sync(t *testing.T) {
+	h := NewHarness(t, 2, compProj)
+
+	wsID := "ws-wsi2"
+	issueID := "td-wsi2"
+	wsiID := db.WsiID(wsID, issueID)
+
+	// Pre-create work session and issue on both clients
+	for _, cid := range []string{"client-A", "client-B"} {
+		if err := h.Mutate(cid, "create", "work_sessions", wsID, map[string]any{
+			"name": "Test WS", "session_id": "ses-test",
+		}); err != nil {
+			t.Fatalf("create ws on %s: %v", cid, err)
+		}
+		if err := h.Mutate(cid, "create", "issues", issueID, map[string]any{
+			"title": "Test Issue", "status": "open", "type": "task", "priority": "P2",
+		}); err != nil {
+			t.Fatalf("create issue on %s: %v", cid, err)
+		}
+	}
+
+	// Both clients have the tag
+	for _, cid := range []string{"client-A", "client-B"} {
+		if err := h.Mutate(cid, "create", "work_session_issues", wsiID, map[string]any{
+			"work_session_id": wsID,
+			"issue_id":        issueID,
+		}); err != nil {
+			t.Fatalf("tag on %s: %v", cid, err)
+		}
+	}
+
+	// Client A untags
+	if err := h.Mutate("client-A", "delete", "work_session_issues", wsiID, nil); err != nil {
+		t.Fatalf("untag: %v", err)
+	}
+
+	// Sync
+	if err := h.Sync("client-A", compProj); err != nil {
+		t.Fatalf("sync A: %v", err)
+	}
+	if err := h.Sync("client-B", compProj); err != nil {
+		t.Fatalf("sync B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	// Verify deleted on both
+	for _, cid := range []string{"client-A", "client-B"} {
+		ent := h.QueryEntity(cid, "work_session_issues", wsiID)
+		if ent != nil {
+			t.Fatalf("%s: work_session_issue should be deleted, got %v", cid, ent)
+		}
+	}
+}
+
+func TestWorkSessionIssue_LastWriteWins(t *testing.T) {
+	h := NewHarness(t, 2, compProj)
+
+	wsID := "ws-wsi3"
+	issueID := "td-wsi3"
+	wsiID := db.WsiID(wsID, issueID)
+
+	// Pre-create work session and issue on both clients
+	for _, cid := range []string{"client-A", "client-B"} {
+		if err := h.Mutate(cid, "create", "work_sessions", wsID, map[string]any{
+			"name": "Test WS", "session_id": "ses-test",
+		}); err != nil {
+			t.Fatalf("create ws on %s: %v", cid, err)
+		}
+		if err := h.Mutate(cid, "create", "issues", issueID, map[string]any{
+			"title": "Test Issue", "status": "open", "type": "task", "priority": "P2",
+		}); err != nil {
+			t.Fatalf("create issue on %s: %v", cid, err)
+		}
+	}
+
+	// Both clients tag the same combo (same deterministic ID)
+	if err := h.Mutate("client-A", "create", "work_session_issues", wsiID, map[string]any{
+		"work_session_id": wsID,
+		"issue_id":        issueID,
+	}); err != nil {
+		t.Fatalf("tag A: %v", err)
+	}
+	if err := h.Mutate("client-B", "create", "work_session_issues", wsiID, map[string]any{
+		"work_session_id": wsID,
+		"issue_id":        issueID,
+	}); err != nil {
+		t.Fatalf("tag B: %v", err)
+	}
+
+	// A pushes first, B pushes second (B gets higher server_seq)
+	if _, err := h.Push("client-A", compProj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+	if _, err := h.Push("client-B", compProj); err != nil {
+		t.Fatalf("push B: %v", err)
+	}
+
+	// Both PullAll to converge via server ordering
+	if _, err := h.PullAll("client-A", compProj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+	if _, err := h.PullAll("client-B", compProj); err != nil {
+		t.Fatalf("pullAll B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	// Both should have the tag (last write wins = B's create, which is also a create)
+	for _, cid := range []string{"client-A", "client-B"} {
+		ent := h.QueryEntity(cid, "work_session_issues", wsiID)
+		if ent == nil {
+			t.Fatalf("%s: work_session_issue not found", cid)
+		}
+		if ws, _ := ent["work_session_id"].(string); ws != wsID {
+			t.Fatalf("%s: expected work_session_id %q, got %q", cid, wsID, ws)
+		}
+	}
+}

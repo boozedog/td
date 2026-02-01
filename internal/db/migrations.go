@@ -159,6 +159,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 				migrationsRun++
 				continue
 			}
+			if migration.Version == 24 {
+				if err := db.migrateWorkSessionIssueIDs(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 24 (work_session_issue IDs): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
+			}
 			if migration.Version == 18 {
 				if err := db.migrateDeterministicIDs(); err != nil {
 					return migrationsRun, fmt.Errorf("migration 18 (deterministic IDs): %w", err)
@@ -1192,4 +1202,80 @@ func isDeleteAction(actionType string) bool {
 	default:
 		return false
 	}
+}
+
+// migrateWorkSessionIssueIDs adds a deterministic id TEXT PRIMARY KEY to
+// work_session_issues, following the same pattern as migrateDeterministicIDs
+// for board_issue_positions.
+func (db *DB) migrateWorkSessionIssueIDs() error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	exists, err := db.tableExistsTx(tx, "work_session_issues")
+	if err != nil {
+		return fmt.Errorf("check work_session_issues: %w", err)
+	}
+	if !exists {
+		return tx.Commit()
+	}
+
+	hasID, err := db.columnExistsTx(tx, "work_session_issues", "id")
+	if err != nil {
+		return fmt.Errorf("check wsi id col: %w", err)
+	}
+	if hasID {
+		return tx.Commit()
+	}
+
+	if _, err := tx.Exec(`DROP TABLE IF EXISTS work_session_issues_new`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`CREATE TABLE work_session_issues_new (
+		id TEXT PRIMARY KEY,
+		work_session_id TEXT NOT NULL,
+		issue_id TEXT NOT NULL,
+		tagged_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		UNIQUE(work_session_id, issue_id)
+	)`); err != nil {
+		return fmt.Errorf("create wsi_new: %w", err)
+	}
+
+	rows, err := tx.Query(`SELECT work_session_id, issue_id, tagged_at FROM work_session_issues`)
+	if err != nil {
+		return fmt.Errorf("read wsi: %w", err)
+	}
+	type wsiRow struct {
+		wsID, issueID string
+		taggedAt      interface{}
+	}
+	var wRows []wsiRow
+	for rows.Next() {
+		var r wsiRow
+		if err := rows.Scan(&r.wsID, &r.issueID, &r.taggedAt); err != nil {
+			rows.Close()
+			return err
+		}
+		wRows = append(wRows, r)
+	}
+	rows.Close()
+
+	for _, r := range wRows {
+		id := WsiID(r.wsID, r.issueID)
+		if _, err := tx.Exec(`INSERT INTO work_session_issues_new (id, work_session_id, issue_id, tagged_at) VALUES (?, ?, ?, ?)`,
+			id, r.wsID, r.issueID, r.taggedAt); err != nil {
+			return fmt.Errorf("insert wsi_new: %w", err)
+		}
+	}
+
+	if _, err := tx.Exec(`DROP TABLE work_session_issues`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`ALTER TABLE work_session_issues_new RENAME TO work_session_issues`); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }

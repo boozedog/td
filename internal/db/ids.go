@@ -21,6 +21,7 @@ const (
 	boardIssuePosIDPrefix = "bip_"
 	dependencyIDPrefix    = "dep_"
 	issueFileIDPrefix     = "ifl_"
+	wsiIDPrefix           = "wsi_"
 )
 
 // NormalizeIssueID ensures an issue ID has the td- prefix
@@ -137,4 +138,9 @@ func DependencyID(issueID, dependsOnID, relationType string) string {
 // so the same ID is generated regardless of OS path separators.
 func IssueFileID(issueID, filePath string) string {
 	return deterministicID(issueFileIDPrefix, issueID+"|"+NormalizeFilePathForID(filePath))
+}
+
+// WsiID returns a deterministic ID for a work_session_issues row.
+func WsiID(workSessionID, issueID string) string {
+	return deterministicID(wsiIDPrefix, workSessionID+"|"+issueID)
 }

@@ -32,6 +32,7 @@ var syncableTables = []syncableTable{
 	{"board_issue_positions", "board_position", []string{"board_position", "board_issue_positions"}, []string{"board_set_position", "board_add_issue"}},
 	{"issue_dependencies", "dependency", []string{"dependency", "issue_dependencies"}, []string{"add_dependency"}},
 	{"issue_files", "file_link", []string{"file_link", "issue_files"}, []string{"link_file"}},
+	{"work_session_issues", "work_session_issues", []string{"work_session_issue", "work_session_issues"}, []string{"work_session_tag"}},
 }
 
 // BackfillOrphanEntities scans all syncable tables for rows that have no

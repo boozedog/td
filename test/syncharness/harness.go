@@ -105,7 +105,7 @@ var migrationColumns = []string{
 }
 
 // entityTables lists the tables that hold user data (not action_log or sync_state).
-var entityTables = []string{"issues", "logs", "handoffs", "comments", "boards", "work_sessions", "board_issue_positions", "issue_dependencies", "issue_files"}
+var entityTables = []string{"issues", "logs", "handoffs", "comments", "boards", "work_sessions", "board_issue_positions", "issue_dependencies", "issue_files", "work_session_issues"}
 
 // validEntities is the set of entity types accepted by the validator.
 var validEntities = map[string]bool{
@@ -118,6 +118,7 @@ var validEntities = map[string]bool{
 	"board_issue_positions": true,
 	"issue_dependencies":    true,
 	"issue_files":           true,
+	"work_session_issues":   true,
 }
 
 // SimulatedClient represents a single sync client with its own database.

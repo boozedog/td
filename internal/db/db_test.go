@@ -467,7 +467,7 @@ func TestWorkSession(t *testing.T) {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
 
-	if err := db.TagIssueToWorkSession(ws.ID, issue.ID); err != nil {
+	if err := db.TagIssueToWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
 		t.Fatalf("TagIssueToWorkSession failed: %v", err)
 	}
 
@@ -481,7 +481,7 @@ func TestWorkSession(t *testing.T) {
 	}
 
 	// Untag
-	if err := db.UntagIssueFromWorkSession(ws.ID, issue.ID); err != nil {
+	if err := db.UntagIssueFromWorkSession(ws.ID, issue.ID, "test-session"); err != nil {
 		t.Fatalf("UntagIssueFromWorkSession failed: %v", err)
 	}
 
@@ -517,8 +517,8 @@ func TestGetLogsByWorkSession(t *testing.T) {
 	if err := db.CreateIssue(issue2); err != nil {
 		t.Fatalf("CreateIssue failed: %v", err)
 	}
-	db.TagIssueToWorkSession(ws.ID, issue1.ID)
-	db.TagIssueToWorkSession(ws.ID, issue2.ID)
+	db.TagIssueToWorkSession(ws.ID, issue1.ID, "test-session")
+	db.TagIssueToWorkSession(ws.ID, issue2.ID, "test-session")
 
 	// Add logs with work session ID
 	log1 := &models.Log{

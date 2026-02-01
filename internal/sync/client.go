@@ -11,9 +11,9 @@ import (
 // mapActionType converts td's action_log action types to sync event action types.
 func mapActionType(tdAction string) string {
 	switch tdAction {
-	case "create", "handoff", "add_dependency", "link_file", "board_create", "board_add_issue", "board_set_position":
+	case "create", "handoff", "add_dependency", "link_file", "board_create", "board_add_issue", "board_set_position", "work_session_tag":
 		return "create"
-	case "delete", "remove_dependency", "unlink_file", "board_unposition", "board_delete", "board_remove_issue":
+	case "delete", "remove_dependency", "unlink_file", "board_unposition", "board_delete", "board_remove_issue", "work_session_untag":
 		return "delete"
 	default:
 		return "update"
@@ -42,6 +42,8 @@ func normalizeEntityType(entityType string) (string, bool) {
 		return "issue_dependencies", true
 	case "file_link", "issue_files":
 		return "issue_files", true
+	case "work_session_issue", "work_session_issues":
+		return "work_session_issues", true
 	default:
 		return "", false
 	}

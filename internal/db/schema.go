@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 23
+const SchemaVersion = 24
 
 const schema = `
 -- Issues table
@@ -99,10 +99,11 @@ CREATE TABLE IF NOT EXISTS work_sessions (
 
 -- Work session issues junction table
 CREATE TABLE IF NOT EXISTS work_session_issues (
+    id TEXT PRIMARY KEY,
     work_session_id TEXT NOT NULL,
     issue_id TEXT NOT NULL,
     tagged_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (work_session_id, issue_id),
+    UNIQUE(work_session_id, issue_id),
     FOREIGN KEY (work_session_id) REFERENCES work_sessions(id),
     FOREIGN KEY (issue_id) REFERENCES issues(id)
 );
@@ -422,5 +423,11 @@ INSERT INTO boards_new SELECT * FROM boards;
 DROP TABLE boards;
 ALTER TABLE boards_new RENAME TO boards;
 `,
+	},
+	{
+		Version:     24,
+		Description: "Add deterministic id column to work_session_issues for sync",
+		// Handled by custom Go code in migrations.go (migrateWorkSessionIssueIDs)
+		SQL: "",
 	},
 }

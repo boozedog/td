@@ -100,21 +100,58 @@ func (db *DB) UpdateWorkSession(ws *models.WorkSession) error {
 }
 
 // TagIssueToWorkSession links an issue to a work session
-func (db *DB) TagIssueToWorkSession(wsID, issueID string) error {
+func (db *DB) TagIssueToWorkSession(wsID, issueID, sessionID string) error {
 	return db.withWriteLock(func() error {
+		id := WsiID(wsID, issueID)
+		now := time.Now()
 		_, err := db.conn.Exec(`
-			INSERT OR IGNORE INTO work_session_issues (work_session_id, issue_id, tagged_at)
-			VALUES (?, ?, ?)
-		`, wsID, issueID, time.Now())
-		return err
+			INSERT OR IGNORE INTO work_session_issues (id, work_session_id, issue_id, tagged_at)
+			VALUES (?, ?, ?, ?)
+		`, id, wsID, issueID, now)
+		if err != nil {
+			return err
+		}
+
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": id, "work_session_id": wsID, "issue_id": issueID, "tagged_at": now,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, sessionID, string(models.ActionWorkSessionTag), "work_session_issues", id, "", string(newData), now)
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
 	})
 }
 
 // UntagIssueFromWorkSession removes an issue from a work session
-func (db *DB) UntagIssueFromWorkSession(wsID, issueID string) error {
+func (db *DB) UntagIssueFromWorkSession(wsID, issueID, sessionID string) error {
 	return db.withWriteLock(func() error {
-		_, err := db.conn.Exec(`DELETE FROM work_session_issues WHERE work_session_id = ? AND issue_id = ?`, wsID, issueID)
-		return err
+		id := WsiID(wsID, issueID)
+		_, err := db.conn.Exec(`DELETE FROM work_session_issues WHERE id = ?`, id)
+		if err != nil {
+			return err
+		}
+
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		newData, _ := json.Marshal(map[string]interface{}{
+			"id": id, "work_session_id": wsID, "issue_id": issueID,
+		})
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, sessionID, string(models.ActionWorkSessionUntag), "work_session_issues", id, "", string(newData), time.Now())
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
 	})
 }
 

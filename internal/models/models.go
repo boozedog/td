@@ -256,6 +256,8 @@ const (
 	ActionBoardMoveIssue   ActionType = "board_move_issue"
 	ActionBoardSetPosition ActionType = "board_set_position"
 	ActionBoardUnposition  ActionType = "board_unposition"
+	ActionWorkSessionTag   ActionType = "work_session_tag"
+	ActionWorkSessionUntag ActionType = "work_session_untag"
 )
 
 // ActionLog represents a logged action that can be undone
