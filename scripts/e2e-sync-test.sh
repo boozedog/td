@@ -198,31 +198,82 @@ td_b sync-project link "$PROJECT_ID"
 ok "Client B linked"
 
 # =====================================================================
-# Manual mode: print instructions and wait
+# Manual mode: open tmux session (or print instructions as fallback)
 # =====================================================================
 if [ "$MODE" = "manual" ]; then
-    # Write sourceable env files for each shell
-    cat > "$WORKDIR/shell-a.env" <<ENVEOF
-export HOME="$HOME_A"
-export PATH="$WORKDIR:\$PATH"
-export PS1="[alice] \w \$ "
-cd "$CLIENT_A_DIR"
-echo "Ready as alice@test.local (client A)"
-ENVEOF
-
-    cat > "$WORKDIR/shell-b.env" <<ENVEOF
-export HOME="$HOME_B"
-export PATH="$WORKDIR:\$PATH"
-export PS1="[bob] \w \$ "
-cd "$CLIENT_B_DIR"
-echo "Ready as bob@test.local (client B)"
-ENVEOF
-
     SYNC_MODE_LABEL="manual (td sync)"
     if [ "$AUTO_SYNC" = "true" ]; then
         SYNC_MODE_LABEL="auto-sync (2s debounce, 10s interval)"
     fi
 
+    # Write sourceable env files for each shell
+    cat > "$WORKDIR/shell-a.env" <<ENVEOF
+export HOME="$HOME_A"
+export PATH="$WORKDIR:\$PATH"
+export PS1="\[\033[0;32m\][alice]\[\033[0m\] \w \$ "
+cd "$CLIENT_A_DIR"
+ENVEOF
+
+    cat > "$WORKDIR/shell-b.env" <<ENVEOF
+export HOME="$HOME_B"
+export PATH="$WORKDIR:\$PATH"
+export PS1="\[\033[0;36m\][bob]\[\033[0m\] \w \$ "
+cd "$CLIENT_B_DIR"
+ENVEOF
+
+    # Build a hints message shown at the top of each pane
+    HINTS="Sync: $SYNC_MODE_LABEL | Server: $SERVER_URL | Project: $PROJECT_ID"
+
+    if command -v tmux &>/dev/null; then
+        TMUX_SESSION="td-e2e"
+
+        # Kill stale session if one exists
+        tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+
+        # Detect user's shell
+        USER_SHELL="${SHELL:-/bin/bash}"
+
+        # Create session with first pane (alice)
+        tmux new-session -d -s "$TMUX_SESSION" -x 200 -y 50 "$USER_SHELL"
+        tmux send-keys -t "$TMUX_SESSION" "source $WORKDIR/shell-a.env" Enter
+        tmux send-keys -t "$TMUX_SESSION" "echo ''; echo '$HINTS'; echo 'Ready as alice@test.local (client A)'; echo ''" Enter
+
+        # Split and create second pane (bob)
+        tmux split-window -h -t "$TMUX_SESSION" "$USER_SHELL"
+        tmux send-keys -t "$TMUX_SESSION" "source $WORKDIR/shell-b.env" Enter
+        tmux send-keys -t "$TMUX_SESSION" "echo ''; echo '$HINTS'; echo 'Ready as bob@test.local (client B)'; echo ''" Enter
+
+        # Focus left pane
+        tmux select-pane -t "$TMUX_SESSION:.0"
+
+        echo ""
+        echo -e "${GREEN}${BOLD}Launching tmux session: $TMUX_SESSION${NC}"
+        echo -e "${DIM}Close all panes or detach (Ctrl-B d) to tear down.${NC}"
+        echo ""
+
+        # Attach — blocks until user detaches or closes all panes
+        tmux attach -t "$TMUX_SESSION" || true
+
+        # After detach/exit, check if session still alive
+        if tmux has-session -t "$TMUX_SESSION" 2>/dev/null; then
+            echo ""
+            echo -e "${YELLOW}Detached. Server still running (PID $SERVER_PID).${NC}"
+            echo -e "  Reattach:  tmux attach -t $TMUX_SESSION"
+            echo -e "  Tear down: tmux kill-session -t $TMUX_SESSION"
+            echo ""
+            echo -e "${YELLOW}Press Enter here to kill everything, or Ctrl-C to keep it running.${NC}"
+            # Disable the auto-cleanup trap so Ctrl-C just exits the script
+            trap - EXIT
+            read -r
+            # User pressed Enter — clean up manually
+            tmux kill-session -t "$TMUX_SESSION" 2>/dev/null || true
+            cleanup
+        fi
+        # Session gone — cleanup runs via trap
+        exit 0
+    fi
+
+    # --- Fallback: no tmux ---
     echo ""
     echo -e "${GREEN}${BOLD}========================================${NC}"
     echo -e "${GREEN}${BOLD}  Setup complete! Ready for testing.${NC}"
