@@ -210,11 +210,11 @@ if [ "$MODE" = "manual" ]; then
     # Write sourceable env files for each shell (handle bash vs zsh prompts)
     USER_SHELL="${SHELL:-/bin/bash}"
     if [[ "$USER_SHELL" == *zsh* ]]; then
-        PROMPT_A='export PROMPT="%F{green}[alice]%f %~ %# "'
-        PROMPT_B='export PROMPT="%F{cyan}[bob]%f %~ %# "'
+        PROMPT_A='export PROMPT="%F{green}%Balice%b%f %F{242}td-sync%f %# "'
+        PROMPT_B='export PROMPT="%F{cyan}%Bbob%b%f %F{242}td-sync%f %# "'
     else
-        PROMPT_A='export PS1="\[\e[0;32m\][alice]\[\e[0m\] \w \$ "'
-        PROMPT_B='export PS1="\[\e[0;36m\][bob]\[\e[0m\] \w \$ "'
+        PROMPT_A='export PS1="\[\e[1;32m\]alice\[\e[0m\] \[\e[38;5;242m\]td-sync\[\e[0m\] \$ "'
+        PROMPT_B='export PS1="\[\e[1;36m\]bob\[\e[0m\] \[\e[38;5;242m\]td-sync\[\e[0m\] \$ "'
     fi
 
     cat > "$WORKDIR/shell-a.env" <<ENVEOF
