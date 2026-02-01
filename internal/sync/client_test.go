@@ -211,8 +211,12 @@ func TestGetPendingEvents_ActionTypeMapping(t *testing.T) {
 		{"al-00000010", "unlink_file", "issue_files", "delete"},
 		{"al-00000011", "board_unposition", "board_position", "delete"},
 		{"al-00000012", "board_delete", "boards", "delete"},
-		{"al-00000013", "board_set_position", "board_position", "update"},
+		{"al-00000013", "board_set_position", "board_position", "create"},
 		{"al-00000014", "board_remove_issue", "board_position", "delete"},
+		{"al-00000015", "add_dependency", "issue_dependencies", "create"},
+		{"al-00000016", "link_file", "issue_files", "create"},
+		{"al-00000017", "board_create", "boards", "create"},
+		{"al-00000018", "board_add_issue", "board_position", "create"},
 	}
 
 	for _, tc := range cases {

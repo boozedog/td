@@ -66,6 +66,9 @@ func applyEvent(tx *sql.Tx, event Event, validator EntityValidator) (applyResult
 
 	switch event.ActionType {
 	case "create", "update":
+		if event.ActionType == "update" {
+			return upsertEntityIfExists(tx, event.EntityType, event.EntityID, event.Payload)
+		}
 		return upsertEntity(tx, event.EntityType, event.EntityID, event.Payload)
 	case "delete":
 		return applyResult{}, deleteEntity(tx, event.EntityType, event.EntityID)
@@ -79,6 +82,18 @@ func applyEvent(tx *sql.Tx, event Event, validator EntityValidator) (applyResult
 // upsertEntity inserts or replaces a row using the JSON payload fields.
 // Returns applyResult with Overwritten=true and OldData populated if an existing row was replaced.
 func upsertEntity(tx *sql.Tx, entityType, entityID string, newData json.RawMessage) (applyResult, error) {
+	return upsertEntityWithMode(tx, entityType, entityID, newData, false)
+}
+
+// upsertEntityIfExists updates a row only if it already exists.
+// This prevents update events from resurrecting hard-deleted rows.
+func upsertEntityIfExists(tx *sql.Tx, entityType, entityID string, newData json.RawMessage) (applyResult, error) {
+	return upsertEntityWithMode(tx, entityType, entityID, newData, true)
+}
+
+// upsertEntityWithMode inserts or replaces a row using the JSON payload fields.
+// If requireExisting is true, the operation is a no-op when the row does not exist.
+func upsertEntityWithMode(tx *sql.Tx, entityType, entityID string, newData json.RawMessage, requireExisting bool) (applyResult, error) {
 	if newData == nil {
 		return applyResult{}, fmt.Errorf("upsert %s/%s: nil payload", entityType, entityID)
 	}
@@ -124,6 +139,11 @@ func upsertEntity(tx *sql.Tx, entityType, entityID string, newData json.RawMessa
 	}
 	// Close before INSERT to release shared lock
 	rows.Close()
+
+	if requireExisting && !overwritten {
+		slog.Debug("upsert skipped (missing row)", "table", entityType, "id", entityID)
+		return applyResult{}, nil
+	}
 
 	fields["id"] = entityID
 

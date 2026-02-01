@@ -220,6 +220,55 @@ func TestMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestUpdateDoesNotRecreateAfterDelete(t *testing.T) {
+	db := setupDB(t)
+
+	// Create
+	tx := beginTx(t, db)
+	_, err := ApplyEvent(tx, Event{
+		ActionType: "create",
+		EntityType: "issues",
+		EntityID:   "i1",
+		Payload:    []byte(`{"title":"old","status":"open"}`),
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	tx.Commit()
+
+	// Delete
+	tx = beginTx(t, db)
+	_, err = ApplyEvent(tx, Event{
+		ActionType: "delete",
+		EntityType: "issues",
+		EntityID:   "i1",
+		Payload:    []byte(`{}`),
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	tx.Commit()
+
+	// Update after delete should be ignored
+	tx = beginTx(t, db)
+	_, err = ApplyEvent(tx, Event{
+		ActionType: "update",
+		EntityType: "issues",
+		EntityID:   "i1",
+		Payload:    []byte(`{"title":"resurrected","status":"closed"}`),
+	}, testValidator)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	tx.Commit()
+
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM issues WHERE id = ?", "i1").Scan(&count)
+	if count != 0 {
+		t.Fatalf("expected issue to remain deleted, got count=%d", count)
+	}
+}
+
 func TestColumnNameInjection_DroppedSilently(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)

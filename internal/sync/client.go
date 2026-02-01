@@ -11,7 +11,7 @@ import (
 // mapActionType converts td's action_log action types to sync event action types.
 func mapActionType(tdAction string) string {
 	switch tdAction {
-	case "create", "handoff":
+	case "create", "handoff", "add_dependency", "link_file", "board_create", "board_add_issue", "board_set_position":
 		return "create"
 	case "delete", "remove_dependency", "unlink_file", "board_unposition", "board_delete", "board_remove_issue":
 		return "delete"
