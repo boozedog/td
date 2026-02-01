@@ -625,6 +625,191 @@ func TestBoardDuplicateName_Sync(t *testing.T) {
 
 // ─── Work session issue sync tests ───
 
+// ─── Issue file convergence tests ───
+
+func TestIssueFileLink_BothClientsLinkSameFile(t *testing.T) {
+	h := NewHarness(t, 2, compProj)
+
+	issueID := "td-ifl-both1"
+	filePath := "cmd/root.go"
+	fileID := db.IssueFileID(issueID, filePath)
+
+	// Both clients link the identical file to the same issue concurrently
+	for _, cid := range []string{"client-A", "client-B"} {
+		if err := h.Mutate(cid, "create", "issue_files", fileID, map[string]any{
+			"issue_id":  issueID,
+			"file_path": filePath,
+			"role":      "implementation",
+		}); err != nil {
+			t.Fatalf("create on %s: %v", cid, err)
+		}
+	}
+
+	// A pushes first, B pushes second
+	if _, err := h.Push("client-A", compProj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+	if _, err := h.Push("client-B", compProj); err != nil {
+		t.Fatalf("push B: %v", err)
+	}
+
+	// Both PullAll to converge
+	if _, err := h.PullAll("client-A", compProj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+	if _, err := h.PullAll("client-B", compProj); err != nil {
+		t.Fatalf("pullAll B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	// Verify exactly one row exists on both clients (no duplicates, no silent deletion)
+	for _, cid := range []string{"client-A", "client-B"} {
+		ent := h.QueryEntity(cid, "issue_files", fileID)
+		if ent == nil {
+			t.Fatalf("%s: file link %s was silently deleted", cid, fileID)
+		}
+		fp, _ := ent["file_path"].(string)
+		if fp != filePath {
+			t.Fatalf("%s: expected file_path %q, got %q", cid, filePath, fp)
+		}
+		count := h.CountEntities(cid, "issue_files")
+		if count != 1 {
+			t.Fatalf("%s: expected 1 issue_files row, got %d", cid, count)
+		}
+	}
+}
+
+func TestIssueFileLink_PathNormalization(t *testing.T) {
+	h := NewHarness(t, 2, compProj)
+
+	issueID := "td-ifl-norm1"
+	// NormalizeFilePathForID uses filepath.Clean + filepath.ToSlash.
+	// filepath.Clean collapses ".." segments, so these two paths produce the same ID:
+	cleanPath := "internal/db/schema.go"
+	dirtyPath := "internal/db/../db/schema.go"
+
+	// Both should produce the same deterministic ID after path cleaning
+	idClean := db.IssueFileID(issueID, cleanPath)
+	idDirty := db.IssueFileID(issueID, dirtyPath)
+	if idClean != idDirty {
+		t.Fatalf("IssueFileID should normalize paths: clean=%q dirty=%q", idClean, idDirty)
+	}
+
+	fileID := idClean
+
+	// Client A links using clean path
+	if err := h.Mutate("client-A", "create", "issue_files", fileID, map[string]any{
+		"issue_id":  issueID,
+		"file_path": cleanPath,
+		"role":      "implementation",
+	}); err != nil {
+		t.Fatalf("create A: %v", err)
+	}
+
+	// Client B links using dirty path (same deterministic ID after normalization)
+	if err := h.Mutate("client-B", "create", "issue_files", fileID, map[string]any{
+		"issue_id":  issueID,
+		"file_path": dirtyPath,
+		"role":      "implementation",
+	}); err != nil {
+		t.Fatalf("create B: %v", err)
+	}
+
+	// Both push, then PullAll
+	if _, err := h.Push("client-A", compProj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+	if _, err := h.Push("client-B", compProj); err != nil {
+		t.Fatalf("push B: %v", err)
+	}
+	if _, err := h.PullAll("client-A", compProj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+	if _, err := h.PullAll("client-B", compProj); err != nil {
+		t.Fatalf("pullAll B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	// Both clients should have exactly one row for this file link
+	for _, cid := range []string{"client-A", "client-B"} {
+		ent := h.QueryEntity(cid, "issue_files", fileID)
+		if ent == nil {
+			t.Fatalf("%s: file link not found", cid)
+		}
+		count := h.CountEntities(cid, "issue_files")
+		if count != 1 {
+			t.Fatalf("%s: expected 1 issue_files row, got %d", cid, count)
+		}
+	}
+}
+
+func TestIssueFileLink_ConcurrentLinkUnlink(t *testing.T) {
+	h := NewHarness(t, 2, compProj)
+
+	issueID := "td-ifl-lu1"
+	filePath := "pkg/monitor/tui.go"
+	fileID := db.IssueFileID(issueID, filePath)
+
+	// Both clients start with the file link
+	for _, cid := range []string{"client-A", "client-B"} {
+		if err := h.Mutate(cid, "create", "issue_files", fileID, map[string]any{
+			"issue_id":  issueID,
+			"file_path": filePath,
+			"role":      "implementation",
+		}); err != nil {
+			t.Fatalf("create on %s: %v", cid, err)
+		}
+	}
+
+	// Sync so both have the link
+	if err := h.Sync("client-A", compProj); err != nil {
+		t.Fatalf("sync A1: %v", err)
+	}
+	if err := h.Sync("client-B", compProj); err != nil {
+		t.Fatalf("sync B1: %v", err)
+	}
+
+	// Client A re-links (update with new role), client B unlinks concurrently
+	if err := h.Mutate("client-A", "update", "issue_files", fileID, map[string]any{
+		"issue_id":  issueID,
+		"file_path": filePath,
+		"role":      "test",
+	}); err != nil {
+		t.Fatalf("update A: %v", err)
+	}
+	if err := h.Mutate("client-B", "delete", "issue_files", fileID, nil); err != nil {
+		t.Fatalf("delete B: %v", err)
+	}
+
+	// A pushes first, B pushes second (B's delete gets higher server_seq => wins)
+	if _, err := h.Push("client-A", compProj); err != nil {
+		t.Fatalf("push A: %v", err)
+	}
+	if _, err := h.Push("client-B", compProj); err != nil {
+		t.Fatalf("push B: %v", err)
+	}
+
+	// Both PullAll to converge
+	if _, err := h.PullAll("client-A", compProj); err != nil {
+		t.Fatalf("pullAll A: %v", err)
+	}
+	if _, err := h.PullAll("client-B", compProj); err != nil {
+		t.Fatalf("pullAll B: %v", err)
+	}
+
+	h.AssertConverged(compProj)
+
+	// B pushed last (delete) => last-write-wins => file link should be gone
+	for _, cid := range []string{"client-A", "client-B"} {
+		ent := h.QueryEntity(cid, "issue_files", fileID)
+		if ent != nil {
+			t.Fatalf("%s: file link should be deleted (last-write-wins), got %v", cid, ent)
+		}
+	}
+}
+
 func TestWorkSessionIssueTag_Sync(t *testing.T) {
 	h := NewHarness(t, 2, compProj)
 
