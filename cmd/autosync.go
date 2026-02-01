@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
+	"sync"
 	"time"
 
 	"github.com/marcus/td/internal/db"
@@ -12,6 +12,13 @@ import (
 	tdsync "github.com/marcus/td/internal/sync"
 	"github.com/marcus/td/internal/syncclient"
 	"github.com/marcus/td/internal/syncconfig"
+)
+
+const autoSyncHTTPTimeout = 5 * time.Second
+
+var (
+	lastAutoSyncAt time.Time
+	autoSyncMu     sync.Mutex
 )
 
 // mutatingCommands lists commands that modify local data and should trigger auto-sync.
@@ -53,30 +60,20 @@ func isMutatingCommand(name string) bool {
 	return mutatingCommands[name]
 }
 
-// AutoSyncEnabled returns true if auto-sync is enabled.
-// Checks TD_AUTO_SYNC env var, then config. Defaults to true when authenticated.
+// AutoSyncEnabled returns true if auto-sync is enabled via config.
 func AutoSyncEnabled() bool {
-	if v := os.Getenv("TD_AUTO_SYNC"); v != "" {
-		return v == "1" || v == "true"
-	}
-	return true // enabled by default
+	return syncconfig.GetAutoSyncEnabled()
 }
 
-// autoSyncAfterMutation runs a quick push after a mutating command completes.
-// Runs synchronously but with a short timeout. Errors are logged, not returned.
-func autoSyncAfterMutation() {
-	if !AutoSyncEnabled() {
+// autoSyncOnce runs a push and optional pull silently.
+func autoSyncOnce() {
+	if !AutoSyncEnabled() || !syncconfig.IsAuthenticated() {
 		return
 	}
-	if !syncconfig.IsAuthenticated() {
-		return
-	}
-
 	dir := getBaseDir()
 	if dir == "" {
 		return
 	}
-
 	database, err := db.Open(dir)
 	if err != nil {
 		slog.Debug("autosync: open db", "err", err)
@@ -86,7 +83,7 @@ func autoSyncAfterMutation() {
 
 	syncState, err := database.GetSyncState()
 	if err != nil || syncState == nil {
-		return // not linked
+		return
 	}
 	if syncState.SyncDisabled {
 		return
@@ -94,18 +91,124 @@ func autoSyncAfterMutation() {
 
 	deviceID, err := syncconfig.GetDeviceID()
 	if err != nil {
+		slog.Debug("autosync: device ID unavailable", "err", err)
 		return
 	}
 
 	serverURL := syncconfig.GetServerURL()
 	apiKey := syncconfig.GetAPIKey()
 	client := syncclient.New(serverURL, apiKey, deviceID)
-	client.HTTP.Timeout = 5 * time.Second // short timeout for auto-sync
+	client.HTTP.Timeout = autoSyncHTTPTimeout
 
-	// Push only — pull happens on next explicit sync or monitor tick
 	if err := autoSyncPush(database, client, syncState, deviceID); err != nil {
 		slog.Debug("autosync: push", "err", err)
 	}
+
+	if syncconfig.GetAutoSyncPull() {
+		if err := autoSyncPull(database, client, syncState, deviceID); err != nil {
+			slog.Debug("autosync: pull", "err", err)
+		}
+	}
+}
+
+// autoSyncAfterMutation runs a debounced push+pull after a mutating command.
+func autoSyncAfterMutation() {
+	debounce := syncconfig.GetAutoSyncDebounce()
+	autoSyncMu.Lock()
+	if time.Since(lastAutoSyncAt) < debounce {
+		autoSyncMu.Unlock()
+		return
+	}
+	lastAutoSyncAt = time.Now()
+	autoSyncMu.Unlock()
+
+	autoSyncOnce()
+}
+
+// startupSyncSkipCommands lists commands that should not trigger startup auto-sync.
+var startupSyncSkipCommands = map[string]bool{
+	"sync": true, "auth": true, "login": true, "version": true, "help": true,
+}
+
+// autoSyncOnStartup runs a one-time push+pull at process start if configured.
+func autoSyncOnStartup(cmdName string) {
+	if !syncconfig.GetAutoSyncOnStart() {
+		return
+	}
+	if startupSyncSkipCommands[cmdName] {
+		return
+	}
+	// Set debounce timestamp before sync to prevent concurrent post-mutation sync
+	autoSyncMu.Lock()
+	lastAutoSyncAt = time.Now()
+	autoSyncMu.Unlock()
+
+	autoSyncOnce()
+}
+
+// autoSyncPull pulls remote events and applies them silently.
+func autoSyncPull(database *db.DB, client *syncclient.Client, state *db.SyncState, deviceID string) error {
+	lastSeq := state.LastPulledServerSeq
+
+	for {
+		pullResp, err := client.Pull(state.ProjectID, lastSeq, 1000, deviceID)
+		if err != nil {
+			return fmt.Errorf("pull: %w", err)
+		}
+		if len(pullResp.Events) == 0 {
+			break
+		}
+
+		events := make([]tdsync.Event, len(pullResp.Events))
+		for i, pe := range pullResp.Events {
+			clientTS, _ := time.Parse(time.RFC3339, pe.ClientTimestamp)
+			events[i] = tdsync.Event{
+				ServerSeq:       pe.ServerSeq,
+				DeviceID:        pe.DeviceID,
+				SessionID:       pe.SessionID,
+				ClientActionID:  pe.ClientActionID,
+				ActionType:      pe.ActionType,
+				EntityType:      pe.EntityType,
+				EntityID:        pe.EntityID,
+				Payload:         pe.Payload,
+				ClientTimestamp: clientTS,
+			}
+		}
+
+		conn := database.Conn()
+		tx, err := conn.Begin()
+		if err != nil {
+			return fmt.Errorf("begin tx: %w", err)
+		}
+
+		result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator, state.LastSyncAt)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("apply events: %w", err)
+		}
+
+		if err := storeConflicts(tx, result.Conflicts); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("store conflicts: %w", err)
+		}
+
+		if _, err := tx.Exec(`UPDATE sync_state SET last_pulled_server_seq = ?, last_sync_at = CURRENT_TIMESTAMP`, pullResp.LastServerSeq); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("update sync state: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit: %w", err)
+		}
+
+		lastSeq = pullResp.LastServerSeq
+		slog.Debug("autosync: pulled", "events", len(pullResp.Events))
+
+		if !pullResp.HasMore {
+			break
+		}
+	}
+	return nil
 }
 
 // autoSyncPush pushes pending events silently. Returns nil if nothing to push.

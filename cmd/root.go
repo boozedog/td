@@ -36,6 +36,12 @@ var rootCmd = &cobra.Command{
 Optimized for session continuity—capturing working state so new context windows can resume where previous ones stopped.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		cmdStartTime = time.Now()
+		// Auto-sync on startup (push+pull)
+		name := cmd.Name()
+		if cmd.Parent() != nil && cmd.Parent().Name() != "td" {
+			name = cmd.Parent().Name()
+		}
+		autoSyncOnStartup(name)
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		// Capture executed command for analytics (logged in Execute() to avoid double logging)

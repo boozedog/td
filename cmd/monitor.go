@@ -64,8 +64,8 @@ Mouse support:
 		if AutoSyncEnabled() && syncconfig.IsAuthenticated() {
 			syncState, _ := database.GetSyncState()
 			if syncState != nil && !syncState.SyncDisabled {
-				model.AutoSyncFunc = func() { autoSyncAfterMutation() }
-				model.AutoSyncInterval = 30 * time.Second
+				model.AutoSyncFunc = func() { autoSyncOnce() }
+				model.AutoSyncInterval = syncconfig.GetAutoSyncInterval()
 			}
 		}
 

@@ -247,11 +247,18 @@ Clients don't need to be on the same version to sync. An older client won't see 
 
 ### Sync triggers
 
-- **On startup**: attempt sync for all projects if authenticated.
-- **On debounce after local writes**: sync after a short delay (e.g., 2s).
-- **Periodically**: jittered interval (30–120s) while td is running.
-- **Manual**: `td sync` command.
-- Sync is opt-out per project (`sync_disabled`) and globally.
+Auto-sync is configured via `sync.auto` in `~/.config/td/config.json`:
+
+| Trigger | Config field | Default | Behavior |
+|---------|-------------|---------|----------|
+| Startup | `auto.on_start` | `true` | Push+pull on command start (skipped for sync/auth/login/version/help) |
+| Post-mutation | `auto.debounce` | `"3s"` | Push+pull after mutating commands, debounced |
+| Periodic | `auto.interval` | `"5m"` | Push+pull at interval (TUI monitor) |
+| Manual | n/a | n/a | `td sync` command |
+
+Auto-sync requires: `auto.enabled=true` + authenticated + project linked. All auto-sync operations are silent (`slog.Debug` only) with 5s HTTP timeout. Set `auto.pull=false` for push-only.
+
+Sync is opt-out per project (`sync_disabled`) and globally (`auto.enabled`).
 
 ### Push protocol
 
@@ -649,18 +656,36 @@ File: `~/.config/td/config.json`
   "sync": {
     "url": "https://api.td.dev",
     "enabled": true,
-    "auto_sync": true
+    "auto": {
+      "enabled": true,
+      "on_start": true,
+      "debounce": "3s",
+      "interval": "5m",
+      "pull": true
+    }
   }
 }
 ```
 
+| Field | Default | Description |
+|---|---|---|
+| `auto.enabled` | `true` | Master switch for all auto-sync |
+| `auto.on_start` | `true` | Push+pull on command startup |
+| `auto.debounce` | `"3s"` | Delay after mutations before push+pull |
+| `auto.interval` | `"5m"` | Periodic push+pull interval (TUI monitor) |
+| `auto.pull` | `true` | Include pull in auto-sync; `false` for push-only |
+
 Environment variables (override config file):
 
 ```bash
-TD_SYNC_URL="https://api.td.dev"    # Server URL
-TD_AUTH_KEY="td_live_xxxxxxxx"       # API key (overrides auth.json)
-TD_SYNC_ENABLED="true"              # Enable/disable sync
-TD_SYNC_AUTO="true"                 # Auto-sync (startup, periodic, debounce)
+TD_SYNC_URL="https://api.td.dev"        # Server URL
+TD_AUTH_KEY="td_live_xxxxxxxx"           # API key (overrides auth.json)
+TD_SYNC_ENABLED="true"                  # Enable/disable sync
+TD_SYNC_AUTO="true"                     # Enable/disable auto-sync
+TD_SYNC_AUTO_START="true"               # Enable/disable startup sync
+TD_SYNC_AUTO_DEBOUNCE="3s"              # Debounce duration
+TD_SYNC_AUTO_INTERVAL="5m"              # Periodic sync interval
+TD_SYNC_AUTO_PULL="true"                # Include pull in auto-sync
 ```
 
 ---
@@ -908,7 +933,7 @@ td auth login --server https://your-server:8080
 - [ ] `td doctor` diagnostics
 - [ ] Rate limiting
 - [ ] Email-based auth (magic links for collaboration invites)
-- [ ] Auto-sync triggers (startup, debounce, periodic)
+- [x] Auto-sync triggers (startup, debounce, periodic)
 
 ### Phase 3: Collaboration
 - [ ] Invite flow (email)

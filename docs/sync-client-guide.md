@@ -43,8 +43,8 @@ Deterministic IDs ensure the same logical entity produces the same ID across cli
 | Action | Automatic? |
 |---|---|
 | Recording local changes to the action log | Automatic (every create/update/delete is logged) |
-| Pushing changes to server | Manual (`td sync` or `td sync --push`) |
-| Pulling changes from server | Manual (`td sync` or `td sync --pull`) |
+| Pushing changes to server | Manual (`td sync`) or automatic (if auto-sync enabled) |
+| Pulling changes from server | Manual (`td sync`) or automatic (if auto-sync enabled) |
 | Conflict detection | Automatic during pull |
 | Conflict resolution | Automatic (last-write-wins; both versions preserved) |
 | Authentication token refresh | Not automatic (re-login when expired) |
@@ -73,6 +73,52 @@ export TD_SYNC_URL=https://sync.example.com
 ```
 
 Priority: `TD_SYNC_URL` env > `config.json` > `http://localhost:8080`
+
+### Auto-sync
+
+Auto-sync runs push+pull silently in the background. Enable it in config:
+
+```json
+{
+  "sync": {
+    "url": "https://sync.example.com",
+    "auto": {
+      "enabled": true,
+      "on_start": true,
+      "debounce": "3s",
+      "interval": "5m",
+      "pull": true
+    }
+  }
+}
+```
+
+| Field | Default | Description |
+|---|---|---|
+| `auto.enabled` | `true` | Master switch for all auto-sync |
+| `auto.on_start` | `true` | Push+pull on command startup (skipped for sync/auth/login/version/help) |
+| `auto.debounce` | `"3s"` | Delay after mutating commands before push+pull |
+| `auto.interval` | `"5m"` | Periodic push+pull interval (used by the TUI monitor) |
+| `auto.pull` | `true` | Include pull in auto-sync; set `false` for push-only |
+
+**Environment variable overrides** (take precedence over config):
+
+| Variable | Description |
+|---|---|
+| `TD_SYNC_AUTO` | Enable/disable auto-sync (`"1"`/`"true"` or `"0"`/`"false"`) |
+| `TD_SYNC_AUTO_START` | Enable/disable startup sync |
+| `TD_SYNC_AUTO_DEBOUNCE` | Debounce duration (e.g. `"3s"`, `"500ms"`) |
+| `TD_SYNC_AUTO_INTERVAL` | Periodic sync interval (e.g. `"5m"`, `"30s"`) |
+| `TD_SYNC_AUTO_PULL` | Enable/disable pull during auto-sync |
+
+**Behavior:**
+
+- **Startup sync**: Runs push+pull on every command start (except sync/auth/login/version/help), if enabled+on_start+authenticated+linked.
+- **Post-mutation sync**: Runs push+pull after mutating commands, debounced (default 3s).
+- **Monitor periodic sync**: Runs push+pull at the configured interval (default 5m).
+- **Pull control**: All auto-sync includes pull by default; set `pull=false` for push-only.
+
+All auto-sync operations are silent (`slog.Debug` only) and use a 5s HTTP timeout.
 
 ### 2. Authenticate
 
@@ -434,6 +480,11 @@ The server caches built snapshots at `{dataDir}/snapshots/{projectID}/{seq}.db`.
 | `TD_SYNC_URL` | Override server URL |
 | `TD_AUTH_KEY` | Override API key |
 | `TD_SYNC_SNAPSHOT_THRESHOLD` | Snapshot bootstrap threshold (default 100; 0 disables) |
+| `TD_SYNC_AUTO` | Enable/disable auto-sync (`"1"`/`"true"` or `"0"`/`"false"`) |
+| `TD_SYNC_AUTO_START` | Enable/disable startup sync |
+| `TD_SYNC_AUTO_DEBOUNCE` | Debounce duration (e.g. `"3s"`, `"500ms"`) |
+| `TD_SYNC_AUTO_INTERVAL` | Periodic sync interval (e.g. `"5m"`, `"30s"`) |
+| `TD_SYNC_AUTO_PULL` | Enable/disable pull during auto-sync |
 
 ### Device ID
 
