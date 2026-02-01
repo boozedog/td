@@ -33,22 +33,6 @@ func (m *Model) logPositionSet(boardID, issueID string, position int) {
 	})
 }
 
-// logPositionRemove logs an ActionBoardUnposition to the action log.
-func (m *Model) logPositionRemove(boardID, issueID string, oldPosition int) {
-	bipID := db.BoardIssuePosID(boardID, issueID)
-	data, _ := json.Marshal(map[string]interface{}{
-		"id": bipID, "board_id": boardID, "issue_id": issueID,
-		"position": oldPosition,
-	})
-	m.DB.LogAction(&models.ActionLog{
-		SessionID:    m.SessionID,
-		ActionType:   models.ActionBoardUnposition,
-		EntityType:   "board_issue_positions",
-		EntityID:     bipID,
-		NewData: string(data),
-	})
-}
-
 // currentContext returns the keymap context based on current UI state
 func (m Model) currentContext() keymap.Context {
 	if m.GettingStartedOpen {
@@ -1559,21 +1543,15 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 	if !targetIssue.HasPosition {
 		var targetPos int
 		if currentIssue.HasPosition {
-			// Place target relative to current's position
+			// Place target relative to current using sparse gap
 			if direction < 0 {
-				targetPos = currentIssue.Position // Target goes at current's position (will shift current down)
+				targetPos = currentIssue.Position - db.PositionGap
 			} else {
-				targetPos = currentIssue.Position + 1
+				targetPos = currentIssue.Position + db.PositionGap
 			}
 		} else {
-			// Neither positioned - find nearest positioned neighbor or use 1
-			targetPos = 1
-			for i := targetIdx; i >= 0; i-- {
-				if m.BoardMode.Issues[i].HasPosition {
-					targetPos = m.BoardMode.Issues[i].Position + 1
-					break
-				}
-			}
+			// Neither positioned - assign first sparse key
+			targetPos = db.PositionGap
 		}
 		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetIssue.Issue.ID, targetPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
@@ -1588,12 +1566,12 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 
 	// Now handle current issue
 	if !currentIssue.HasPosition {
-		// Current is unpositioned - insert relative to target
+		// Current is unpositioned - insert relative to target using sparse gap
 		var insertPos int
 		if direction < 0 {
-			insertPos = targetIssue.Position // Moving up: current takes target's position
+			insertPos = targetIssue.Position - db.PositionGap
 		} else {
-			insertPos = targetIssue.Position + 1 // Moving down: current goes after target
+			insertPos = targetIssue.Position + db.PositionGap
 		}
 		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentIssue.Issue.ID, insertPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
@@ -1669,15 +1647,15 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 	if !targetBIV.HasPosition {
 		var targetPos int
 		if currentBIV.HasPosition {
-			// Place target relative to current's position
+			// Place target relative to current using sparse gap
 			if direction < 0 {
-				targetPos = currentBIV.Position // Target goes at current's position (will shift current down)
+				targetPos = currentBIV.Position - db.PositionGap
 			} else {
-				targetPos = currentBIV.Position + 1
+				targetPos = currentBIV.Position + db.PositionGap
 			}
 		} else {
-			// Neither positioned - start fresh
-			targetPos = 1
+			// Neither positioned - assign first sparse key
+			targetPos = db.PositionGap
 		}
 		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, targetBIV.Issue.ID, targetPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
@@ -1691,12 +1669,12 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 
 	// Now handle current issue
 	if !currentBIV.HasPosition {
-		// Current is unpositioned - insert relative to target
+		// Current is unpositioned - insert relative to target using sparse gap
 		var insertPos int
 		if direction < 0 {
-			insertPos = targetBIV.Position // Moving up: current takes target's position
+			insertPos = targetBIV.Position - db.PositionGap
 		} else {
-			insertPos = targetBIV.Position + 1 // Moving down: current goes after target
+			insertPos = targetBIV.Position + db.PositionGap
 		}
 		if err := m.DB.SetIssuePosition(m.BoardMode.Board.ID, currentBIV.Issue.ID, insertPos); err != nil {
 			m.StatusMessage = "Error: " + err.Error()
@@ -1766,13 +1744,29 @@ func (m Model) moveIssueToTop() (Model, tea.Cmd) {
 		issueID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
 	}
 
-	// Move to position 1 (SetIssuePosition handles shifting)
-	if err := m.DB.SetIssuePosition(boardID, issueID, 1); err != nil {
+	// Compute a sort key below the current minimum
+	positions, err := m.DB.GetBoardIssuePositions(boardID)
+	if err != nil {
 		m.StatusMessage = "Error: " + err.Error()
 		m.StatusIsError = true
 		return m, nil
 	}
-	m.logPositionSet(boardID, issueID, 1)
+	var newPos int
+	if len(positions) == 0 {
+		newPos = db.PositionGap
+	} else {
+		// Check if issue is already at min
+		if positions[0].IssueID == issueID {
+			return m, nil
+		}
+		newPos = positions[0].Position - db.PositionGap
+	}
+	if err := m.DB.SetIssuePosition(boardID, issueID, newPos); err != nil {
+		m.StatusMessage = "Error: " + err.Error()
+		m.StatusIsError = true
+		return m, nil
+	}
+	m.logPositionSet(boardID, issueID, newPos)
 
 	m.BoardMode.PendingSelectionID = issueID
 	return m, m.fetchBoardIssues(boardID)
@@ -1819,22 +1813,7 @@ func (m Model) moveIssueToBottom() (Model, tea.Cmd) {
 		issueID = m.BoardMode.Issues[m.BoardMode.Cursor].Issue.ID
 	}
 
-	// Capture old position from local state (avoids extra DB call)
-	var oldPos int
-	for _, biv := range m.BoardMode.Issues {
-		if biv.Issue.ID == issueID && biv.HasPosition {
-			oldPos = biv.Position
-			break
-		}
-	}
-
-	// Remove current position first (if any) to not count it in max
-	_ = m.DB.RemoveIssuePosition(boardID, issueID)
-	if oldPos > 0 {
-		m.logPositionRemove(boardID, issueID, oldPos)
-	}
-
-	// Get max position and add to end
+	// Get max position and place after it with a sparse gap
 	maxPos, err := m.DB.GetMaxBoardPosition(boardID)
 	if err != nil {
 		m.StatusMessage = "Error: " + err.Error()
@@ -1842,13 +1821,18 @@ func (m Model) moveIssueToBottom() (Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Move to max+1
-	if err := m.DB.SetIssuePosition(boardID, issueID, maxPos+1); err != nil {
+	var newPos int
+	if maxPos == 0 {
+		newPos = db.PositionGap
+	} else {
+		newPos = maxPos + db.PositionGap
+	}
+	if err := m.DB.SetIssuePosition(boardID, issueID, newPos); err != nil {
 		m.StatusMessage = "Error: " + err.Error()
 		m.StatusIsError = true
 		return m, nil
 	}
-	m.logPositionSet(boardID, issueID, maxPos+1)
+	m.logPositionSet(boardID, issueID, newPos)
 
 	m.BoardMode.PendingSelectionID = issueID
 	return m, m.fetchBoardIssues(boardID)
