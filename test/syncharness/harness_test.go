@@ -827,17 +827,25 @@ func TestSchemaVersionMismatch(t *testing.T) {
 		t.Fatalf("commit: %v", err)
 	}
 
-	// B pulls — should not error despite unknown column
+	// B pulls — unknown field silently dropped, entity created successfully
 	_, err = h.Pull("client-B", proj)
 	if err != nil {
 		t.Fatalf("pull B: %v", err)
 	}
 
-	// The event will fail to apply because SQLite rejects unknown columns.
-	// That's actually expected — the event lands in Failed, but no error propagates.
-	// Verify no crash occurred. The entity may or may not exist depending on
-	// whether the unknown column causes INSERT OR REPLACE to fail silently.
-	// The key assertion: no fatal error from Pull.
+	// Entity should exist with known fields; unknown custom_xyz was silently dropped
+	ent := h.QueryEntity("client-B", "issues", "td-SV1")
+	if ent == nil {
+		t.Fatal("client-B: td-SV1 should exist after pull with unknown fields dropped")
+	}
+	title, _ := ent["title"].(string)
+	if title != "Alien" {
+		t.Fatalf("client-B: expected title 'Alien', got %q", title)
+	}
+	status, _ := ent["status"].(string)
+	if status != "open" {
+		t.Fatalf("client-B: expected status 'open', got %q", status)
+	}
 }
 
 // ─── Test 16: Partial batch failure — bad entity_type ───

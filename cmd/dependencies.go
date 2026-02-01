@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/marcus/td/internal/dependency"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
+	"github.com/marcus/td/internal/session"
 	"github.com/spf13/cobra"
 )
 
@@ -478,7 +480,12 @@ Examples:
 		// Two args: add dependency (backward compat)
 		issueID := args[0]
 		dependsOnID := args[1]
-		return addDependency(database, issueID, dependsOnID)
+		sess, err := session.GetOrCreate(database)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		return addDependency(database, issueID, dependsOnID, sess.ID)
 	},
 }
 
@@ -499,6 +506,12 @@ var depAddCmd = &cobra.Command{
 			return err
 		}
 		defer database.Close()
+
+		sess, err := session.GetOrCreate(database)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
 
 		issueID := args[0]
 
@@ -523,7 +536,7 @@ var depAddCmd = &cobra.Command{
 
 		added := 0
 		for _, depID := range depIDs {
-			if err := addDependency(database, issueID, depID); err == nil {
+			if err := addDependency(database, issueID, depID, sess.ID); err == nil {
 				added++
 			}
 		}
@@ -549,6 +562,12 @@ var depRmCmd = &cobra.Command{
 		}
 		defer database.Close()
 
+		sess, err := session.GetOrCreate(database)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
 		issueID := args[0]
 		dependsOnID := args[1]
 
@@ -570,13 +589,26 @@ var depRmCmd = &cobra.Command{
 			return err
 		}
 
+		// Log dependency removal for undo and sync
+		depID := db.DependencyID(issueID, dependsOnID, "depends_on")
+		depData, _ := json.Marshal(map[string]string{
+			"id": depID, "issue_id": issueID, "depends_on_id": dependsOnID, "relation_type": "depends_on",
+		})
+		database.LogAction(&models.ActionLog{
+			SessionID:  sess.ID,
+			ActionType: models.ActionRemoveDep,
+			EntityType: "issue_dependencies",
+			EntityID:   depID,
+			NewData:    string(depData),
+		})
+
 		fmt.Printf("REMOVED: %s no longer depends on %s\n", issue.ID, depIssue.ID)
 		return nil
 	},
 }
 
 // addDependency adds a dependency between two issues
-func addDependency(database *db.DB, issueID, dependsOnID string) error {
+func addDependency(database *db.DB, issueID, dependsOnID, sessionID string) error {
 	issue, err := database.GetIssue(issueID)
 	if err != nil {
 		output.Error("issue not found: %s", issueID)
@@ -598,6 +630,19 @@ func addDependency(database *db.DB, issueID, dependsOnID string) error {
 		output.Error("%v", err)
 		return err
 	}
+
+	// Log dependency addition for undo and sync
+	depID := db.DependencyID(issueID, dependsOnID, "depends_on")
+	depData, _ := json.Marshal(map[string]string{
+		"id": depID, "issue_id": issueID, "depends_on_id": dependsOnID, "relation_type": "depends_on",
+	})
+	database.LogAction(&models.ActionLog{
+		SessionID:  sessionID,
+		ActionType: models.ActionAddDep,
+		EntityType: "issue_dependencies",
+		EntityID:   depID,
+		NewData:    string(depData),
+	})
 
 	fmt.Printf("ADDED: %s depends on %s\n", issue.ID, depIssue.ID)
 	fmt.Printf("  %s: %s\n", issue.ID, issue.Title)

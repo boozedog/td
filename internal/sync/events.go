@@ -13,6 +13,30 @@ import (
 
 var validColumnName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
+func getTableColumns(tx *sql.Tx, table string) (map[string]bool, error) {
+	if !validColumnName.MatchString(table) {
+		return nil, fmt.Errorf("invalid table name: %q", table)
+	}
+	rows, err := tx.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	cols := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull int
+		var dfltValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return nil, err
+		}
+		cols[name] = true
+	}
+	return cols, rows.Err()
+}
+
 // applyResult holds the outcome of applying a single event.
 type applyResult struct {
 	Overwritten bool
@@ -104,6 +128,22 @@ func upsertEntity(tx *sql.Tx, entityType, entityID string, newData json.RawMessa
 	fields["id"] = entityID
 
 	normalizeFieldsForDB(entityType, fields)
+
+	// Filter unknown columns for forward compatibility (spec: ignore unknown fields)
+	validCols, err := getTableColumns(tx, entityType)
+	if err != nil {
+		return applyResult{}, fmt.Errorf("upsert %s/%s: get columns: %w", entityType, entityID, err)
+	}
+	for k := range fields {
+		if !validCols[k] {
+			slog.Debug("upsert: dropping unknown column", "table", entityType, "column", k)
+			delete(fields, k)
+		}
+	}
+
+	if len(fields) <= 1 {
+		return applyResult{}, fmt.Errorf("upsert %s/%s: no known fields in payload", entityType, entityID)
+	}
 
 	colStr, placeholders, insertVals, err := buildInsert(fields)
 	if err != nil {

@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 19
+const SchemaVersion = 20
 
 const schema = `
 -- Issues table
@@ -371,6 +371,12 @@ CREATE INDEX IF NOT EXISTS idx_sync_conflicts_seq ON sync_conflicts(server_seq);
 		Version:     19,
 		Description: "Convert absolute file paths to repo-relative in issue_files",
 		// Handled by custom Go code in migrations.go (migrateFilePathsToRelative)
+		SQL: "",
+	},
+	{
+		Version:     20,
+		Description: "Normalize legacy action_log entries for composite-key entities",
+		// Handled by custom Go code in migrations.go (migrateLegacyActionLogCompositeIDs)
 		SQL: "",
 	},
 }

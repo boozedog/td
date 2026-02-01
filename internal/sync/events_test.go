@@ -220,11 +220,13 @@ func TestMalformedJSON(t *testing.T) {
 	}
 }
 
-func TestColumnNameInjection(t *testing.T) {
+func TestColumnNameInjection_DroppedSilently(t *testing.T) {
 	db := setupDB(t)
 	tx := beginTx(t, db)
 	defer tx.Rollback()
 
+	// Injection column name is not a valid table column, so it gets silently dropped.
+	// With no known fields remaining, the upsert returns an error — no injection occurs.
 	_, err := ApplyEvent(tx, Event{
 		ActionType: "create",
 		EntityType: "issues",
@@ -232,7 +234,14 @@ func TestColumnNameInjection(t *testing.T) {
 		Payload:    []byte(`{"bad; DROP TABLE issues": "hacked"}`),
 	}, testValidator)
 	if err == nil {
-		t.Fatal("expected error for SQL injection column name")
+		t.Fatal("expected error when all fields are unknown (injection fields dropped)")
+	}
+
+	// Verify the table wasn't dropped
+	var count int
+	db.QueryRow("SELECT COUNT(*) FROM issues").Scan(&count)
+	if count != 0 {
+		t.Fatalf("expected 0 rows, got %d", count)
 	}
 }
 
@@ -520,5 +529,59 @@ func TestUpsertEntity_NestedObjectNormalized(t *testing.T) {
 	db.QueryRow("SELECT priority FROM issues WHERE id = ?", "i1").Scan(&priority)
 	if priority != `{"level":"high","score":5}` {
 		t.Fatalf("priority: got %q", priority)
+	}
+}
+
+func TestGetTableColumns(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	cols, err := getTableColumns(tx, "issues")
+	if err != nil {
+		t.Fatalf("getTableColumns: %v", err)
+	}
+
+	expected := []string{"id", "title", "status", "priority", "labels", "created_at", "updated_at", "deleted_at"}
+	for _, col := range expected {
+		if !cols[col] {
+			t.Errorf("expected column %q not found", col)
+		}
+	}
+	if cols["nonexistent"] {
+		t.Error("nonexistent column should not be in set")
+	}
+}
+
+func TestUpsertEntity_UnknownFieldsIgnored(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+
+	payload := []byte(`{"title":"Alien","status":"open","custom_xyz":"should be ignored","another_fake":"also ignored"}`)
+	_, err := upsertEntity(tx, "issues", "i1", payload)
+	if err != nil {
+		t.Fatalf("upsert with unknown fields: %v", err)
+	}
+	tx.Commit()
+
+	var title, status string
+	err = db.QueryRow("SELECT title, status FROM issues WHERE id = ?", "i1").Scan(&title, &status)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if title != "Alien" || status != "open" {
+		t.Fatalf("got title=%q status=%q, want Alien/open", title, status)
+	}
+}
+
+func TestUpsertEntity_AllFieldsUnknown(t *testing.T) {
+	db := setupDB(t)
+	tx := beginTx(t, db)
+	defer tx.Rollback()
+
+	payload := []byte(`{"custom_xyz":"ignored","another_fake":"also ignored"}`)
+	_, err := upsertEntity(tx, "issues", "i1", payload)
+	if err == nil {
+		t.Fatal("expected error when all fields are unknown")
 	}
 }

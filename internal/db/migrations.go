@@ -4,7 +4,9 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // columnExists checks whether a column exists on a table
@@ -136,6 +138,16 @@ func (db *DB) runMigrationsInternal() (int, error) {
 					migrationsRun++
 					continue
 				}
+			}
+			if migration.Version == 20 {
+				if err := db.migrateLegacyActionLogCompositeIDs(); err != nil {
+					return migrationsRun, fmt.Errorf("migration 20 (action_log normalization): %w", err)
+				}
+				if err := db.setSchemaVersionInternal(migration.Version); err != nil {
+					return migrationsRun, fmt.Errorf("set version %d: %w", migration.Version, err)
+				}
+				migrationsRun++
+				continue
 			}
 			if migration.Version == 19 {
 				if err := db.migrateFilePathsToRelative(); err != nil {
@@ -902,6 +914,219 @@ func (db *DB) migrateFilePathsToRelative() error {
 	return nil
 }
 
+// migrateLegacyActionLogCompositeIDs normalizes unsynced action_log entries for
+// board positions, dependencies, and file links after deterministic ID and
+// repo-relative path migrations. It rewrites entity_type/entity_id/new_data
+// and marks out-of-repo file links as synced (skipped).
+func (db *DB) migrateLegacyActionLogCompositeIDs() error {
+	exists, err := db.tableExists("action_log")
+	if err != nil || !exists {
+		return err
+	}
+
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`
+		SELECT id, action_type, entity_type, entity_id, new_data
+		FROM action_log
+		WHERE synced_at IS NULL AND undone = 0
+		  AND entity_type IN ('board_position', 'board_issue_positions', 'dependency', 'issue_dependencies', 'file_link', 'issue_files')
+	`)
+	if err != nil {
+		return fmt.Errorf("read action_log: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			id, actionType, entityType, entityID string
+			newDataStr                           sql.NullString
+		)
+		if err := rows.Scan(&id, &actionType, &entityType, &entityID, &newDataStr); err != nil {
+			return err
+		}
+		fields := map[string]any{}
+		if newDataStr.Valid && newDataStr.String != "" {
+			if err := json.Unmarshal([]byte(newDataStr.String), &fields); err != nil {
+				return fmt.Errorf("parse action_log new_data %s: %w", id, err)
+			}
+		}
+
+		canonicalType := entityType
+		switch entityType {
+		case "board_position":
+			canonicalType = "board_issue_positions"
+		case "dependency":
+			canonicalType = "issue_dependencies"
+		case "file_link":
+			canonicalType = "issue_files"
+		}
+
+		changed := canonicalType != entityType
+
+		switch canonicalType {
+		case "board_issue_positions":
+			boardID := getStringField(fields, "board_id")
+			issueID := getStringField(fields, "issue_id")
+			if boardID == "" || issueID == "" {
+				if a, b, ok := splitLegacyEntityID(entityID); ok {
+					boardID, issueID = a, b
+					if setStringField(fields, "board_id", boardID) {
+						changed = true
+					}
+					if setStringField(fields, "issue_id", issueID) {
+						changed = true
+					}
+				}
+			}
+			if boardID == "" || issueID == "" {
+				if strings.HasPrefix(entityID, boardIssuePosIDPrefix) {
+					if setStringField(fields, "id", entityID) {
+						changed = true
+					}
+					break
+				}
+				if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+					return fmt.Errorf("mark synced %s: %w", id, err)
+				}
+				continue
+			}
+			newID := BoardIssuePosID(boardID, issueID)
+			if setStringField(fields, "id", newID) {
+				changed = true
+			}
+			if entityID != newID {
+				entityID = newID
+				changed = true
+			}
+		case "issue_dependencies":
+			issueID := getStringField(fields, "issue_id")
+			dependsOnID := getStringField(fields, "depends_on_id")
+			if issueID == "" || dependsOnID == "" {
+				if a, b, ok := splitLegacyEntityID(entityID); ok {
+					issueID, dependsOnID = a, b
+					if setStringField(fields, "issue_id", issueID) {
+						changed = true
+					}
+					if setStringField(fields, "depends_on_id", dependsOnID) {
+						changed = true
+					}
+				}
+			}
+			if issueID == "" || dependsOnID == "" {
+				if strings.HasPrefix(entityID, dependencyIDPrefix) {
+					if setStringField(fields, "id", entityID) {
+						changed = true
+					}
+					break
+				}
+				if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+					return fmt.Errorf("mark synced %s: %w", id, err)
+				}
+				continue
+			}
+			relationType := getStringField(fields, "relation_type")
+			if relationType == "" {
+				relationType = "depends_on"
+				if setStringField(fields, "relation_type", relationType) {
+					changed = true
+				}
+			}
+			newID := DependencyID(issueID, dependsOnID, relationType)
+			if setStringField(fields, "id", newID) {
+				changed = true
+			}
+			if entityID != newID {
+				entityID = newID
+				changed = true
+			}
+		case "issue_files":
+			issueID := getStringField(fields, "issue_id")
+			filePath := getStringField(fields, "file_path")
+			if issueID == "" {
+				if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+					return fmt.Errorf("mark synced %s: %w", id, err)
+				}
+				continue
+			}
+			if filePath == "" {
+				if looksLikePath(entityID) {
+					filePath = entityID
+					if setStringField(fields, "file_path", filePath) {
+						changed = true
+					}
+				} else if strings.HasPrefix(entityID, issueFileIDPrefix) {
+					if setStringField(fields, "id", entityID) {
+						changed = true
+					}
+					break
+				} else {
+					if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+						return fmt.Errorf("mark synced %s: %w", id, err)
+					}
+					continue
+				}
+			}
+			if IsAbsolutePath(filePath) {
+				relPath, err := ToRepoRelative(filePath, db.baseDir)
+				if err != nil {
+					if _, err := tx.Exec(`UPDATE action_log SET synced_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
+						return fmt.Errorf("mark synced %s: %w", id, err)
+					}
+					continue
+				}
+				filePath = relPath
+			}
+			filePath = NormalizeFilePathForID(filePath)
+			if setStringField(fields, "file_path", filePath) {
+				changed = true
+			}
+			newID := IssueFileID(issueID, filePath)
+			if setStringField(fields, "id", newID) {
+				changed = true
+			}
+			if entityID != newID {
+				entityID = newID
+				changed = true
+			}
+		default:
+			continue
+		}
+
+		if !changed {
+			continue
+		}
+
+		if isDeleteAction(actionType) && canonicalType == "issue_files" && getStringField(fields, "file_path") == "" {
+			// Avoid writing invalid payloads for delete-only entries with no file_path.
+			if _, err := tx.Exec(`UPDATE action_log SET entity_type = ?, entity_id = ? WHERE id = ?`, canonicalType, entityID, id); err != nil {
+				return fmt.Errorf("update action_log %s: %w", id, err)
+			}
+			continue
+		}
+
+		payload, err := json.Marshal(fields)
+		if err != nil {
+			return fmt.Errorf("marshal action_log new_data %s: %w", id, err)
+		}
+		if _, err := tx.Exec(
+			`UPDATE action_log SET entity_type = ?, entity_id = ?, new_data = ? WHERE id = ?`,
+			canonicalType, entityID, string(payload), id,
+		); err != nil {
+			return fmt.Errorf("update action_log %s: %w", id, err)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
 // colList joins column names with commas
 func colList(cols []string) string {
 	result := cols[0]
@@ -909,4 +1134,62 @@ func colList(cols []string) string {
 		result += ", " + c
 	}
 	return result
+}
+
+func getStringField(fields map[string]any, key string) string {
+	v, ok := fields[key]
+	if !ok || v == nil {
+		return ""
+	}
+	switch val := v.(type) {
+	case string:
+		return val
+	case json.Number:
+		return val.String()
+	default:
+		return fmt.Sprint(val)
+	}
+}
+
+func setStringField(fields map[string]any, key, value string) bool {
+	if cur, ok := fields[key]; ok {
+		if curStr, ok := cur.(string); ok && curStr == value {
+			return false
+		}
+		if curNum, ok := cur.(json.Number); ok && curNum.String() == value {
+			return false
+		}
+	}
+	fields[key] = value
+	return true
+}
+
+func splitLegacyEntityID(entityID string) (string, string, bool) {
+	if parts := strings.SplitN(entityID, ":", 2); len(parts) == 2 {
+		if parts[0] != "" && parts[1] != "" {
+			return parts[0], parts[1], true
+		}
+	}
+	if parts := strings.SplitN(entityID, "|", 2); len(parts) == 2 {
+		if parts[0] != "" && parts[1] != "" {
+			return parts[0], parts[1], true
+		}
+	}
+	return "", "", false
+}
+
+func looksLikePath(value string) bool {
+	if IsAbsolutePath(value) {
+		return true
+	}
+	return strings.Contains(value, "/") || strings.Contains(value, "\\")
+}
+
+func isDeleteAction(actionType string) bool {
+	switch actionType {
+	case "delete", "remove_dependency", "unlink_file", "board_unposition", "board_delete", "board_remove_issue":
+		return true
+	default:
+		return false
+	}
 }
