@@ -155,6 +155,20 @@ func runSyncStatus(database *db.DB, client *syncclient.Client, state *db.SyncSta
 
 func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncState) (*db.DB, error) {
 	threshold := syncconfig.GetSnapshotThreshold()
+	if threshold <= 0 {
+		return nil, errBootstrapNotNeeded
+	}
+
+	// Check for pending local changes before overwriting DB
+	var pendingCount int64
+	err := database.Conn().QueryRow(
+		`SELECT COUNT(*) FROM action_log WHERE id > ? AND undone = 0`,
+		state.LastPushedActionID,
+	).Scan(&pendingCount)
+	if err == nil && pendingCount > 0 {
+		output.Warning("bootstrap skipped: local changes pending push")
+		return nil, errBootstrapNotNeeded
+	}
 
 	serverStatus, err := client.SyncStatus(state.ProjectID)
 	if err != nil {
@@ -182,7 +196,7 @@ func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncStat
 	}
 
 	dbPath := filepath.Join(database.BaseDir(), ".todos", "issues.db")
-	backupPath := dbPath + ".pre-bootstrap"
+	backupPath := dbPath + ".pre-snapshot-backup"
 	baseDir := database.BaseDir()
 
 	// Close current DB before overwriting

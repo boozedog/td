@@ -416,7 +416,7 @@ func serveSnapshotFile(w http.ResponseWriter, r *http.Request, path string, seq 
 
 	stat, _ := f.Stat()
 	w.Header().Set("Content-Type", "application/x-sqlite3")
-	w.Header().Set("X-Snapshot-Event-Id", strconv.FormatInt(seq, 10))
+	w.Header().Set("X-Snapshot-Seq", strconv.FormatInt(seq, 10))
 	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
 	w.WriteHeader(http.StatusOK)
 	io.Copy(w, f)

@@ -961,13 +961,13 @@ func TestSnapshotEndpoint(t *testing.T) {
 	if ct != "application/x-sqlite3" {
 		t.Fatalf("Content-Type: got %q, want application/x-sqlite3", ct)
 	}
-	seqStr := w.Header().Get("X-Snapshot-Event-Id")
+	seqStr := w.Header().Get("X-Snapshot-Seq")
 	if seqStr == "" {
-		t.Fatal("missing X-Snapshot-Event-Id header")
+		t.Fatal("missing X-Snapshot-Seq header")
 	}
 	seq, err := strconv.ParseInt(seqStr, 10, 64)
 	if err != nil || seq < 3 {
-		t.Fatalf("X-Snapshot-Event-Id: got %q (parsed %d), want >= 3", seqStr, seq)
+		t.Fatalf("X-Snapshot-Seq: got %q (parsed %d), want >= 3", seqStr, seq)
 	}
 
 	// Verify body is a valid SQLite database
@@ -1178,17 +1178,17 @@ func TestSnapshotXSnapshotEventIdHeader(t *testing.T) {
 		t.Fatalf("snapshot: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// Verify X-Snapshot-Event-Id matches the max server_seq
-	seqStr := w.Header().Get("X-Snapshot-Event-Id")
+	// Verify X-Snapshot-Seq matches the max server_seq
+	seqStr := w.Header().Get("X-Snapshot-Seq")
 	if seqStr == "" {
-		t.Fatal("missing X-Snapshot-Event-Id header")
+		t.Fatal("missing X-Snapshot-Seq header")
 	}
 	seq, err := strconv.ParseInt(seqStr, 10, 64)
 	if err != nil {
-		t.Fatalf("parse X-Snapshot-Event-Id: %v", err)
+		t.Fatalf("parse X-Snapshot-Seq: %v", err)
 	}
 	if seq != maxSeq {
-		t.Fatalf("X-Snapshot-Event-Id: got %d, want %d (max server_seq)", seq, maxSeq)
+		t.Fatalf("X-Snapshot-Seq: got %d, want %d (max server_seq)", seq, maxSeq)
 	}
 }
 
@@ -1222,7 +1222,7 @@ func TestSnapshotCaching(t *testing.T) {
 		t.Fatalf("snapshot 1: expected 200, got %d: %s", w1.Code, w1.Body.String())
 	}
 	body1 := w1.Body.Bytes()
-	seq1 := w1.Header().Get("X-Snapshot-Event-Id")
+	seq1 := w1.Header().Get("X-Snapshot-Seq")
 
 	// Second snapshot request (should serve from cache)
 	w2 := doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
@@ -1230,11 +1230,11 @@ func TestSnapshotCaching(t *testing.T) {
 		t.Fatalf("snapshot 2: expected 200, got %d: %s", w2.Code, w2.Body.String())
 	}
 	body2 := w2.Body.Bytes()
-	seq2 := w2.Header().Get("X-Snapshot-Event-Id")
+	seq2 := w2.Header().Get("X-Snapshot-Seq")
 
 	// Same event ID
 	if seq1 != seq2 {
-		t.Fatalf("X-Snapshot-Event-Id mismatch: %s vs %s", seq1, seq2)
+		t.Fatalf("X-Snapshot-Seq mismatch: %s vs %s", seq1, seq2)
 	}
 
 	// Same content (cached file should be byte-identical)

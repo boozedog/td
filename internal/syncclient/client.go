@@ -298,8 +298,17 @@ func (c *Client) GetSnapshot(projectID string) (*SnapshotResponse, error) {
 		return nil, fmt.Errorf("read snapshot: %w", err)
 	}
 
-	seqStr := resp.Header.Get("X-Snapshot-Event-Id")
-	seq, _ := strconv.ParseInt(seqStr, 10, 64)
+	seqStr := resp.Header.Get("X-Snapshot-Seq")
+	if seqStr == "" {
+		return nil, fmt.Errorf("snapshot response missing X-Snapshot-Seq header")
+	}
+	seq, err := strconv.ParseInt(seqStr, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("parse X-Snapshot-Seq %q: %w", seqStr, err)
+	}
+	if seq <= 0 {
+		return nil, fmt.Errorf("snapshot seq must be positive")
+	}
 
 	return &SnapshotResponse{Data: data, SnapshotSeq: seq}, nil
 }
