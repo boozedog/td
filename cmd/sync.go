@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/marcus/td/internal/db"
@@ -31,6 +34,9 @@ var syncableEntities = map[string]bool{
 var syncEntityValidator tdsync.EntityValidator = func(t string) bool {
 	return syncableEntities[t]
 }
+
+// errBootstrapNotNeeded signals that the server event count is below the snapshot threshold.
+var errBootstrapNotNeeded = errors.New("bootstrap not needed")
 
 var syncCmd = &cobra.Command{
 	Use:     "sync",
@@ -78,13 +84,32 @@ var syncCmd = &cobra.Command{
 			return runSyncStatus(database, client, syncState)
 		}
 
+		// Try snapshot bootstrap on first sync
+		bootstrapped := false
+		if !pushOnly && syncState.LastPulledServerSeq == 0 {
+			newDB, err := runBootstrap(database, client, syncState)
+			if newDB != nil {
+				database = newDB // old DB already closed by runBootstrap
+			}
+			if err == nil {
+				bootstrapped = true
+				syncState, err = database.GetSyncState()
+				if err != nil {
+					output.Error("get sync state after bootstrap: %v", err)
+					return err
+				}
+			} else if !errors.Is(err, errBootstrapNotNeeded) {
+				output.Warning("bootstrap failed, falling back to normal pull: %v", err)
+			}
+		}
+
 		if !pullOnly {
 			if err := runPush(database, client, syncState, deviceID); err != nil {
 				return err
 			}
 		}
 
-		if !pushOnly {
+		if !pushOnly && !bootstrapped {
 			if err := runPull(database, client, syncState, deviceID); err != nil {
 				return err
 			}
@@ -126,6 +151,112 @@ func runSyncStatus(database *db.DB, client *syncclient.Client, state *db.SyncSta
 		fmt.Printf("  Last event: %s\n", serverStatus.LastEventTime)
 	}
 	return nil
+}
+
+func runBootstrap(database *db.DB, client *syncclient.Client, state *db.SyncState) (*db.DB, error) {
+	threshold := syncconfig.GetSnapshotThreshold()
+
+	serverStatus, err := client.SyncStatus(state.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("check server status: %w", err)
+	}
+
+	if serverStatus.EventCount < int64(threshold) {
+		return nil, errBootstrapNotNeeded
+	}
+
+	output.Info("bootstrapping from snapshot (server has %d events)...", serverStatus.EventCount)
+
+	snapshot, err := client.GetSnapshot(state.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("download snapshot: %w", err)
+	}
+	if snapshot == nil {
+		// Server returned 404 — no snapshot available, fall through
+		return nil, errBootstrapNotNeeded
+	}
+
+	// Validate SQLite header
+	if len(snapshot.Data) < 16 || string(snapshot.Data[:16]) != "SQLite format 3\x00" {
+		return nil, fmt.Errorf("invalid snapshot: not a SQLite database")
+	}
+
+	dbPath := filepath.Join(database.BaseDir(), ".todos", "issues.db")
+	backupPath := dbPath + ".pre-bootstrap"
+	baseDir := database.BaseDir()
+
+	// Close current DB before overwriting
+	database.Close()
+
+	// Backup existing DB
+	if err := copyFile(dbPath, backupPath); err != nil {
+		reopened, reopenErr := db.Open(baseDir)
+		if reopenErr != nil {
+			return nil, fmt.Errorf("backup failed (%w) and reopen failed: %v", err, reopenErr)
+		}
+		return reopened, fmt.Errorf("backup db: %w", err)
+	}
+
+	// Write snapshot
+	if err := os.WriteFile(dbPath, snapshot.Data, 0644); err != nil {
+		os.Rename(backupPath, dbPath)
+		reopened, reopenErr := db.Open(baseDir)
+		if reopenErr != nil {
+			return nil, fmt.Errorf("write failed (%w) and reopen failed: %v", err, reopenErr)
+		}
+		return reopened, fmt.Errorf("write snapshot: %w", err)
+	}
+
+	// Reopen and update sync_state
+	reopened, err := db.Open(baseDir)
+	if err != nil {
+		os.Rename(backupPath, dbPath)
+		reopened2, reopenErr := db.Open(baseDir)
+		if reopenErr != nil {
+			return nil, fmt.Errorf("reopen failed (%w) and restore reopen failed: %v", err, reopenErr)
+		}
+		return reopened2, fmt.Errorf("reopen after bootstrap: %w", err)
+	}
+
+	// Use INSERT OR REPLACE since the snapshot DB may not have a sync_state row
+	_, err = reopened.Conn().Exec(
+		`INSERT OR REPLACE INTO sync_state (project_id, last_pulled_server_seq, last_pushed_action_id, last_sync_at, sync_disabled)
+		 VALUES (?, ?, 0, CURRENT_TIMESTAMP, 0)`,
+		state.ProjectID, snapshot.SnapshotSeq,
+	)
+	if err != nil {
+		reopened.Close()
+		os.Rename(backupPath, dbPath)
+		reopened2, reopenErr := db.Open(baseDir)
+		if reopenErr != nil {
+			return nil, fmt.Errorf("sync_state update failed (%w) and restore reopen failed: %v", err, reopenErr)
+		}
+		return reopened2, fmt.Errorf("update sync_state: %w", err)
+	}
+
+	fmt.Printf("Bootstrap complete (seq %d).\n", snapshot.SnapshotSeq)
+	return reopened, nil
+}
+
+// copyFile copies src to dst, creating dst if it doesn't exist.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // nothing to back up
+		}
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, in)
+	return err
 }
 
 func runPush(database *db.DB, client *syncclient.Client, state *db.SyncState, deviceID string) error {

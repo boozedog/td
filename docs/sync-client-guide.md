@@ -361,6 +361,62 @@ Events include `(device_id, session_id, client_action_id)` as a unique key on th
 
 Undone actions (`undone = 1` in action_log) are excluded from push. If you undo a change before syncing, it won't be sent to the server. Once an action has been pushed, undoing it locally does not propagate the undo to other clients.
 
+## Snapshot Bootstrap
+
+When a new client syncs for the first time (`last_pulled_server_seq == 0`) and the server has accumulated many events, the client can download a pre-built database snapshot instead of replaying every event individually.
+
+### When it triggers
+
+Snapshot bootstrap activates automatically when **both** conditions are true:
+
+1. The client has never pulled before (`last_pulled_server_seq == 0`)
+2. The server's event count for the project meets or exceeds the snapshot threshold
+
+If either condition is false, the client uses normal event replay.
+
+### Configuration
+
+The threshold defaults to **100 events**. You can override it:
+
+**Environment variable:**
+
+```bash
+export TD_SYNC_SNAPSHOT_THRESHOLD=500
+```
+
+**Config file** (`~/.config/td/config.json`):
+
+```json
+{
+  "sync": {
+    "snapshot_threshold": 500
+  }
+}
+```
+
+Priority: `TD_SYNC_SNAPSHOT_THRESHOLD` env > `config.json` > default (100)
+
+**Disable snapshot bootstrap** (force event replay):
+
+```bash
+export TD_SYNC_SNAPSHOT_THRESHOLD=0
+```
+
+### What happens during bootstrap
+
+1. Client checks the server's event count via the status endpoint
+2. If the threshold is met, client requests `GET /v1/projects/:id/sync/snapshot`
+3. Server returns a complete SQLite database (full schema + migrations applied) with an `X-Snapshot-Seq` header indicating the snapshot's sequence number
+4. Client validates the SQLite file header
+5. Client backs up the existing local database (if any) to `.todos/issues.db.pre-snapshot-backup`
+6. Client writes the snapshot as the new local database
+7. Client updates `last_pulled_server_seq` to the snapshot's sequence number
+8. Subsequent pulls fetch only events after the snapshot point
+
+### Server-side caching
+
+The server caches built snapshots at `{dataDir}/snapshots/{projectID}/{seq}.db`. Repeated bootstrap requests reuse cached snapshots when the sequence number hasn't advanced.
+
 ## Configuration Reference
 
 ### Files
@@ -377,6 +433,7 @@ Undone actions (`undone = 1` in action_log) are excluded from push. If you undo 
 |---|---|
 | `TD_SYNC_URL` | Override server URL |
 | `TD_AUTH_KEY` | Override API key |
+| `TD_SYNC_SNAPSHOT_THRESHOLD` | Snapshot bootstrap threshold (default 100; 0 disables) |
 
 ### Device ID
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/marcus/td/internal/serverdb"
+	_ "modernc.org/sqlite"
 )
 
 // newTestServer creates a Server backed by temp directories for testing.
@@ -977,6 +979,284 @@ func TestSnapshotEndpoint(t *testing.T) {
 	if string(body[:15]) != "SQLite format 3" {
 		t.Fatal("snapshot body is not a valid SQLite database")
 	}
+}
+
+func TestSnapshotEmpty404(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "snap-empty@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "snap-empty"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Snapshot with no events should return 404
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("empty snapshot: expected 404, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var errResp ErrorResponse
+	json.NewDecoder(w.Body).Decode(&errResp)
+	if errResp.Error.Code != "no_events" {
+		t.Fatalf("expected error code 'no_events', got %q", errResp.Error.Code)
+	}
+}
+
+func TestSnapshotValidSQLiteWithTables(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "snap-tables@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "snap-tables"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Push events covering multiple entity types
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, PushRequest{
+		DeviceID: "dev1", SessionID: "sess1",
+		Events: []EventInput{
+			{ClientActionID: 1, ActionType: "create", EntityType: "issues", EntityID: "i_001",
+				Payload: json.RawMessage(`{"schema_version":1,"new_data":{"title":"one","status":"open"}}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+			{ClientActionID: 2, ActionType: "create", EntityType: "boards", EntityID: "b_001",
+				Payload: json.RawMessage(`{"schema_version":1,"new_data":{"name":"board1"}}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Get snapshot
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("snapshot: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Write snapshot to temp file and open it
+	body := w.Body.Bytes()
+	if string(body[:15]) != "SQLite format 3" {
+		t.Fatal("snapshot body is not a valid SQLite database")
+	}
+
+	tmpFile := filepath.Join(t.TempDir(), "snapshot.db")
+	if err := os.WriteFile(tmpFile, body, 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	db, err := openSnapshotDB(tmpFile)
+	if err != nil {
+		t.Fatalf("open snapshot db: %v", err)
+	}
+	defer db.Close()
+
+	// Verify all required tables exist
+	requiredTables := []string{
+		"issues", "boards", "board_issue_positions",
+		"issue_session_history", "sync_state", "sync_conflicts", "action_log",
+	}
+	for _, table := range requiredTables {
+		var name string
+		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
+		if err != nil {
+			t.Errorf("table %q not found in snapshot: %v", table, err)
+		}
+	}
+}
+
+func TestSnapshotBoardPositionReplay(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "snap-board@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "snap-board"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Push board + position events
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, PushRequest{
+		DeviceID: "dev1", SessionID: "sess1",
+		Events: []EventInput{
+			{ClientActionID: 1, ActionType: "create", EntityType: "boards", EntityID: "b_001",
+				Payload: json.RawMessage(`{"schema_version":1,"new_data":{"name":"sprint-1"}}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+			{ClientActionID: 2, ActionType: "create", EntityType: "board_issue_positions", EntityID: "bp_001",
+				Payload: json.RawMessage(`{"schema_version":1,"new_data":{"board_id":"b_001","issue_id":"i_001","position":1}}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+			{ClientActionID: 3, ActionType: "create", EntityType: "board_issue_positions", EntityID: "bp_002",
+				Payload: json.RawMessage(`{"schema_version":1,"new_data":{"board_id":"b_001","issue_id":"i_002","position":2}}`), ClientTimestamp: "2025-01-01T00:00:02Z"},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Get snapshot
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("snapshot: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	tmpFile := filepath.Join(t.TempDir(), "snapshot.db")
+	if err := os.WriteFile(tmpFile, w.Body.Bytes(), 0644); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+
+	db, err := openSnapshotDB(tmpFile)
+	if err != nil {
+		t.Fatalf("open snapshot db: %v", err)
+	}
+	defer db.Close()
+
+	// Verify board_issue_positions were replayed
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM board_issue_positions").Scan(&count); err != nil {
+		t.Fatalf("count board_issue_positions: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 board_issue_positions, got %d", count)
+	}
+
+	// Verify position data
+	var boardID, issueID string
+	var position int
+	err = db.QueryRow("SELECT board_id, issue_id, position FROM board_issue_positions WHERE id = ?", "bp_001").Scan(&boardID, &issueID, &position)
+	if err != nil {
+		t.Fatalf("query bp_001: %v", err)
+	}
+	if boardID != "b_001" || issueID != "i_001" || position != 1 {
+		t.Fatalf("bp_001: got board_id=%s issue_id=%s position=%d, want b_001/i_001/1", boardID, issueID, position)
+	}
+}
+
+func TestSnapshotXSnapshotEventIdHeader(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "snap-header@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "snap-header"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Push 5 events
+	events := make([]EventInput, 5)
+	for i := range events {
+		events[i] = EventInput{
+			ClientActionID:  int64(i + 1),
+			ActionType:      "create",
+			EntityType:      "issues",
+			EntityID:        fmt.Sprintf("i_%03d", i+1),
+			Payload:         json.RawMessage(`{"schema_version":1,"new_data":{"title":"test","status":"open"}}`),
+			ClientTimestamp: "2025-01-01T00:00:00Z",
+		}
+	}
+
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, PushRequest{
+		DeviceID: "dev1", SessionID: "sess1", Events: events,
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var pushResp PushResponse
+	json.NewDecoder(w.Body).Decode(&pushResp)
+
+	// Get the max server_seq from push acks
+	maxSeq := pushResp.Acks[len(pushResp.Acks)-1].ServerSeq
+
+	// Get snapshot
+	w = doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("snapshot: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// Verify X-Snapshot-Event-Id matches the max server_seq
+	seqStr := w.Header().Get("X-Snapshot-Event-Id")
+	if seqStr == "" {
+		t.Fatal("missing X-Snapshot-Event-Id header")
+	}
+	seq, err := strconv.ParseInt(seqStr, 10, 64)
+	if err != nil {
+		t.Fatalf("parse X-Snapshot-Event-Id: %v", err)
+	}
+	if seq != maxSeq {
+		t.Fatalf("X-Snapshot-Event-Id: got %d, want %d (max server_seq)", seq, maxSeq)
+	}
+}
+
+func TestSnapshotCaching(t *testing.T) {
+	srv, store := newTestServer(t)
+	_, token := createTestUser(t, store, "snap-cache@test.com")
+
+	// Create project
+	w := doRequest(srv, "POST", "/v1/projects", token, CreateProjectRequest{Name: "snap-cache"})
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create: expected 201, got %d", w.Code)
+	}
+	var project ProjectResponse
+	json.NewDecoder(w.Body).Decode(&project)
+
+	// Push events
+	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), token, PushRequest{
+		DeviceID: "dev1", SessionID: "sess1",
+		Events: []EventInput{
+			{ClientActionID: 1, ActionType: "create", EntityType: "issues", EntityID: "i_001",
+				Payload: json.RawMessage(`{"schema_version":1,"new_data":{"title":"cache-test","status":"open"}}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+		},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("push: expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	// First snapshot request (cache miss - builds snapshot)
+	w1 := doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
+	if w1.Code != http.StatusOK {
+		t.Fatalf("snapshot 1: expected 200, got %d: %s", w1.Code, w1.Body.String())
+	}
+	body1 := w1.Body.Bytes()
+	seq1 := w1.Header().Get("X-Snapshot-Event-Id")
+
+	// Second snapshot request (should serve from cache)
+	w2 := doRequest(srv, "GET", fmt.Sprintf("/v1/projects/%s/sync/snapshot", project.ID), token, nil)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("snapshot 2: expected 200, got %d: %s", w2.Code, w2.Body.String())
+	}
+	body2 := w2.Body.Bytes()
+	seq2 := w2.Header().Get("X-Snapshot-Event-Id")
+
+	// Same event ID
+	if seq1 != seq2 {
+		t.Fatalf("X-Snapshot-Event-Id mismatch: %s vs %s", seq1, seq2)
+	}
+
+	// Same content (cached file should be byte-identical)
+	if len(body1) != len(body2) {
+		t.Fatalf("snapshot size mismatch: %d vs %d", len(body1), len(body2))
+	}
+
+	// Verify cache file exists on disk
+	cacheDir := filepath.Join(srv.config.ProjectDataDir, "snapshots", project.ID)
+	cachePath := filepath.Join(cacheDir, seq1+".db")
+	if _, err := os.Stat(cachePath); os.IsNotExist(err) {
+		t.Fatalf("cache file not found at %s", cachePath)
+	}
+}
+
+// openSnapshotDB opens a snapshot SQLite file for verification.
+func openSnapshotDB(path string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite", path+"?mode=ro")
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
 func TestSyncStatus(t *testing.T) {

@@ -444,13 +444,13 @@ When `AllowSignup` is `false`:
 
 ### Initial Sync (New Client)
 
-**Phase 1: Event replay only.**
+For small projects (below the snapshot threshold), the client replays all events:
 ```
 GET /projects/:id/sync/pull?after_server_seq=0
 Apply all events to empty local database
 ```
 
-Snapshot bootstrap deferred to Phase 2. Event replay is sufficient for expected project sizes (even 10k events replays quickly with in-process SQLite).
+For larger projects, the client auto-bootstraps from a snapshot. See the snapshot endpoint below and the [Sync Client Guide](sync-client-guide.md#snapshot-bootstrap) for details.
 
 ---
 
@@ -575,11 +575,14 @@ GET /v1/projects/:id/sync/pull
     has_more: boolean
   }
 
-GET /v1/projects/:id/sync/snapshot          # Phase 2
-  # Download full state.db for fast bootstrap
+GET /v1/projects/:id/sync/snapshot
+  # Download a pre-built SQLite database for fast bootstrap
+  # The snapshot contains the full td schema with all migrations applied,
+  # plus all entity data up to the snapshot sequence number.
+  # Server caches snapshots at {dataDir}/snapshots/{projectID}/{seq}.db
   Response: SQLite database file (application/x-sqlite3)
   Headers:
-    X-Snapshot-Event-Id: integer  # event id at snapshot time
+    X-Snapshot-Seq: integer  # server_seq at snapshot time
 
 GET /v1/projects/:id/sync/status
   Response: {
@@ -901,7 +904,7 @@ td auth login --server https://your-server:8080
 - [ ] Observability: structured logging, basic metrics
 
 ### Phase 2: Polish
-- [ ] Snapshot bootstrap (event replay sufficient until then)
+- [x] Snapshot bootstrap (auto-triggers on first sync when event count >= threshold)
 - [ ] `td doctor` diagnostics
 - [ ] Rate limiting
 - [ ] Email-based auth (magic links for collaboration invites)
@@ -936,7 +939,7 @@ td auth login --server https://your-server:8080
 
 1. **Database layout**: One server.db for auth/registry + one events.db per project. Memberships stay in server.db — auth resolves before any project db is opened.
 2. **State cache**: Deferred to Phase 4. Event log is the only server-side store in Phase 1.
-3. **Snapshot bootstrap**: Deferred to Phase 2. Event replay only for initial sync.
+3. **Snapshot bootstrap**: Implemented. Client auto-bootstraps from server snapshot when `last_pulled_server_seq == 0` and server event count >= configurable threshold (default 100). Server builds snapshots with full schema + migrations and caches them at `{dataDir}/snapshots/{projectID}/{seq}.db`. Threshold configurable via `TD_SYNC_SNAPSHOT_THRESHOLD` env or `config.json` `sync.snapshot_threshold`.
 4. **Repository structure**: Single repo (td). Server binary at `cmd/td-sync`, shared sync library at `internal/sync`.
 5. **Sync library connection management**: Library receives `*sql.Tx` from callers, never opens databases. Prevents write contention with td's single-writer model.
 6. **Litestream**: Sidecar container (not embedded). Config regenerated + SIGHUP on project create/delete.

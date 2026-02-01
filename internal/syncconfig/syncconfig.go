@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // SyncConfig holds sync-related settings.
 type SyncConfig struct {
-	URL     string `json:"url"`
-	Enabled bool   `json:"enabled"`
+	URL               string `json:"url"`
+	Enabled           bool   `json:"enabled"`
+	SnapshotThreshold *int   `json:"snapshot_threshold,omitempty"`
 }
 
 // Config is the global td config stored at ~/.config/td/config.json.
@@ -135,6 +137,21 @@ func GetServerURL() string {
 		return cfg.Sync.URL
 	}
 	return defaultServerURL
+}
+
+// GetSnapshotThreshold returns the snapshot bootstrap threshold (min server events).
+// Priority: TD_SYNC_SNAPSHOT_THRESHOLD env > config.json > default (100).
+func GetSnapshotThreshold() int {
+	if v := os.Getenv("TD_SYNC_SNAPSHOT_THRESHOLD"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	cfg, err := LoadConfig()
+	if err == nil && cfg.Sync.SnapshotThreshold != nil && *cfg.Sync.SnapshotThreshold > 0 {
+		return *cfg.Sync.SnapshotThreshold
+	}
+	return 100
 }
 
 // GetAPIKey returns the API key.
