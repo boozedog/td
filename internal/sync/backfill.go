@@ -89,14 +89,14 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 	}
 
 	rows, err := tx.Query(`
-		SELECT i.*, al.last_ts
+		SELECT i.*,
+		       (SELECT timestamp FROM action_log
+		        WHERE entity_id = i.id AND entity_type IN ('issue', 'issues')
+		        ORDER BY timestamp DESC, rowid DESC LIMIT 1) AS last_ts,
+		       (SELECT new_data FROM action_log
+		        WHERE entity_id = i.id AND entity_type IN ('issue', 'issues')
+		        ORDER BY timestamp DESC, rowid DESC LIMIT 1) AS last_data
 		FROM issues i
-		LEFT JOIN (
-			SELECT entity_id, MAX(timestamp) AS last_ts
-			FROM action_log
-			WHERE entity_type IN ('issue', 'issues')
-			GROUP BY entity_id
-		) al ON al.entity_id = i.id
 	`)
 	if err != nil {
 		return 0, fmt.Errorf("query issues for stale backfill: %w", err)
@@ -133,10 +133,14 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 		var entityID string
 		var updatedAtVal any
 		var lastActionVal any
+		var lastDataVal any
 		for i, c := range cols {
 			switch c {
 			case "last_ts":
 				lastActionVal = vals[i]
+				continue
+			case "last_data":
+				lastDataVal = vals[i]
 				continue
 			case "id":
 				entityID = fmt.Sprint(vals[i])
@@ -145,20 +149,32 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 			}
 			rowMap[c] = vals[i]
 		}
-		if entityID == "" || updatedAtVal == nil || lastActionVal == nil {
+		if entityID == "" {
 			continue
 		}
 
-		updatedAt, ok := parseAnyTime(updatedAtVal)
-		if !ok {
-			continue
-		}
-		lastActionAt, ok := parseAnyTime(lastActionVal)
-		if !ok {
-			continue
+		needsUpdate := false
+
+		// Check updated_at staleness when we have timestamps
+		if updatedAtVal != nil && lastActionVal != nil {
+			if updatedAt, ok := parseAnyTime(updatedAtVal); ok {
+				if lastActionAt, ok := parseAnyTime(lastActionVal); ok {
+					if updatedAt.After(lastActionAt.Add(staleThreshold)) {
+						needsUpdate = true
+					}
+				}
+			}
 		}
 
-		if !updatedAt.After(lastActionAt.Add(staleThreshold)) {
+		// Check status mismatch or invalid/empty JSON in last action
+		currentStatus := fmt.Sprint(rowMap["status"])
+		if currentStatus != "" {
+			if !statusMatches(lastDataVal, currentStatus) {
+				needsUpdate = true
+			}
+		}
+
+		if !needsUpdate {
 			continue
 		}
 
@@ -173,7 +189,14 @@ func BackfillStaleIssues(tx *sql.Tx, sessionID string) (int, error) {
 			return count, fmt.Errorf("generate action id: %w", err)
 		}
 
-		if _, err := stmt.Exec(actionID, sessionID, entityID, string(newData), updatedAt); err != nil {
+		ts := time.Now()
+		if updatedAtVal != nil {
+			if parsed, ok := parseAnyTime(updatedAtVal); ok {
+				ts = parsed
+			}
+		}
+
+		if _, err := stmt.Exec(actionID, sessionID, entityID, string(newData), ts); err != nil {
 			return count, fmt.Errorf("insert stale update %s: %w", entityID, err)
 		}
 		count++
@@ -326,4 +349,33 @@ func parseAnyTime(val any) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+func statusMatches(lastData any, currentStatus string) bool {
+	if lastData == nil {
+		return false
+	}
+
+	var raw string
+	switch v := lastData.(type) {
+	case string:
+		raw = v
+	case []byte:
+		raw = string(v)
+	default:
+		raw = fmt.Sprint(v)
+	}
+	if raw == "" {
+		return false
+	}
+
+	var fields map[string]any
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return false
+	}
+	val, ok := fields["status"]
+	if !ok || val == nil {
+		return false
+	}
+	return fmt.Sprint(val) == currentStatus
 }

@@ -64,6 +64,35 @@ td_a sync >/dev/null 2>&1
 ALICE_COUNT=$(td_a list --json --status all -n 10000 2>/dev/null | jq 'length')
 _ok "Alice pulled $ALICE_COUNT issues"
 
+_step "Status parity check (bob vs alice)"
+BOB_STATUS_FILE="$WORKDIR/status_bob.tsv"
+ALICE_STATUS_FILE="$WORKDIR/status_alice.tsv"
+STATUS_DIFF_FILE="$WORKDIR/status_diff.txt"
+
+# Per-status counts for quick visibility
+BOB_STATUS_COUNTS=$(sqlite3 "$CLIENT_B_DIR/.todos/issues.db" \
+    "SELECT status, COUNT(*) FROM issues WHERE deleted_at IS NULL GROUP BY status ORDER BY status;" 2>/dev/null || true)
+ALICE_STATUS_COUNTS=$(sqlite3 "$CLIENT_A_DIR/.todos/issues.db" \
+    "SELECT status, COUNT(*) FROM issues WHERE deleted_at IS NULL GROUP BY status ORDER BY status;" 2>/dev/null || true)
+echo "Bob status counts:"
+echo "$BOB_STATUS_COUNTS"
+echo "Alice status counts:"
+echo "$ALICE_STATUS_COUNTS"
+
+# Full diff by id + status (trim output to keep logs readable)
+sqlite3 "$CLIENT_B_DIR/.todos/issues.db" \
+    "SELECT id, status FROM issues WHERE deleted_at IS NULL ORDER BY id;" > "$BOB_STATUS_FILE"
+sqlite3 "$CLIENT_A_DIR/.todos/issues.db" \
+    "SELECT id, status FROM issues WHERE deleted_at IS NULL ORDER BY id;" > "$ALICE_STATUS_FILE"
+diff -u "$BOB_STATUS_FILE" "$ALICE_STATUS_FILE" > "$STATUS_DIFF_FILE" || true
+if [ -s "$STATUS_DIFF_FILE" ]; then
+    _fail "status mismatch (see $STATUS_DIFF_FILE)"
+    echo "Status diff (first 200 lines):"
+    head -200 "$STATUS_DIFF_FILE"
+else
+    _ok "status parity"
+fi
+
 # Backfill ensures orphan entities get synthetic create events.
 # Expect parity — alice should have at least bob's issues.
 assert_ge "alice has at least bob's issues" "$ALICE_COUNT" "$BOB_COUNT"

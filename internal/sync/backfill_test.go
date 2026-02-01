@@ -268,7 +268,7 @@ func TestBackfillStaleIssues_SkipsWhenUpToDate(t *testing.T) {
 	now := time.Now().UTC().Format("2006-01-02 15:04:05")
 	_, _ = db.Exec(`INSERT INTO issues (id, title, status, updated_at) VALUES ('td-701', 'Fresh', 'open', ?)`, now)
 	_, _ = db.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
-		VALUES ('al-create2', 'ses-old', 'create', 'issue', 'td-701', '{"id":"td-701"}', ?, 0)`, now)
+		VALUES ('al-create2', 'ses-old', 'create', 'issue', 'td-701', '{"id":"td-701","status":"open"}', ?, 0)`, now)
 
 	tx, _ := db.Begin()
 	n, err := BackfillStaleIssues(tx, "ses-test")
@@ -279,6 +279,26 @@ func TestBackfillStaleIssues_SkipsWhenUpToDate(t *testing.T) {
 
 	if n != 0 {
 		t.Fatalf("expected 0 stale updates, got %d", n)
+	}
+}
+
+func TestBackfillStaleIssues_BackfillsInvalidJSON(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	now := time.Now().UTC().Format("2006-01-02 15:04:05")
+	_, _ = db.Exec(`INSERT INTO issues (id, title, status, updated_at) VALUES ('td-702', 'Bad JSON', 'open', ?)`, now)
+	_, _ = db.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone)
+		VALUES ('al-badjson', 'ses-old', 'update', 'issue', 'td-702', 'not-json', ?, 0)`, now)
+
+	tx, _ := db.Begin()
+	n, err := BackfillStaleIssues(tx, "ses-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx.Commit()
+
+	if n != 1 {
+		t.Fatalf("expected 1 stale update for invalid JSON, got %d", n)
 	}
 }
 
