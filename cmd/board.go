@@ -369,7 +369,34 @@ var boardMoveCmd = &cobra.Command{
 			return err
 		}
 
-		if err := database.SetIssuePosition(board.ID, issue.ID, position); err != nil {
+		// Compute sparse sort key from visual slot
+		sortKey, respaced, err := database.ComputeInsertPosition(board.ID, position)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+
+		// Log respace events for sync if gap exhaustion triggered re-spacing
+		if len(respaced) > 0 {
+			for _, r := range respaced {
+				bipID := db.BoardIssuePosID(board.ID, r.IssueID)
+				rData, _ := json.Marshal(map[string]interface{}{
+					"id":       bipID,
+					"board_id": board.ID,
+					"issue_id": r.IssueID,
+					"position": r.NewPosition,
+					"added_at": time.Now().Format(time.RFC3339),
+				})
+				logActionWithSession(baseDir, database, &models.ActionLog{
+					ActionType: models.ActionBoardSetPosition,
+					EntityType: "board_issue_positions",
+					EntityID:   bipID,
+					NewData:    string(rData),
+				})
+			}
+		}
+
+		if err := database.SetIssuePosition(board.ID, issue.ID, sortKey); err != nil {
 			output.Error("%v", err)
 			return err
 		}
@@ -380,7 +407,7 @@ var boardMoveCmd = &cobra.Command{
 			"id":       bipID,
 			"board_id": board.ID,
 			"issue_id": issue.ID,
-			"position": position,
+			"position": sortKey,
 			"added_at": time.Now().Format(time.RFC3339),
 		})
 		logActionWithSession(baseDir, database, &models.ActionLog{
