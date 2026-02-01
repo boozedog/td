@@ -333,14 +333,14 @@ func TestCreateDeleteConflict_DeleteLast(t *testing.T) {
 	}
 }
 
-// ─── Test 6b: Update arrives last → entity exists with update data ───
+// ─── Test 6b: Delete wins — update does not resurrect deleted entity ───
 
 func TestCreateDeleteConflict_UpdateLast(t *testing.T) {
 	h := NewHarness(t, 2, proj)
 
 	// A creates issue
 	if err := h.Mutate("client-A", "create", "issues", "td-CD2", map[string]any{
-		"title": "Will be resurrected", "status": "open",
+		"title": "Will stay deleted", "status": "open",
 	}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -381,15 +381,11 @@ func TestCreateDeleteConflict_UpdateLast(t *testing.T) {
 
 	h.AssertConverged(proj)
 
-	// Update arrived last → entity should exist with A's data
+	// Delete wins — update does not resurrect a deleted entity
 	for _, cid := range []string{"client-A", "client-B"} {
 		ent := h.QueryEntity(cid, "issues", "td-CD2")
-		if ent == nil {
-			t.Fatalf("%s: td-CD2 should exist (update re-inserts)", cid)
-		}
-		title, _ := ent["title"].(string)
-		if title != "Resurrected by A" {
-			t.Fatalf("%s: expected 'Resurrected by A', got %q", cid, title)
+		if ent != nil {
+			t.Fatalf("%s: td-CD2 should be deleted (delete wins over update), got %v", cid, ent)
 		}
 	}
 }
@@ -659,7 +655,7 @@ func TestCreateExistingEntity(t *testing.T) {
 	}
 }
 
-// ─── Test 12: Update for entity where create was skipped ───
+// ─── Test 12: Update for missing entity is a no-op ───
 
 func TestUpdateMissingEntity(t *testing.T) {
 	h := NewHarness(t, 2, proj)
@@ -694,14 +690,10 @@ func TestUpdateMissingEntity(t *testing.T) {
 		t.Fatalf("pull B: %v", err)
 	}
 
-	// B should have the entity from update's new_data (INSERT OR REPLACE)
+	// Update without prior create is a no-op — entity should not exist
 	ent := h.QueryEntity("client-B", "issues", "td-UM1")
-	if ent == nil {
-		t.Fatal("client-B: td-UM1 should exist from update upsert")
-	}
-	title, _ := ent["title"].(string)
-	if title != "Updated" {
-		t.Fatalf("client-B: expected 'Updated', got %q", title)
+	if ent != nil {
+		t.Fatalf("client-B: td-UM1 should not exist (update without prior create is no-op), got %v", ent)
 	}
 }
 
@@ -741,7 +733,7 @@ func TestDeleteMissingEntity(t *testing.T) {
 	}
 }
 
-// ─── Test 14: Update arrives after local delete (no push) ───
+// ─── Test 14: Update after local delete — delete wins ───
 
 func TestUpdateAfterLocalDelete(t *testing.T) {
 	h := NewHarness(t, 2, proj)
@@ -778,18 +770,14 @@ func TestUpdateAfterLocalDelete(t *testing.T) {
 		t.Fatalf("push A: %v", err)
 	}
 
-	// B pulls — update re-inserts the entity
+	// B pulls — update does not resurrect the locally-deleted entity
 	if _, err := h.Pull("client-B", proj); err != nil {
 		t.Fatalf("pull B: %v", err)
 	}
 
 	ent := h.QueryEntity("client-B", "issues", "td-ULD1")
-	if ent == nil {
-		t.Fatal("client-B: td-ULD1 should re-appear after pulling update")
-	}
-	title, _ := ent["title"].(string)
-	if title != "Updated by A" {
-		t.Fatalf("client-B: expected 'Updated by A', got %q", title)
+	if ent != nil {
+		t.Fatalf("client-B: td-ULD1 should stay deleted (delete wins over remote update), got %v", ent)
 	}
 }
 
