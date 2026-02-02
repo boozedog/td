@@ -46,7 +46,23 @@ var syncProjectCreateCmd = &cobra.Command{
 			return err
 		}
 
+		// Auto-link local project
+		baseDir := getBaseDir()
+		database, err := db.Open(baseDir)
+		if err == nil {
+			defer database.Close()
+			if err := database.SetSyncState(project.ID); err == nil {
+				output.Success("Created and linked to project %s (%s)", project.Name, project.ID)
+				return nil
+			} else {
+				output.Success("Created project %s (%s)", project.Name, project.ID)
+				output.Warning("auto-link failed: %v", err)
+				return nil
+			}
+		}
+
 		output.Success("Created project %s (%s)", project.Name, project.ID)
+		output.Warning("auto-link failed: %v", err)
 		return nil
 	},
 }
