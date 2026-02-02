@@ -1167,16 +1167,15 @@ verify_convergence() {
             if [ "$common_a" = "$common_b" ]; then
                 _ok "issues match (common set; extra rows from known sync limitation)"
             else
-                # Concurrent mutations can cause per-field LWW divergence.
-                # Log which fields differ but treat as known limitation.
-                local cid diverge_count=0
+                # Field-level merge should prevent per-field divergence.
+                # Strict assertion: every common issue must match exactly.
+                local cid
                 for cid in $common_ids; do
                     local row_a row_b
                     row_a=$(sqlite3 "$db_a" "SELECT $issue_cols FROM issues WHERE id='$cid' AND deleted_at IS NULL;")
                     row_b=$(sqlite3 "$db_b" "SELECT $issue_cols FROM issues WHERE id='$cid' AND deleted_at IS NULL;")
-                    [ "$row_a" != "$row_b" ] && diverge_count=$((diverge_count + 1))
+                    assert_eq "issue $cid fields match" "$row_a" "$row_b"
                 done
-                _ok "issues match (common set; $diverge_count issues with LWW field divergence from concurrent edits)"
             fi
         else
             _fail "issues match: no common IDs"
