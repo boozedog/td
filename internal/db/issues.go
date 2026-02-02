@@ -235,12 +235,12 @@ func (db *DB) UpdateIssue(issue *models.Issue) error {
 
 		_, err := db.conn.Exec(`
 			UPDATE issues SET title = ?, description = ?, status = ?, type = ?, priority = ?,
-			                  points = ?, labels = ?, parent_id = ?, acceptance = ?,
+			                  points = ?, labels = ?, parent_id = ?, acceptance = ?, sprint = ?,
 			                  implementer_session = ?, reviewer_session = ?, updated_at = ?,
 			                  closed_at = ?, deleted_at = ?
 			WHERE id = ?
 		`, issue.Title, issue.Description, issue.Status, issue.Type, issue.Priority,
-			issue.Points, labels, issue.ParentID, issue.Acceptance,
+			issue.Points, labels, issue.ParentID, issue.Acceptance, issue.Sprint,
 			issue.ImplementerSession, issue.ReviewerSession, issue.UpdatedAt,
 			issue.ClosedAt, issue.DeletedAt, issue.ID)
 

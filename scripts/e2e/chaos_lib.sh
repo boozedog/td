@@ -501,7 +501,7 @@ exec_update() {
     rand_int 1 3; local fields="$_RAND_RESULT"
     local args=(update "$id")
     for _ in $(seq 1 "$fields"); do
-        rand_int 1 7
+        rand_int 1 8
         case "$_RAND_RESULT" in
             1) rand_title 100; args+=(--title "$_RAND_STR") ;;
             2) rand_description 1; args+=(--description "$_RAND_STR") ;;
@@ -510,6 +510,7 @@ exec_update() {
             5) rand_int 0 13; args+=(--points "$_RAND_RESULT") ;;
             6) rand_labels; args+=(--labels "$_RAND_STR") ;;
             7) rand_acceptance; args+=(--acceptance "$_RAND_STR") ;;
+            8) rand_choice "sprint-1" "sprint-2" "sprint-3" ""; args+=(--sprint "$_RAND_RESULT") ;;
         esac
     done
 
@@ -540,12 +541,13 @@ exec_update_bulk() {
     [ "${#ids[@]}" -lt 2 ] && return 1
 
     local field_flag
-    rand_int 1 4
+    rand_int 1 5
     case "$_RAND_RESULT" in
         1) rand_choice P0 P1 P2 P3; field_flag="--priority $_RAND_RESULT" ;;
         2) rand_choice task bug feature spike; field_flag="--type $_RAND_RESULT" ;;
         3) rand_int 0 13; field_flag="--points $_RAND_RESULT" ;;
         4) rand_labels; field_flag="--labels $_RAND_STR" ;;
+        5) rand_choice "sprint-1" "sprint-2" "sprint-3" ""; field_flag="--sprint $_RAND_RESULT" ;;
     esac
 
     local output
