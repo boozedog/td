@@ -42,8 +42,7 @@ var updateCmd = &cobra.Command{
 				continue
 			}
 
-			// Capture previous state for undo
-			prevData, _ := json.Marshal(issue)
+			// (previous state captured atomically by UpdateIssueLogged)
 
 			// Update fields if flags are set
 			if title, _ := cmd.Flags().GetString("title"); title != "" {
@@ -232,22 +231,9 @@ var updateCmd = &cobra.Command{
 				}
 			}
 
-			if err := database.UpdateIssue(issue); err != nil {
+			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionUpdate); err != nil {
 				output.Error("failed to update %s: %v", issueID, err)
 				continue
-			}
-
-			// Log action for undo
-			if sess != nil {
-				newData, _ := json.Marshal(issue)
-				database.LogAction(&models.ActionLog{
-					SessionID:    sess.ID,
-					ActionType:   models.ActionUpdate,
-					EntityType:   "issue",
-					EntityID:     issueID,
-					PreviousData: string(prevData),
-					NewData:      string(newData),
-				})
 			}
 
 			fmt.Printf("UPDATED %s\n", issueID)

@@ -177,8 +177,8 @@ var createCmd = &cobra.Command{
 			issue.CreatedBranch = gitState.Branch
 		}
 
-		// Create the issue
-		if err := database.CreateIssue(issue); err != nil {
+		// Create the issue (atomic create + action log)
+		if err := database.CreateIssueLogged(issue, sess.ID); err != nil {
 			output.Error("failed to create issue: %v", err)
 			return err
 		}
@@ -187,16 +187,6 @@ var createCmd = &cobra.Command{
 		if err := database.RecordSessionAction(issue.ID, sess.ID, models.ActionSessionCreated); err != nil {
 			output.Warning("failed to record session history: %v", err)
 		}
-
-		// Log action for undo
-		newData, _ := json.Marshal(issue)
-		database.LogAction(&models.ActionLog{
-			SessionID:  sess.ID,
-			ActionType: models.ActionCreate,
-			EntityType: "issue",
-			EntityID:   issue.ID,
-			NewData:    string(newData),
-		})
 
 		// Handle dependencies
 		if dependsOn, _ := cmd.Flags().GetString("depends-on"); dependsOn != "" {
