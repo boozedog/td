@@ -1240,7 +1240,12 @@ verify_convergence() {
     files_b=$(sqlite3 "$db_b" "SELECT issue_id, file_path, role FROM issue_files ORDER BY issue_id, file_path;")
     assert_eq "issue files match" "$files_a" "$files_b"
 
-    # Row counts — issues use assert_ge due to known resurrection issue
+    # Row counts — issues can diverge because CREATE events use INSERT OR REPLACE,
+    # which resurrects hard-deleted rows during event replay. Example: Client A
+    # deletes issue i1, Client B replays an older CREATE event for i1 — the INSERT
+    # OR REPLACE re-inserts the row. UPDATE events are safe (upsertEntityIfExists
+    # with requireExisting=true won't resurrect). Fix: soft deletes for issues
+    # (same pattern used for board_issue_positions). See sync-agent-guide.md.
     local count_a count_b
     count_a=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM issues;")
     count_b=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM issues;")
@@ -1270,6 +1275,9 @@ verify_convergence() {
 chaos_report() {
     _step "Chaos stats"
     _ok "actions: $CHAOS_ACTION_COUNT, syncs: $CHAOS_SYNC_COUNT, skipped: $CHAOS_SKIPPED"
+    # "Expected failures" = td commands that hit business-logic guardrails during
+    # random chaos actions (self-review, circular deps, invalid transitions, etc.).
+    # These are correct rejections, not bugs. See is_expected_failure() for patterns.
     _ok "expected failures: $CHAOS_EXPECTED_FAILURES, unexpected: $CHAOS_UNEXPECTED_FAILURES"
     _ok "issues: ${#CHAOS_ISSUE_IDS[@]} created, ${#CHAOS_DELETED_IDS[@]} deleted"
     local dep_count
