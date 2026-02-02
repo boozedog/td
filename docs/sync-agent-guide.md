@@ -89,7 +89,7 @@ Entities predating action logging have no action_log entries. `BackfillOrphanEnt
 
 ### Conflict resolution
 
-Last-write-wins by server arrival order. When a remote event overwrites a locally-modified entity (local `updated_at` > `last_sync_at`), a `ConflictRecord` is created with both local and remote data. Stored in `sync_conflicts` table.
+Last-write-wins by server arrival order. Update events use field-level merge: `previous_data` and `new_data` are diffed to apply only changed columns, so concurrent edits to different fields are both preserved. When a remote event overwrites a locally-modified entity (local `updated_at` > `last_sync_at`), a `ConflictRecord` is created with both local and remote data. Stored in `sync_conflicts` table.
 
 ## Testing
 
@@ -144,7 +144,7 @@ See [e2e-sync-test-guide.md](../scripts/e2e/e2e-sync-test-guide.md) for writing 
 ## Known issues
 
 - **Event replay ordering**: "update" events with full JSON snapshots use `INSERT OR REPLACE`, which can re-create rows that were hard-deleted during replay. `board_issue_positions` is fixed — it now uses soft deletes (`deleted_at` column) so replayed updates don't resurrect removed positions. Other entity types can still re-create hard-deleted rows in rare cases; e2e real-data tests use `assert_ge` for this reason.
-- **Row-level LWW causes field-level data loss** (`td-a729f0`): Concurrent edits to *different fields* of the same issue can lose one client's changes. The sync engine uses `INSERT OR REPLACE` with full row snapshots, so last-write-wins applies to the entire row, not individual columns. Mitigation requires column-level merge or CRDT fields.
+- **Field-level merge for updates** (fixed in `td-a729f0`): Update events now diff `previous_data` vs `new_data` to apply only changed fields via `UPDATE ... SET`, preserving concurrent edits to different columns. Falls back to full `INSERT OR REPLACE` when `previous_data` is missing or the row doesn't exist locally.
 - **Entity type aliases are fragile**: The action_log uses both singular and plural forms inconsistently across the codebase. `normalizeEntityType` and the backfill alias table must stay in sync manually.
 
 ## Future directions
