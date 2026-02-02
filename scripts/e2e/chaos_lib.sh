@@ -86,6 +86,7 @@ CHAOS_SYNC_COUNT=0
 CHAOS_ACTIONS_SINCE_SYNC=0
 CHAOS_SKIPPED=0
 CHAOS_FIELD_COLLISIONS=0
+CHAOS_DELETE_MUTATE_CONFLICTS=0
 CHAOS_VERBOSE="${CHAOS_VERBOSE:-false}"
 
 # ============================================================
@@ -1392,6 +1393,57 @@ exec_field_collision() {
 }
 
 # ============================================================
+# 7c. Delete-While-Mutate Conflict
+# ============================================================
+# Actor A deletes an issue; Actor B (unaware) performs 2-3 mutations on it.
+# Classic tombstone-vs-mutation distributed systems edge case.
+
+exec_delete_while_mutate() {
+    local id="$1"
+
+    # Actor A deletes the issue
+    local output rc=0
+    output=$(chaos_run_td "a" delete "$id" 2>&1) || rc=$?
+    if [ $rc -ne 0 ]; then
+        # Issue might already be deleted or invalid
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    fi
+
+    # Track deletion in chaos state
+    CHAOS_DELETED_IDS+=("$id")
+    kv_set CHAOS_ISSUE_STATUS "$id" "deleted"
+
+    # Actor B (unaware of deletion) performs 2-3 mutations
+    rand_int 2 3; local mutation_count="$_RAND_RESULT"
+    local mutations_done=0
+
+    for _ in $(seq 1 "$mutation_count"); do
+        rand_int 1 4
+        case "$_RAND_RESULT" in
+            1) # Comment
+               rand_comment 5 20
+               chaos_run_td "b" comments add "$id" "$_RAND_STR" >/dev/null 2>&1 || true ;;
+            2) # Update field
+               rand_title 50
+               chaos_run_td "b" update "$id" --title "$_RAND_STR" >/dev/null 2>&1 || true ;;
+            3) # Log progress
+               rand_comment 5 15
+               chaos_run_td "b" log --issue "$id" "$_RAND_STR" >/dev/null 2>&1 || true ;;
+            4) # Try status change
+               chaos_run_td "b" start "$id" --reason "chaos" >/dev/null 2>&1 || true ;;
+        esac
+        mutations_done=$((mutations_done + 1))
+    done
+
+    CHAOS_DELETE_MUTATE_CONFLICTS=$((CHAOS_DELETE_MUTATE_CONFLICTS + 1))
+    CHAOS_ACTION_COUNT=$((CHAOS_ACTION_COUNT + 1 + mutations_done))
+    CHAOS_ACTIONS_SINCE_SYNC=$((CHAOS_ACTIONS_SINCE_SYNC + 1 + mutations_done))
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "delete_while_mutate: $id ($mutations_done mutations after delete)"
+    return 0
+}
+
+# ============================================================
 # 8. Safe Execution Wrapper
 # ============================================================
 
@@ -1677,4 +1729,5 @@ chaos_report() {
     file_count=$(kv_count CHAOS_ISSUE_FILES)
     _ok "boards: ${#CHAOS_BOARD_NAMES[@]} active, deps: $dep_count tracked, files: $file_count linked"
     _ok "field collisions: $CHAOS_FIELD_COLLISIONS"
+    _ok "delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
 }

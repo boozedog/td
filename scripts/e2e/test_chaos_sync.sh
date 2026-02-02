@@ -120,9 +120,13 @@ while ! is_done; do
         # Conflict round: both actors mutate without sync between
         select_issue not_deleted; local_id="$_CHAOS_SELECTED_ISSUE"
         if [ -n "$local_id" ]; then
-            if [ $(( RANDOM % 100 )) -lt 30 ]; then
+            conflict_roll=$(( RANDOM % 100 ))
+            if [ "$conflict_roll" -lt 30 ]; then
                 # Field collision: both actors update same field on same issue
                 exec_field_collision "$local_id"
+            elif [ "$conflict_roll" -lt 45 ]; then
+                # Delete-while-mutate: actor A deletes, actor B mutates unaware
+                exec_delete_while_mutate "$local_id"
             else
                 # Random action conflict (existing behavior)
                 select_action; action_a="$_CHAOS_SELECTED_ACTION"
@@ -178,6 +182,7 @@ echo "  Expected failures:      $CHAOS_EXPECTED_FAILURES"
 echo "  Unexpected failures:    $CHAOS_UNEXPECTED_FAILURES"
 echo "  Skipped (no target):    $CHAOS_SKIPPED"
 echo "  Field collisions:       $CHAOS_FIELD_COLLISIONS"
+echo "  Delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
 echo "  Issues created:         ${#CHAOS_ISSUE_IDS[@]}"
 echo "  Boards created:         ${#CHAOS_BOARD_NAMES[@]}"
 echo "  Seed:                   $SEED (use --seed $SEED to reproduce)"
