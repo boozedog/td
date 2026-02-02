@@ -10,7 +10,7 @@ import (
 
 func TestIsMutatingCommand(t *testing.T) {
 	// Commands that should trigger auto-sync
-	mutating := []string{"create", "update", "delete", "start", "close", "log", "handoff", "board", "dep", "ws", "comments"}
+	mutating := []string{"create", "update", "delete", "start", "close", "log", "handoff", "board", "dep", "ws", "comments", "monitor"}
 	for _, name := range mutating {
 		if !isMutatingCommand(name) {
 			t.Errorf("expected %q to be mutating", name)
@@ -18,7 +18,7 @@ func TestIsMutatingCommand(t *testing.T) {
 	}
 
 	// Commands that should NOT trigger auto-sync
-	readOnly := []string{"list", "show", "search", "query", "monitor", "sync", "auth", "status", "info", "version", "help", "doctor"}
+	readOnly := []string{"list", "show", "search", "query", "sync", "auth", "status", "info", "version", "help", "doctor"}
 	for _, name := range readOnly {
 		if isMutatingCommand(name) {
 			t.Errorf("expected %q to NOT be mutating", name)

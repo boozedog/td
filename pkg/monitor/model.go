@@ -496,7 +496,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if modalCmd := m.fetchModalDataIfOpen(); modalCmd != nil {
 			cmds = append(cmds, modalCmd)
 		}
-		// Periodic auto-sync
+		// Periodic auto-sync (backup path — primary sync runs in independent goroutine
+		// in cmd/monitor.go, since BubbleTea Cmd dispatch can stall under some PTYs)
 		if m.AutoSyncFunc != nil && m.AutoSyncInterval > 0 && time.Since(m.LastAutoSync) >= m.AutoSyncInterval {
 			m.LastAutoSync = time.Now()
 			syncFn := m.AutoSyncFunc

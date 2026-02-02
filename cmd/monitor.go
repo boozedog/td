@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -61,19 +63,43 @@ Mouse support:
 		model := monitor.NewModel(database, sess.ID, interval, versionStr, baseDir)
 
 		// Enable periodic auto-sync in monitor if authenticated and linked
+		syncInterval := time.Duration(0)
 		if AutoSyncEnabled() && syncconfig.IsAuthenticated() {
 			syncState, _ := database.GetSyncState()
 			if syncState != nil && !syncState.SyncDisabled {
 				model.AutoSyncFunc = func() { autoSyncOnce() }
-				model.AutoSyncInterval = syncconfig.GetAutoSyncInterval()
+				syncInterval = syncconfig.GetAutoSyncInterval()
+				model.AutoSyncInterval = syncInterval
+				slog.Debug("monitor: autosync configured", "interval", syncInterval)
 			}
+		}
+
+		// Start independent periodic sync goroutine. BubbleTea's tea.Cmd dispatch
+		// can stall under certain terminal/PTY conditions, so we run sync outside
+		// the event loop to guarantee it fires reliably.
+		ctx, cancelSync := context.WithCancel(context.Background())
+		if syncInterval > 0 {
+			go func() {
+				ticker := time.NewTicker(syncInterval)
+				defer ticker.Stop()
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						autoSyncOnce()
+					}
+				}
+			}()
 		}
 
 		p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseAllMotion())
 		if _, err := p.Run(); err != nil {
+			cancelSync()
 			return fmt.Errorf("error running monitor: %w", err)
 		}
 
+		cancelSync()
 		return nil
 	},
 }

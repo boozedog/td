@@ -30,6 +30,7 @@ These depend on local databases and are only run with `--full`:
 
 - `test_sync_real_data.sh` — runs against a single issues DB (default `$HOME/code/td/.todos/issues.db` or a custom path).
 - `test_sync_real_data_all_projects.sh` — reads `~/.config/sidecar/config.json` and runs the same test for every project DB it finds.
+- `test_monitor_autosync.sh` — verifies that `td monitor`'s periodic auto-sync pushes edits made while the monitor is running. Uses `expect` for pseudo-TTY. Requires `expect` installed.
 
 ## Alternating actions test
 

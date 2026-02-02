@@ -56,6 +56,7 @@ var mutatingCommands = map[string]bool{
 	"epic":        true,
 	"task":        true,
 	"ws":          true,
+	"monitor":     true,
 }
 
 // isMutatingCommand checks if the given command name triggers auto-sync.
@@ -71,15 +72,22 @@ func AutoSyncEnabled() bool {
 // autoSyncOnce runs a push and optional pull silently.
 func autoSyncOnce() {
 	if !atomic.CompareAndSwapInt32(&autoSyncInFlight, 0, 1) {
-		return // another sync already in progress
+		slog.Debug("autosync: skipped, in flight")
+		return
 	}
 	defer atomic.StoreInt32(&autoSyncInFlight, 0)
 
-	if !AutoSyncEnabled() || !syncconfig.IsAuthenticated() {
+	if !AutoSyncEnabled() {
+		slog.Debug("autosync: disabled")
+		return
+	}
+	if !syncconfig.IsAuthenticated() {
+		slog.Debug("autosync: not authenticated")
 		return
 	}
 	dir := getBaseDir()
 	if dir == "" {
+		slog.Debug("autosync: no base dir")
 		return
 	}
 	database, err := db.Open(dir)
@@ -90,12 +98,20 @@ func autoSyncOnce() {
 	defer database.Close()
 
 	syncState, err := database.GetSyncState()
-	if err != nil || syncState == nil {
+	if err != nil {
+		slog.Debug("autosync: get sync state", "err", err)
+		return
+	}
+	if syncState == nil {
+		slog.Debug("autosync: no sync state")
 		return
 	}
 	if syncState.SyncDisabled {
+		slog.Debug("autosync: sync disabled")
 		return
 	}
+
+	slog.Debug("autosync: starting push+pull")
 
 	deviceID, err := syncconfig.GetDeviceID()
 	if err != nil {

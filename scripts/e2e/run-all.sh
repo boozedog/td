@@ -22,7 +22,7 @@ for arg in "$@"; do
 done
 
 # Tests that require external data or are slow — only run with --full
-FULL_ONLY="test_sync_real_data test_sync_real_data_all_projects"
+FULL_ONLY="test_sync_real_data test_sync_real_data_all_projects test_monitor_autosync"
 
 passed=0
 failed=0
