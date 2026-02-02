@@ -10,6 +10,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
+	"github.com/marcus/td/internal/syncclient"
 	"github.com/marcus/td/internal/version"
 	"github.com/marcus/td/pkg/monitor/keymap"
 	"github.com/marcus/td/pkg/monitor/modal"
@@ -119,6 +120,15 @@ type Model struct {
 	GettingStartedMouseHandler *mouse.Handler // Mouse handler for getting started modal
 	AgentFilePath              string         // Detected agent file path (may be empty)
 	AgentFileHasTD             bool           // Whether agent file already has td instructions
+
+	// Sync prompt modal state
+	SyncPromptOpen      bool
+	SyncPromptPhase     int
+	SyncPromptProjects  []syncclient.ProjectResponse
+	SyncPromptModal     *modal.Modal
+	SyncPromptMouse     *mouse.Handler
+	SyncPromptNameInput *textinput.Model
+	SyncPromptCursor    int
 
 	// Board picker state
 	BoardPickerOpen         bool
