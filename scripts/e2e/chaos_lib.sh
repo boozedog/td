@@ -369,7 +369,7 @@ rand_handoff_items() {
 
 # Parallel arrays for action names and weights (bash 3.2 compatible)
 _CHAOS_ACTION_NAMES=(
-    "create" "update" "delete" "restore" "update_bulk"
+    "create" "update" "update_append" "delete" "restore" "update_bulk"
     "start" "unstart" "review" "approve" "reject" "close" "reopen" "block" "unblock"
     "comment" "log_progress" "log_blocker" "log_decision" "log_hypothesis" "log_result"
     "dep_add" "dep_rm"
@@ -379,7 +379,7 @@ _CHAOS_ACTION_NAMES=(
     "ws_start" "ws_tag" "ws_untag" "ws_end" "ws_handoff"
 )
 _CHAOS_ACTION_WEIGHTS=(
-    15 10 2 1 2
+    15 10 2 2 1 2
     7 1 5 5 2 2 2 1 1
     10 4 2 2 1 1
     3 2
@@ -635,6 +635,43 @@ exec_update() {
         return 0
     else
         [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected update: $output"
+        return 2
+    fi
+}
+
+exec_update_append() {
+    local actor="$1"
+    select_issue not_deleted; local id="$_CHAOS_SELECTED_ISSUE"
+    [ -z "$id" ] && return 1
+
+    # Pick description or acceptance
+    rand_int 1 2
+    local field_flag
+    if [ "$_RAND_RESULT" -eq 1 ]; then
+        field_flag="--description"
+    else
+        field_flag="--acceptance"
+    fi
+
+    # Generate 1-3 random words as append text
+    rand_int 1 3; local word_count="$_RAND_RESULT"
+    local append_text=""
+    for _ in $(seq 1 "$word_count"); do
+        rand_int 0 $(( ${#_CHAOS_WORDS[@]} - 1 ))
+        local w="${_CHAOS_WORDS[$_RAND_RESULT]}"
+        if [ -z "$append_text" ]; then append_text="$w"; else append_text="$append_text $w"; fi
+    done
+
+    local output rc=0
+    output=$(chaos_run_td "$actor" update "$id" --append "$field_flag" "$append_text" 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "update_append: $id $field_flag '$append_text' by $actor"
+        return 0
+    elif is_expected_failure "$output"; then
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected update_append: $output"
         return 2
     fi
 }
