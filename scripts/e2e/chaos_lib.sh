@@ -104,6 +104,80 @@ CHAOS_VERBOSE="${CHAOS_VERBOSE:-false}"
 _RAND_RESULT=""
 _RAND_STR=""
 
+# ---- Edge-case data for adversarial testing ----
+# These strings exercise serialization, SQL escaping, unicode handling, and boundary conditions.
+# NOTE: null bytes (\x00) are omitted because bash cannot store them in variables.
+
+_CHAOS_EDGE_STRINGS=()
+
+# Empty and minimal
+_CHAOS_EDGE_STRINGS+=("")                          # empty string
+_CHAOS_EDGE_STRINGS+=("x")                         # single character
+
+# Very long string (1200 chars of 'A')
+_CHAOS_LONG_STR="$(printf 'A%.0s' $(seq 1 1200))"
+_CHAOS_EDGE_STRINGS+=("$_CHAOS_LONG_STR")
+
+# Unicode: emoji
+_CHAOS_EDGE_STRINGS+=("🔥🐛✅🚀💀🎉")
+
+# Unicode: CJK characters
+_CHAOS_EDGE_STRINGS+=("测试中文数据处理")
+
+# Unicode: RTL (Arabic)
+_CHAOS_EDGE_STRINGS+=("مرحبا بالعالم")
+
+# Strings with newlines
+_CHAOS_EDGE_STRINGS+=("line one
+line two
+line three")
+
+# Single quotes
+_CHAOS_EDGE_STRINGS+=("it's a test with 'single quotes'")
+
+# Double quotes
+_CHAOS_EDGE_STRINGS+=('she said "hello world"')
+
+# Backslashes
+_CHAOS_EDGE_STRINGS+=('path\\to\\file and \\n not a newline')
+
+# SQL injection attempt
+_CHAOS_EDGE_STRINGS+=("'; DROP TABLE issues; --")
+
+# More SQL special chars
+_CHAOS_EDGE_STRINGS+=('Robert"); DELETE FROM sync_events WHERE ("1"="1')
+
+# Mixed unicode + special chars
+_CHAOS_EDGE_STRINGS+=("emoji🔥 with 'quotes' and \"doubles\" and \\backslash")
+
+# Whitespace variants: tabs and trailing spaces
+_CHAOS_EDGE_STRINGS+=("	tabs	and   spaces   ")
+
+# Percent and format strings
+_CHAOS_EDGE_STRINGS+=("%s %d %x %n %%")
+
+# HTML/XML-like content
+_CHAOS_EDGE_STRINGS+=("<script>alert('xss')</script>")
+
+# JSON-like content
+_CHAOS_EDGE_STRINGS+=('{"key": "value", "nested": {"a": 1}}')
+
+# Counter for edge-case usage in stats
+CHAOS_EDGE_DATA_USED=0
+
+# maybe_edge_data: ~15% chance of replacing _RAND_STR with an edge-case string.
+# Call after any rand_* function to potentially override its output.
+maybe_edge_data() {
+    local roll=$(( RANDOM % 100 ))
+    if [ "$roll" -lt 15 ]; then
+        local idx=$(( RANDOM % ${#_CHAOS_EDGE_STRINGS[@]} ))
+        _RAND_STR="${_CHAOS_EDGE_STRINGS[$idx]}"
+        CHAOS_EDGE_DATA_USED=$((CHAOS_EDGE_DATA_USED + 1))
+        return 0
+    fi
+    return 1
+}
+
 rand_int() {
     local min="$1" max="$2"
     _RAND_RESULT=$(( min + RANDOM % (max - min + 1) ))
@@ -131,6 +205,15 @@ _CHAOS_SUFFIXES=("for production" "across services" "in staging" "with fallback"
 
 rand_title() {
     local max_len="${1:-200}"
+    # ~15% chance of edge-case data
+    if maybe_edge_data; then
+        # For titles, ensure non-empty (some commands reject empty titles)
+        if [ -z "$_RAND_STR" ]; then
+            _RAND_STR="edge-case-empty-$(( RANDOM % 1000 ))"
+        fi
+        _RAND_STR="${_RAND_STR:0:$max_len}"
+        return
+    fi
     rand_int 0 $(( ${#_CHAOS_PREFIXES[@]} - 1 ))
     local prefix="${_CHAOS_PREFIXES[$_RAND_RESULT]}"
     rand_int 0 $(( ${#_CHAOS_SUBJECTS[@]} - 1 ))
@@ -164,6 +247,8 @@ _CHAOS_SENTENCES=(
 )
 
 rand_description() {
+    # ~15% chance of edge-case data
+    if maybe_edge_data; then return; fi
     local paragraphs
     if [ -n "${1:-}" ]; then
         paragraphs="$1"
@@ -219,6 +304,8 @@ _CHAOS_WORDS=("the" "system" "should" "handle" "errors" "gracefully" "when" "pro
     "testing" "before" "deployment" "to" "production" "environments")
 
 rand_comment() {
+    # ~15% chance of edge-case data
+    if maybe_edge_data; then return; fi
     local min_words="${1:-10}" max_words="${2:-500}"
     rand_int "$min_words" "$max_words"; local count="$_RAND_RESULT"
     local result=""
@@ -231,6 +318,8 @@ rand_comment() {
 }
 
 rand_acceptance() {
+    # ~15% chance of edge-case data
+    if maybe_edge_data; then return; fi
     local items
     if [ -n "${1:-}" ]; then
         items="$1"
@@ -250,6 +339,8 @@ rand_acceptance() {
 }
 
 rand_handoff_items() {
+    # ~15% chance of edge-case data
+    if maybe_edge_data; then return; fi
     local count
     if [ -n "${1:-}" ]; then
         count="$1"
@@ -947,7 +1038,18 @@ exec_dep_rm() {
 
 exec_board_create() {
     local actor="$1"
-    local name="chaos-board-$(openssl rand -hex 4)"
+    local name
+    # ~15% chance of edge-case board name
+    if maybe_edge_data; then
+        # Board names must be non-empty for tracking; use edge data as suffix
+        if [ -z "$_RAND_STR" ]; then
+            name="chaos-board-empty-$(openssl rand -hex 4)"
+        else
+            name="$_RAND_STR"
+        fi
+    else
+        name="chaos-board-$(openssl rand -hex 4)"
+    fi
 
     local args=(board create "$name")
     # 50% chance of query
@@ -1976,4 +2078,5 @@ chaos_report() {
     _ok "field collisions: $CHAOS_FIELD_COLLISIONS"
     _ok "delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
     _ok "bursts: $CHAOS_BURST_COUNT ($CHAOS_BURST_ACTIONS total burst actions)"
+    _ok "edge-case data injections: $CHAOS_EDGE_DATA_USED"
 }
