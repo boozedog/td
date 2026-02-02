@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"os"
+	"strconv"
+	"strings"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/output"
@@ -294,10 +298,103 @@ var syncProjectRoleCmd = &cobra.Command{
 	},
 }
 
+var syncProjectJoinCmd = &cobra.Command{
+	Use:   "join [name-or-id]",
+	Short: "Join a remote sync project by name or ID",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !syncconfig.IsAuthenticated() {
+			output.Error("not logged in (run: td auth login)")
+			return fmt.Errorf("not authenticated")
+		}
+
+		serverURL := syncconfig.GetServerURL()
+		apiKey := syncconfig.GetAPIKey()
+		client := syncclient.New(serverURL, apiKey, "")
+
+		projects, err := client.ListProjects()
+		if err != nil {
+			output.Error("list projects: %v", err)
+			return err
+		}
+
+		if len(projects) == 0 {
+			output.Error("no projects found")
+			return fmt.Errorf("no projects found")
+		}
+
+		var selected syncclient.ProjectResponse
+
+		if len(args) == 0 {
+			// Interactive: display numbered list, prompt for selection
+			fmt.Println("Available projects:")
+			for i, p := range projects {
+				fmt.Printf("  %d) %s (%s)\n", i+1, p.Name, p.ID)
+			}
+			fmt.Print("Select project number: ")
+
+			scanner := bufio.NewScanner(os.Stdin)
+			if !scanner.Scan() {
+				return fmt.Errorf("no input")
+			}
+			input := strings.TrimSpace(scanner.Text())
+
+			num, err := strconv.Atoi(input)
+			if err != nil || num < 1 || num > len(projects) {
+				output.Error("invalid selection %q", input)
+				return fmt.Errorf("invalid selection")
+			}
+			selected = projects[num-1]
+		} else {
+			// Match by name first, then by ID
+			query := args[0]
+			found := false
+			for _, p := range projects {
+				if p.Name == query {
+					selected = p
+					found = true
+					break
+				}
+			}
+			if !found {
+				for _, p := range projects {
+					if p.ID == query {
+						selected = p
+						found = true
+						break
+					}
+				}
+			}
+			if !found {
+				output.Error("no project matching %q", query)
+				return fmt.Errorf("no project matching %q", query)
+			}
+		}
+
+		// Link using existing logic
+		baseDir := getBaseDir()
+		database, err := db.Open(baseDir)
+		if err != nil {
+			output.Error("open database: %v", err)
+			return err
+		}
+		defer database.Close()
+
+		if err := database.SetSyncState(selected.ID); err != nil {
+			output.Error("link project: %v", err)
+			return err
+		}
+
+		output.Success("Linked to project %s (%s)", selected.Name, selected.ID)
+		return nil
+	},
+}
+
 func init() {
 	syncProjectCreateCmd.Flags().String("description", "", "Project description")
 
 	syncProjectCmd.AddCommand(syncProjectCreateCmd)
+	syncProjectCmd.AddCommand(syncProjectJoinCmd)
 	syncProjectCmd.AddCommand(syncProjectLinkCmd)
 	syncProjectCmd.AddCommand(syncProjectUnlinkCmd)
 	syncProjectCmd.AddCommand(syncProjectListCmd)
