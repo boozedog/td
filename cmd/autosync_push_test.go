@@ -115,7 +115,7 @@ func setupAutoSyncTestDB(t *testing.T, n int) *db.DB {
 	// having action_log entries so the orphan backfill doesn't pick them up.
 	conn := database.Conn()
 	conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data, timestamp, undone, synced_at)
-		VALUES ('al-builtin-board', ?, 'create', 'board', 'bd-all-issues', '{}', datetime('now'), 0, datetime('now'))`, sess.ID)
+		VALUES ('al-builtin-board', ?, 'board_create', 'boards', 'bd-all-issues', '{}', datetime('now'), 0, datetime('now'))`, sess.ID)
 
 	// Insert n unsynced action_log entries
 	tx, err := conn.Begin()
