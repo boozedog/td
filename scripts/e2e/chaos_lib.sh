@@ -85,6 +85,7 @@ CHAOS_UNEXPECTED_FAILURES=0
 CHAOS_SYNC_COUNT=0
 CHAOS_ACTIONS_SINCE_SYNC=0
 CHAOS_SKIPPED=0
+CHAOS_FIELD_COLLISIONS=0
 CHAOS_VERBOSE="${CHAOS_VERBOSE:-false}"
 
 # ============================================================
@@ -1323,6 +1324,74 @@ exec_ws_handoff() {
 }
 
 # ============================================================
+# 7b. Field Collision (same-field conflict)
+# ============================================================
+# Both actors update the exact same field on the same issue simultaneously,
+# stressing field-level merge. Values are guaranteed different for scalar fields.
+
+exec_field_collision() {
+    local id="$1"
+
+    rand_int 1 7
+    local field_num="$_RAND_RESULT"
+    local field_name
+
+    case "$field_num" in
+        1)  field_name="title"
+            rand_title 50; local title_a="$_RAND_STR"
+            rand_title 50; local title_b="$_RAND_STR"
+            chaos_run_td "a" update "$id" --title "$title_a" >/dev/null 2>&1 || true
+            chaos_run_td "b" update "$id" --title "$title_b" >/dev/null 2>&1 || true
+            ;;
+        2)  field_name="description"
+            rand_description 1; local desc_a="$_RAND_STR"
+            rand_description 1; local desc_b="$_RAND_STR"
+            chaos_run_td "a" update "$id" --description "$desc_a" >/dev/null 2>&1 || true
+            chaos_run_td "b" update "$id" --description "$desc_b" >/dev/null 2>&1 || true
+            ;;
+        3)  field_name="priority"
+            rand_choice P0 P1 P2 P3; local prio_a="$_RAND_RESULT"
+            rand_choice P0 P1 P2 P3; local prio_b="$_RAND_RESULT"
+            while [ "$prio_a" = "$prio_b" ]; do rand_choice P0 P1 P2 P3; prio_b="$_RAND_RESULT"; done
+            chaos_run_td "a" update "$id" --priority "$prio_a" >/dev/null 2>&1 || true
+            chaos_run_td "b" update "$id" --priority "$prio_b" >/dev/null 2>&1 || true
+            ;;
+        4)  field_name="points"
+            rand_int 0 13; local pts_a="$_RAND_RESULT"
+            rand_int 0 13; local pts_b="$_RAND_RESULT"
+            while [ "$pts_a" = "$pts_b" ]; do rand_int 0 13; pts_b="$_RAND_RESULT"; done
+            chaos_run_td "a" update "$id" --points "$pts_a" >/dev/null 2>&1 || true
+            chaos_run_td "b" update "$id" --points "$pts_b" >/dev/null 2>&1 || true
+            ;;
+        5)  field_name="labels"
+            rand_labels; local lbl_a="$_RAND_STR"
+            rand_labels; local lbl_b="$_RAND_STR"
+            chaos_run_td "a" update "$id" --labels "$lbl_a" >/dev/null 2>&1 || true
+            chaos_run_td "b" update "$id" --labels "$lbl_b" >/dev/null 2>&1 || true
+            ;;
+        6)  field_name="sprint"
+            rand_choice "sprint-1" "sprint-2" "sprint-3" "sprint-4"; local spr_a="$_RAND_RESULT"
+            rand_choice "sprint-1" "sprint-2" "sprint-3" "sprint-4"; local spr_b="$_RAND_RESULT"
+            while [ "$spr_a" = "$spr_b" ]; do rand_choice "sprint-1" "sprint-2" "sprint-3" "sprint-4"; spr_b="$_RAND_RESULT"; done
+            chaos_run_td "a" update "$id" --sprint "$spr_a" >/dev/null 2>&1 || true
+            chaos_run_td "b" update "$id" --sprint "$spr_b" >/dev/null 2>&1 || true
+            ;;
+        7)  field_name="acceptance"
+            rand_acceptance; local acc_a="$_RAND_STR"
+            rand_acceptance; local acc_b="$_RAND_STR"
+            chaos_run_td "a" update "$id" --acceptance "$acc_a" >/dev/null 2>&1 || true
+            chaos_run_td "b" update "$id" --acceptance "$acc_b" >/dev/null 2>&1 || true
+            ;;
+    esac
+
+    CHAOS_FIELD_COLLISIONS=$((CHAOS_FIELD_COLLISIONS + 1))
+    CHAOS_ACTION_COUNT=$((CHAOS_ACTION_COUNT + 2))
+    CHAOS_ACTIONS_SINCE_SYNC=$((CHAOS_ACTIONS_SINCE_SYNC + 2))
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "field_collision: $field_name on $id"
+    return 0
+}
+
+# ============================================================
 # 8. Safe Execution Wrapper
 # ============================================================
 
@@ -1607,4 +1676,5 @@ chaos_report() {
     dep_count=$(kv_count CHAOS_DEP_PAIRS)
     file_count=$(kv_count CHAOS_ISSUE_FILES)
     _ok "boards: ${#CHAOS_BOARD_NAMES[@]} active, deps: $dep_count tracked, files: $file_count linked"
+    _ok "field collisions: $CHAOS_FIELD_COLLISIONS"
 }
