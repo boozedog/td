@@ -114,6 +114,7 @@ _CHAOS_PHASE_START=0           # temp: start of current phase
 CHAOS_CONVERGENCE_RESULTS=""   # table_name:pass or table_name:fail
 CHAOS_CONVERGENCE_PASSED=0
 CHAOS_CONVERGENCE_FAILED=0
+CHAOS_CASCADE_VERIFY_FAILURES=0
 
 # ============================================================
 # 1b. Per-Action & Timing Helpers
@@ -1502,6 +1503,30 @@ exec_cascade_handoff() {
     if [ "$rc" -eq 0 ]; then
         CHAOS_CASCADE_ACTIONS=$((CHAOS_CASCADE_ACTIONS + 1))
         [ "$CHAOS_VERBOSE" = "true" ] && _ok "cascade_handoff: $parent_id by $actor (children should cascade)"
+        # Verify children actually got handoffs
+        for key in $keys; do
+            local vpid vcid
+            vpid=$(echo "$key" | cut -d_ -f1)
+            vcid=$(echo "$key" | cut -d_ -f2-)
+            if [ "$vpid" = "$parent_id" ] && ! is_chaos_deleted "$vcid"; then
+                local vcst
+                vcst=$(kv_get CHAOS_ISSUE_STATUS "$vcid")
+                # Only check children that were in_progress (should cascade)
+                if [ "$vcst" = "in_progress" ]; then
+                    local child_out child_rc=0
+                    child_out=$(chaos_run_td "$actor" show "$vcid" --json 2>&1) || child_rc=$?
+                    if [ "$child_rc" -eq 0 ]; then
+                        # Check if child has a handoff record in the output
+                        if echo "$child_out" | grep -q '"handoff"'; then
+                            [ "$CHAOS_VERBOSE" = "true" ] && _ok "cascade_handoff verified: child $vcid has handoff"
+                        else
+                            CHAOS_CASCADE_VERIFY_FAILURES=$((CHAOS_CASCADE_VERIFY_FAILURES + 1))
+                            [ "$CHAOS_VERBOSE" = "true" ] && _fail "cascade_handoff NOT cascaded: child $vcid missing handoff"
+                        fi
+                    fi
+                fi
+            fi
+        done
         return 0
     elif is_expected_failure "$output"; then
         CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
@@ -1538,7 +1563,7 @@ exec_cascade_review() {
     output=$(chaos_run_td "$actor" review "$parent_id" --reason "cascade review test" 2>&1) || rc=$?
     if [ "$rc" -eq 0 ]; then
         kv_set CHAOS_ISSUE_STATUS "$parent_id" "in_review"
-        # Mark children as in_review too (cascade)
+        # Verify children actually transitioned, only update tracker if confirmed
         for key in $keys; do
             local pid2 cid2
             pid2=$(echo "$key" | cut -d_ -f1)
@@ -1547,7 +1572,20 @@ exec_cascade_review() {
                 local cst2
                 cst2=$(kv_get CHAOS_ISSUE_STATUS "$cid2")
                 if [ "$cst2" = "in_progress" ] || [ "$cst2" = "open" ]; then
-                    kv_set CHAOS_ISSUE_STATUS "$cid2" "in_review"
+                    # Verify actual state via CLI before updating tracker
+                    local child_out child_rc=0
+                    child_out=$(chaos_run_td "$actor" show "$cid2" --json 2>&1) || child_rc=$?
+                    if [ "$child_rc" -eq 0 ]; then
+                        local actual_status
+                        actual_status=$(echo "$child_out" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
+                        if [ "$actual_status" = "in_review" ]; then
+                            kv_set CHAOS_ISSUE_STATUS "$cid2" "in_review"
+                            [ "$CHAOS_VERBOSE" = "true" ] && _ok "cascade_review verified: child $cid2 -> in_review"
+                        else
+                            CHAOS_CASCADE_VERIFY_FAILURES=$((CHAOS_CASCADE_VERIFY_FAILURES + 1))
+                            [ "$CHAOS_VERBOSE" = "true" ] && _fail "cascade_review NOT cascaded: child $cid2 still $actual_status (expected in_review)"
+                        fi
+                    fi
                 fi
             fi
         done
@@ -2592,7 +2630,7 @@ chaos_report() {
     _report_line "edge-case data injections: $CHAOS_EDGE_DATA_USED"
     local pc_count
     pc_count=$(kv_count CHAOS_PARENT_CHILDREN)
-    _report_line "parent-child pairs: $pc_count, cascade actions: $CHAOS_CASCADE_ACTIONS"
+    _report_line "parent-child pairs: $pc_count, cascade actions: $CHAOS_CASCADE_ACTIONS, cascade verify failures: $CHAOS_CASCADE_VERIFY_FAILURES"
     _report_line "wall-clock: ${wall_clock}s, syncing: ${CHAOS_TIME_SYNCING}s, mutating: ${CHAOS_TIME_MUTATING}s"
 
     # Convergence summary
@@ -2759,7 +2797,8 @@ chaos_report_json() {
     "injected_failures": $CHAOS_INJECTED_FAILURES,
     "edge_data_used": $CHAOS_EDGE_DATA_USED,
     "parent_child_pairs": $pc_count,
-    "cascade_actions": $CHAOS_CASCADE_ACTIONS
+    "cascade_actions": $CHAOS_CASCADE_ACTIONS,
+    "cascade_verify_failures": $CHAOS_CASCADE_VERIFY_FAILURES
   },
   "timing": {
     "wall_clock_seconds": $wall_clock,
