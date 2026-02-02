@@ -10,7 +10,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/dependency"
@@ -263,28 +262,10 @@ Examples:
 				sha = "" // Store empty SHA, will be treated as "new"
 			}
 
-			if err := database.LinkFile(issueID, relPath, role, sha); err != nil {
+			if err := database.LinkFileLogged(issueID, relPath, role, sha, sess.ID); err != nil {
 				output.Warning("failed to link %s: %v", file, err)
 				continue
 			}
-
-			// Log action for undo — full row data for sync
-			iflID := db.IssueFileID(issueID, relPath)
-			linkData, _ := json.Marshal(map[string]string{
-				"id":         iflID,
-				"issue_id":   issueID,
-				"file_path":  relPath,
-				"role":       string(role),
-				"linked_sha": sha,
-				"linked_at":  time.Now().Format(time.RFC3339),
-			})
-			database.LogAction(&models.ActionLog{
-				SessionID:  sess.ID,
-				ActionType: models.ActionLinkFile,
-				EntityType: "issue_files",
-				EntityID:   iflID,
-				NewData:    string(linkData),
-			})
 
 			count++
 		}
@@ -334,25 +315,7 @@ var unlinkCmd = &cobra.Command{
 		for _, file := range files {
 			matched, _ := filepath.Match(pattern, file.FilePath)
 			if matched || file.FilePath == pattern {
-				// Log action for undo (before unlink so we capture the file info) — full row data for sync
-				uiflID := db.IssueFileID(issueID, file.FilePath)
-				linkData, _ := json.Marshal(map[string]string{
-					"id":         uiflID,
-					"issue_id":   issueID,
-					"file_path":  file.FilePath,
-					"role":       string(file.Role),
-					"linked_sha": file.LinkedSHA,
-					"linked_at":  file.LinkedAt.Format(time.RFC3339),
-				})
-				database.LogAction(&models.ActionLog{
-					SessionID:  sess.ID,
-					ActionType: models.ActionUnlinkFile,
-					EntityType: "issue_files",
-					EntityID:   uiflID,
-					NewData:    string(linkData),
-				})
-
-				if err := database.UnlinkFile(issueID, file.FilePath); err != nil {
+				if err := database.UnlinkFileLogged(issueID, file.FilePath, sess.ID); err != nil {
 					output.Warning("failed to unlink %s: %v", file.FilePath, err)
 					continue
 				}
