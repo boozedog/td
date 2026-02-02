@@ -269,7 +269,7 @@ rand_handoff_items() {
 # Parallel arrays for action names and weights (bash 3.2 compatible)
 _CHAOS_ACTION_NAMES=(
     "create" "update" "delete" "restore" "update_bulk"
-    "start" "review" "approve" "reject" "close" "reopen" "block" "unblock"
+    "start" "unstart" "review" "approve" "reject" "close" "reopen" "block" "unblock"
     "comment" "log_progress" "log_blocker" "log_decision" "log_hypothesis" "log_result"
     "dep_add" "dep_rm"
     "board_create" "board_edit" "board_move" "board_unposition" "board_delete"
@@ -278,7 +278,7 @@ _CHAOS_ACTION_NAMES=(
 )
 _CHAOS_ACTION_WEIGHTS=(
     15 10 2 1 2
-    7 5 5 2 2 2 1 1
+    7 1 5 5 2 2 2 1 1
     10 4 2 2 1 1
     3 2
     2 1 2 1 1
@@ -620,6 +620,26 @@ exec_start() {
         return 0
     else
         [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected start: $output"
+        return 2
+    fi
+}
+
+exec_unstart() {
+    local actor="$1"
+    select_issue in_progress; local id="$_CHAOS_SELECTED_ISSUE"
+    [ -z "$id" ] && return 1
+
+    local output rc=0
+    output=$(chaos_run_td "$actor" unstart "$id" --reason "chaos unstart" 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        kv_set CHAOS_ISSUE_STATUS "$id" "open"
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "unstart: $id by $actor"
+        return 0
+    elif is_expected_failure "$output"; then
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected unstart: $output"
         return 2
     fi
 }
