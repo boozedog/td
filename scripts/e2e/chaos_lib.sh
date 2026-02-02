@@ -607,8 +607,6 @@ is_expected_failure() {
     [[ "$lower" == *"no active"* ]] && return 0
     [[ "$lower" == *"no work session"* ]] && return 0
     [[ "$lower" == *"session"*"not found"* ]] && return 0
-    [[ "$lower" == *"no files found"* ]] && return 0
-    [[ "$lower" == *"no matches"* ]] && return 0
     return 1
 }
 
@@ -1595,11 +1593,12 @@ exec_link() {
 
     # Create the file so td link can find it (td link requires files to exist)
     local abs_file_path
-    if [ "$actor" = "a" ]; then
-        abs_file_path="$CLIENT_A_DIR/$file_path"
-    else
-        abs_file_path="$CLIENT_B_DIR/$file_path"
-    fi
+    case "$actor" in
+        a) abs_file_path="$CLIENT_A_DIR/$file_path" ;;
+        b) abs_file_path="$CLIENT_B_DIR/$file_path" ;;
+        c) abs_file_path="$CLIENT_C_DIR/$file_path" ;;
+        *) abs_file_path="$CLIENT_B_DIR/$file_path" ;;
+    esac
     mkdir -p "$(dirname "$abs_file_path")"
     echo "chaos-generated" > "$abs_file_path"
 
