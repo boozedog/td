@@ -92,22 +92,19 @@ var boardCreateCmd = &cobra.Command{
 		}
 		defer database.Close()
 
-		query, _ := cmd.Flags().GetString("query")
+		queryStr, _ := cmd.Flags().GetString("query")
 
-		board, err := database.CreateBoard(name, query)
+		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
+
+		board, err := database.CreateBoardLogged(name, queryStr, sessionID)
 		if err != nil {
 			output.Error("%v", err)
 			return err
 		}
-
-		// Log action for undo
-		newData, _ := json.Marshal(board)
-		logActionWithSession(baseDir, database, &models.ActionLog{
-			ActionType: models.ActionBoardCreate,
-			EntityType: "board",
-			EntityID:   board.ID,
-			NewData:    string(newData),
-		})
 
 		output.Success("Created board %s (%s)", board.Name, board.ID)
 		return nil
@@ -135,16 +132,13 @@ var boardDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		// Log action for undo
-		prevData, _ := json.Marshal(board)
-		logActionWithSession(baseDir, database, &models.ActionLog{
-			ActionType:   models.ActionBoardDelete,
-			EntityType:   "board",
-			EntityID:     board.ID,
-			PreviousData: string(prevData),
-		})
+		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
 
-		if err := database.DeleteBoard(board.ID); err != nil {
+		if err := database.DeleteBoardLogged(board.ID, sessionID); err != nil {
 			output.Error("%v", err)
 			return err
 		}
@@ -302,15 +296,12 @@ var boardEditCmd = &cobra.Command{
 			return err
 		}
 
-		// Capture previous state for undo
-		prevData, _ := json.Marshal(board)
-
 		// Apply updates
 		if name, _ := cmd.Flags().GetString("name"); name != "" {
 			board.Name = name
 		}
-		if query, _ := cmd.Flags().GetString("query"); cmd.Flags().Changed("query") {
-			board.Query = query
+		if queryStr, _ := cmd.Flags().GetString("query"); cmd.Flags().Changed("query") {
+			board.Query = queryStr
 		}
 		if viewMode, _ := cmd.Flags().GetString("view-mode"); cmd.Flags().Changed("view-mode") {
 			if err := database.UpdateBoardViewMode(board.ID, viewMode); err != nil {
@@ -320,20 +311,16 @@ var boardEditCmd = &cobra.Command{
 			board.ViewMode = viewMode
 		}
 
-		if err := database.UpdateBoard(board); err != nil {
+		sess, _ := session.GetOrCreate(database)
+		sessionID := ""
+		if sess != nil {
+			sessionID = sess.ID
+		}
+
+		if err := database.UpdateBoardLogged(board, sessionID); err != nil {
 			output.Error("%v", err)
 			return err
 		}
-
-		// Log action for undo
-		newData, _ := json.Marshal(board)
-		logActionWithSession(baseDir, database, &models.ActionLog{
-			ActionType:   models.ActionBoardUpdate,
-			EntityType:   "board",
-			EntityID:     board.ID,
-			PreviousData: string(prevData),
-			NewData:      string(newData),
-		})
 
 		output.Success("Updated board %s", board.Name)
 		return nil
