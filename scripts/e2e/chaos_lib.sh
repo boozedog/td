@@ -73,6 +73,7 @@ CHAOS_ISSUE_STATUS=""    # id:status
 CHAOS_ISSUE_OWNER=""     # id:a or id:b
 CHAOS_ISSUE_MINOR=""     # id:0 or id:1
 CHAOS_DEP_PAIRS=""       # from_to:1 (colon in key replaced with underscore)
+CHAOS_PARENT_CHILDREN="" # parentId_childId:1
 CHAOS_ISSUE_FILES=""     # issueId~filePath:role
 CHAOS_ACTIVE_WS_A=""     # Active work session name for actor a
 CHAOS_ACTIVE_WS_B=""     # Active work session name for actor b
@@ -91,6 +92,7 @@ CHAOS_FIELD_COLLISIONS=0
 CHAOS_DELETE_MUTATE_CONFLICTS=0
 CHAOS_BURST_COUNT=0
 CHAOS_BURST_ACTIONS=0
+CHAOS_CASCADE_ACTIONS=0
 CHAOS_VERBOSE="${CHAOS_VERBOSE:-false}"
 
 # ============================================================
@@ -377,6 +379,7 @@ _CHAOS_ACTION_NAMES=(
     "handoff"
     "link" "unlink"
     "ws_start" "ws_tag" "ws_untag" "ws_end" "ws_handoff"
+    "create_child" "cascade_handoff" "cascade_review"
 )
 _CHAOS_ACTION_WEIGHTS=(
     15 10 2 2 1 2
@@ -387,6 +390,7 @@ _CHAOS_ACTION_WEIGHTS=(
     3
     3 1
     2 3 1 1 1
+    4 2 2
 )
 
 _CHAOS_TOTAL_WEIGHT=0
@@ -558,10 +562,11 @@ exec_create() {
 
     local args=(create "$title" --type "$type_val" --priority "$priority" --points "$points" --labels "$labels")
 
-    # 20% chance of parent
+    # 40% chance of parent
+    local parent=""
     rand_int 1 5
-    if [ "$_RAND_RESULT" -eq 1 ] && [ "${#CHAOS_ISSUE_IDS[@]}" -gt 0 ]; then
-        select_issue not_deleted; local parent="$_CHAOS_SELECTED_ISSUE"
+    if [ "$_RAND_RESULT" -le 2 ] && [ "${#CHAOS_ISSUE_IDS[@]}" -gt 0 ]; then
+        select_issue not_deleted; parent="$_CHAOS_SELECTED_ISSUE"
         if [ -n "$parent" ]; then
             args+=(--parent "$parent")
         fi
@@ -588,6 +593,11 @@ exec_create() {
     kv_set CHAOS_ISSUE_STATUS "$issue_id" "open"
     kv_set CHAOS_ISSUE_OWNER "$issue_id" "$actor"
     kv_set CHAOS_ISSUE_MINOR "$issue_id" "0"
+
+    # Track parent-child relationship
+    if [ -n "$parent" ]; then
+        kv_set CHAOS_PARENT_CHILDREN "${parent}_${issue_id}" "1"
+    fi
 
     # Set description and acceptance separately (they may contain special chars)
     chaos_run_td "$actor" update "$issue_id" --description "$desc" >/dev/null 2>&1 || true
@@ -1329,6 +1339,140 @@ exec_handoff() {
         return 0
     else
         [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected handoff: $output"
+        return 2
+    fi
+}
+
+# --- Parent-child cascade actions ---
+
+exec_create_child() {
+    local actor="$1"
+    # Need at least one existing issue to be a parent
+    [ "${#CHAOS_ISSUE_IDS[@]}" -eq 0 ] && return 1
+
+    select_issue not_deleted; local parent="$_CHAOS_SELECTED_ISSUE"
+    [ -z "$parent" ] && return 1
+
+    rand_title; local title="$_RAND_STR"
+    rand_choice task bug feature spike; local type_val="$_RAND_RESULT"
+    rand_choice P0 P1 P2 P3; local priority="$_RAND_RESULT"
+    rand_int 0 13; local points="$_RAND_RESULT"
+
+    local output rc=0
+    output=$(chaos_run_td "$actor" create "$title" --type "$type_val" --priority "$priority" --points "$points" --parent "$parent" 2>&1) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        if is_expected_failure "$output"; then
+            CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+            return 0
+        else
+            [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected create_child: $output"
+            return 2
+        fi
+    fi
+    local issue_id
+    issue_id=$(echo "$output" | grep -oE 'td-[0-9a-f]+' | head -n1)
+    if [ -z "$issue_id" ]; then
+        return 2
+    fi
+
+    CHAOS_ISSUE_IDS+=("$issue_id")
+    kv_set CHAOS_ISSUE_STATUS "$issue_id" "open"
+    kv_set CHAOS_ISSUE_OWNER "$issue_id" "$actor"
+    kv_set CHAOS_ISSUE_MINOR "$issue_id" "0"
+    kv_set CHAOS_PARENT_CHILDREN "${parent}_${issue_id}" "1"
+    CHAOS_CASCADE_ACTIONS=$((CHAOS_CASCADE_ACTIONS + 1))
+
+    [ "$CHAOS_VERBOSE" = "true" ] && _ok "create_child: $issue_id -> parent $parent by $actor"
+    return 0
+}
+
+exec_cascade_handoff() {
+    local actor="$1"
+    # Find a parent that has children (scan CHAOS_PARENT_CHILDREN for a parent with in_progress status)
+    local parent_id=""
+    local keys
+    keys=$(kv_keys CHAOS_PARENT_CHILDREN)
+    for key in $keys; do
+        local pid
+        pid=$(echo "$key" | cut -d_ -f1)
+        if ! is_chaos_deleted "$pid"; then
+            local st
+            st=$(kv_get CHAOS_ISSUE_STATUS "$pid")
+            if [ "$st" = "in_progress" ]; then
+                parent_id="$pid"
+                break
+            fi
+        fi
+    done
+    [ -z "$parent_id" ] && return 1
+
+    rand_handoff_items; local done_items="$_RAND_STR"
+    rand_handoff_items; local remaining_items="$_RAND_STR"
+
+    local output rc=0
+    output=$(chaos_run_td "$actor" handoff "$parent_id" \
+        --done "$done_items" \
+        --remaining "$remaining_items" 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        CHAOS_CASCADE_ACTIONS=$((CHAOS_CASCADE_ACTIONS + 1))
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "cascade_handoff: $parent_id by $actor (children should cascade)"
+        return 0
+    elif is_expected_failure "$output"; then
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected cascade_handoff: $output"
+        return 2
+    fi
+}
+
+exec_cascade_review() {
+    local actor="$1"
+    # Find a parent with in_progress children
+    local parent_id=""
+    local keys
+    keys=$(kv_keys CHAOS_PARENT_CHILDREN)
+    for key in $keys; do
+        local pid cid
+        pid=$(echo "$key" | cut -d_ -f1)
+        cid=$(echo "$key" | cut -d_ -f2-)
+        if ! is_chaos_deleted "$pid"; then
+            local pst cst
+            pst=$(kv_get CHAOS_ISSUE_STATUS "$pid")
+            cst=$(kv_get CHAOS_ISSUE_STATUS "$cid")
+            if [ "$pst" = "in_progress" ] && [ "$cst" = "in_progress" ]; then
+                parent_id="$pid"
+                break
+            fi
+        fi
+    done
+    [ -z "$parent_id" ] && return 1
+
+    local output rc=0
+    output=$(chaos_run_td "$actor" review "$parent_id" --reason "cascade review test" 2>&1) || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        kv_set CHAOS_ISSUE_STATUS "$parent_id" "in_review"
+        # Mark children as in_review too (cascade)
+        for key in $keys; do
+            local pid2 cid2
+            pid2=$(echo "$key" | cut -d_ -f1)
+            cid2=$(echo "$key" | cut -d_ -f2-)
+            if [ "$pid2" = "$parent_id" ] && ! is_chaos_deleted "$cid2"; then
+                local cst2
+                cst2=$(kv_get CHAOS_ISSUE_STATUS "$cid2")
+                if [ "$cst2" = "in_progress" ] || [ "$cst2" = "open" ]; then
+                    kv_set CHAOS_ISSUE_STATUS "$cid2" "in_review"
+                fi
+            fi
+        done
+        CHAOS_CASCADE_ACTIONS=$((CHAOS_CASCADE_ACTIONS + 1))
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "cascade_review: $parent_id by $actor (children should cascade)"
+        return 0
+    elif is_expected_failure "$output"; then
+        CHAOS_EXPECTED_FAILURES=$((CHAOS_EXPECTED_FAILURES + 1))
+        return 0
+    else
+        [ "$CHAOS_VERBOSE" = "true" ] && _fail "[$actor] unexpected cascade_review: $output"
         return 2
     fi
 }
@@ -2279,4 +2423,7 @@ chaos_report() {
     _ok "delete-mutate conflicts: $CHAOS_DELETE_MUTATE_CONFLICTS"
     _ok "bursts: $CHAOS_BURST_COUNT ($CHAOS_BURST_ACTIONS total burst actions)"
     _ok "edge-case data injections: $CHAOS_EDGE_DATA_USED"
+    local pc_count
+    pc_count=$(kv_count CHAOS_PARENT_CHILDREN)
+    _ok "parent-child pairs: $pc_count, cascade actions: $CHAOS_CASCADE_ACTIONS"
 }
