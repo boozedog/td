@@ -237,6 +237,67 @@ EOF
     _ok "Ready (project $PROJECT_ID, actors: ${HARNESS_ACTORS:-2})"
 }
 
+# ---- Late Joiner Setup ----
+# Sets up a new client that joins an existing project after data has been created.
+# Usage: setup_late_joiner <actor>
+# Requires: PROJECT_ID to be set (from initial setup)
+
+setup_late_joiner() {
+    local actor="$1"
+    local email home_dir client_dir session_var
+
+    case "$actor" in
+        c)
+            email="carol@test.local"
+            home_dir="$HOME_C"
+            client_dir="$CLIENT_C_DIR"
+            session_var="SESSION_ID_C"
+            ;;
+        *)
+            _fatal "setup_late_joiner: unsupported actor '$actor' (only 'c' supported)"
+            ;;
+    esac
+
+    _step "Late joiner: setting up actor $actor ($email)"
+
+    # Create directories if they don't exist
+    mkdir -p "$client_dir" "$home_dir/.config/td"
+
+    # Init td in the client directory
+    echo "n" | (cd "$client_dir" && HOME="$home_dir" "$TD_BIN" init) >/dev/null 2>&1
+
+    # Authenticate the user (inline version of _auth)
+    local resp dc uc ak uid did
+    resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/login/start" \
+        -H "Content-Type: application/json" -d "{\"email\":\"$email\"}")
+    dc=$(echo "$resp" | jq -r '.device_code')
+    uc=$(echo "$resp" | jq -r '.user_code')
+    curl -sf -X POST "$SERVER_URL/auth/verify" -d "user_code=$uc" > /dev/null
+    resp=$(curl -sf -X POST "$SERVER_URL/v1/auth/login/poll" \
+        -H "Content-Type: application/json" -d "{\"device_code\":\"$dc\"}")
+    ak=$(echo "$resp" | jq -r '.api_key')
+    uid=$(echo "$resp" | jq -r '.user_id')
+    did=$(openssl rand -hex 16)
+
+    cat > "$home_dir/.config/td/auth.json" <<EOF
+{"api_key":"$ak","user_id":"$uid","email":"$email","server_url":"$SERVER_URL","device_id":"$did"}
+EOF
+    chmod 600 "$home_dir/.config/td/auth.json"
+    cat > "$home_dir/.config/td/config.json" <<EOF
+{"sync":{"url":"$SERVER_URL","enabled":true,"snapshot_threshold":0,"auto":{"enabled":false,"on_start":false,"debounce":"2s","interval":"10s","pull":true}}}
+EOF
+
+    # Invite the user to the project (from actor A)
+    td_a sync-project invite "$email" writer >/dev/null
+
+    # Link to the project
+    case "$actor" in
+        c) td_c sync-project link "$PROJECT_ID" >/dev/null ;;
+    esac
+
+    _ok "Late joiner $actor ($email) ready, linked to $PROJECT_ID"
+}
+
 # ---- Report ----
 
 report() {
