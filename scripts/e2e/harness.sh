@@ -263,8 +263,8 @@ setup_late_joiner() {
     # Create directories if they don't exist
     mkdir -p "$client_dir" "$home_dir/.config/td"
 
-    # Init td in the client directory
-    echo "n" | (cd "$client_dir" && HOME="$home_dir" "$TD_BIN" init) >/dev/null 2>&1
+    # Init td in the client directory (must use td_c to set TD_SESSION_ID)
+    echo "n" | td_c init >/dev/null 2>&1
 
     # Authenticate the user (inline version of _auth)
     local resp dc uc ak uid did
