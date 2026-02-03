@@ -2263,7 +2263,14 @@ verify_convergence_quick() {
         local ids_a ids_b common_ids
         ids_a=$(sqlite3 "$db_a" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;")
         ids_b=$(sqlite3 "$db_b" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;")
-        common_ids=$(comm -12 <(echo "$ids_a") <(echo "$ids_b"))
+        # Use temp files instead of process substitution to avoid FIFO hangs
+        local tmp_a tmp_b
+        tmp_a=$(mktemp)
+        tmp_b=$(mktemp)
+        echo "$ids_a" | sort > "$tmp_a"
+        echo "$ids_b" | sort > "$tmp_b"
+        common_ids=$(comm -12 "$tmp_a" "$tmp_b")
+        rm -f "$tmp_a" "$tmp_b"
         if [ -n "$common_ids" ]; then
             local common_where
             common_where=$(echo "$common_ids" | sed "s/^/'/;s/$/'/" | paste -sd, -)
@@ -2361,7 +2368,14 @@ verify_convergence() {
         local ids_a ids_b common_ids
         ids_a=$(sqlite3 "$db_a" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;")
         ids_b=$(sqlite3 "$db_b" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;")
-        common_ids=$(comm -12 <(echo "$ids_a") <(echo "$ids_b"))
+        # Use temp files instead of process substitution to avoid FIFO hangs
+        local tmp_a tmp_b
+        tmp_a=$(mktemp)
+        tmp_b=$(mktemp)
+        echo "$ids_a" | sort > "$tmp_a"
+        echo "$ids_b" | sort > "$tmp_b"
+        common_ids=$(comm -12 "$tmp_a" "$tmp_b")
+        rm -f "$tmp_a" "$tmp_b"
         if [ -n "$common_ids" ]; then
             local common_where
             common_where=$(echo "$common_ids" | sed "s/^/'/;s/$/'/" | paste -sd, -)
@@ -2459,10 +2473,14 @@ verify_convergence() {
         _ok "work session issues match"
     else
         # Filter to issues present on both sides (resurrection can cause one-sided extra rows)
-        local wsi_common_ids wsi_common_where
-        wsi_common_ids=$(comm -12 \
-            <(sqlite3 "$db_a" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;") \
-            <(sqlite3 "$db_b" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;"))
+        # Use temp files instead of process substitution to avoid FIFO hangs
+        local wsi_tmp_a wsi_tmp_b wsi_common_ids wsi_common_where
+        wsi_tmp_a=$(mktemp)
+        wsi_tmp_b=$(mktemp)
+        sqlite3 "$db_a" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;" | sort > "$wsi_tmp_a"
+        sqlite3 "$db_b" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;" | sort > "$wsi_tmp_b"
+        wsi_common_ids=$(comm -12 "$wsi_tmp_a" "$wsi_tmp_b")
+        rm -f "$wsi_tmp_a" "$wsi_tmp_b"
         if [ -n "$wsi_common_ids" ]; then
             wsi_common_where=$(echo "$wsi_common_ids" | sed "s/^/'/;s/$/'/" | paste -sd, -)
             local common_wsi_a common_wsi_b
