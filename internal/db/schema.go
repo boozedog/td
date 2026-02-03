@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 26
+const SchemaVersion = 27
 
 const schema = `
 -- Issues table
@@ -441,5 +441,14 @@ ALTER TABLE boards_new RENAME TO boards;
 		Description: "Enforce NOT NULL on action_log.id by fixing NULL values and recreating table",
 		// Handled by custom Go code in migrations.go (migrateActionLogNotNullID)
 		SQL: "",
+	},
+	{
+		Version:     27,
+		Description: "Normalize NULL session fields in issues",
+		SQL: `
+UPDATE issues SET implementer_session = '' WHERE implementer_session IS NULL;
+UPDATE issues SET reviewer_session = '' WHERE reviewer_session IS NULL;
+UPDATE issues SET creator_session = '' WHERE creator_session IS NULL;
+`,
 	},
 }

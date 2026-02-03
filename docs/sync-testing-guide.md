@@ -370,15 +370,37 @@ See the [E2E Chaos Oracle](#e2e-chaos-oracle-teste2e) section above for full det
 - Reproducible via PRNG seed
 - JSON report output for CI
 
-### Bash Smoke Tests (`scripts/e2e/`)
+### Bash E2E Tests (`scripts/e2e/`)
 
-The original bash-based chaos test remains as a fast smoke test layer:
+Comprehensive bash-based test suite with 13 specialized test scripts:
 
-- `test_chaos_sync.sh` — Configurable randomized multi-actor mutations with convergence verification
-- `chaos_lib.sh` — 43 action executors, weighted selection, state tracking, convergence/idempotency/event-count verification
-- `harness.sh` — Build binaries, start server, auth, project setup, teardown
+**Core Infrastructure:**
+- `harness.sh` — Build binaries, start server, auth, project setup, server lifecycle, late-joiner setup
+- `chaos_lib.sh` — 44 action executors, weighted selection, state tracking, verification functions
 
-The bash tests are useful for quick smoke testing and shell-level debugging. The Go oracle provides stronger correctness guarantees with typed data structures, reproducible seeds, and programmatic verification.
+**Main Chaos Test:**
+- `test_chaos_sync.sh` — Configurable randomized 2-3 actor mutations with convergence verification, mid-test checks, conflict injection
+
+**Scenario Tests:**
+- `test_network_partition.sh` — Client offline, batch accumulation, reconnect sync
+- `test_late_join.sh` — New client joins after 50+ issues exist, full history transfer
+- `test_server_restart.sh` — Server crash/restart resilience, data durability
+- `test_create_delete_recreate.sh` — Tombstone vs new-entity disambiguation
+- `test_parent_delete_cascade.sh` — Orphan handling when parent deleted
+- `test_large_payload.sh` — 10K-50K descriptions, 50-200 comments, 20-80 dependencies
+- `test_event_ordering.sh` — Causal ordering verification (creates before updates, parents before children)
+
+**Other Tests:**
+- `test_basic_sync.sh` — Simple bidirectional sync
+- `test_alternating_actions.sh` — Interleaved actor mutations
+- `test_autosync_*.sh` — Auto-sync behavior tests
+- `test_monitor_autosync.sh` — TUI monitor + sync integration
+
+**Regression Infrastructure:**
+- `run_regression_seeds.sh` — Run known seeds from `regression_seeds.json`
+- `regression_seeds.json` — Database of reproducible test seeds for CI
+
+The bash tests provide fast iteration, easy debugging, and comprehensive scenario coverage. See `scripts/e2e/e2e-sync-test-guide.md` for full documentation.
 
 ## Planned Tests (Phase 3.5)
 
