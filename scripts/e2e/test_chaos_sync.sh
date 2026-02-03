@@ -19,6 +19,7 @@ BATCH_MIN=3
 BATCH_MAX=10
 ACTORS=2
 INJECT_FAILURES=false
+MID_TEST_CHECKS=true
 JSON_REPORT=""
 REPORT_FILE=""
 
@@ -41,6 +42,8 @@ Options:
   --batch-max N      Max actions between syncs (default: 10)
   --actors N         Number of actors: 2 or 3 (default: 2)
   --inject-failures  Inject partial sync failures (~7% of syncs) (default: false)
+  --mid-test-checks  Enable periodic convergence checks during test (default: true)
+  --no-mid-test-checks  Disable periodic convergence checks
   --json-report PATH Write JSON summary to file (for CI integration)
   --report-file PATH Write text report to file instead of stdout
   -h, --help         Show this help
@@ -82,6 +85,8 @@ while [[ $# -gt 0 ]]; do
         --batch-max)      BATCH_MAX="$2"; shift 2 ;;
         --actors)         ACTORS="$2"; shift 2 ;;
         --inject-failures) INJECT_FAILURES=true; shift ;;
+        --mid-test-checks) MID_TEST_CHECKS=true; shift ;;
+        --no-mid-test-checks) MID_TEST_CHECKS=false; shift ;;
         --json-report)    JSON_REPORT="$2"; shift 2 ;;
         --report-file)    REPORT_FILE="$2"; shift 2 ;;
         -h|--help)        usage; exit 0 ;;
@@ -93,6 +98,9 @@ done
 HARNESS_ACTORS="$ACTORS"
 export HARNESS_ACTORS
 setup
+
+# Configure mid-test convergence checks
+CHAOS_MID_TEST_CHECKS_ENABLED="$MID_TEST_CHECKS"
 
 # ---- Seed RANDOM for reproducibility ----
 RANDOM=$SEED
@@ -202,6 +210,9 @@ while ! is_done; do
 
     # Sync check
     maybe_sync
+
+    # Mid-test convergence check (after sync, at configured interval)
+    maybe_check_convergence
 
     # Progress indicator every 10 actions
     if [ "$CHAOS_ACTION_COUNT" -gt 0 ] && [ $(( CHAOS_ACTION_COUNT % 10 )) -eq 0 ]; then

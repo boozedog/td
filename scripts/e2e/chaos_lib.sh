@@ -116,6 +116,14 @@ CHAOS_CONVERGENCE_PASSED=0
 CHAOS_CONVERGENCE_FAILED=0
 CHAOS_CASCADE_VERIFY_FAILURES=0
 
+# Mid-test convergence checks (periodic verification during chaos)
+CHAOS_MID_TEST_CONVERGENCE_CHECKS=0
+CHAOS_MID_TEST_CONVERGENCE_PASSES=0
+CHAOS_MID_TEST_CONVERGENCE_FAILURES=0
+CHAOS_MID_TEST_CHECK_INTERVAL="${CHAOS_MID_TEST_CHECK_INTERVAL:-25}"  # check every N actions
+CHAOS_MID_TEST_CHECKS_ENABLED="${CHAOS_MID_TEST_CHECKS_ENABLED:-true}"
+_CHAOS_LAST_CONVERGENCE_CHECK_AT=0
+
 # ============================================================
 # 1b. Per-Action & Timing Helpers
 # ============================================================
@@ -2235,6 +2243,102 @@ maybe_sync() {
 }
 
 # ============================================================
+# 9b. Mid-Test Convergence Checks
+# ============================================================
+
+# verify_convergence_quick: Lightweight convergence check for mid-test verification.
+# Checks critical tables (issues, boards, board_issue_positions) but skips
+# logs/comments/handoffs for speed. Returns 0 if converged, 1 if diverged.
+verify_convergence_quick() {
+    local db_a="$1" db_b="$2"
+    local diverged=0
+
+    # Issues — compare non-deleted issues (critical table)
+    local issue_cols="id, title, description, status, type, priority, points, labels, parent_id, acceptance, minor, sprint"
+    local issues_a issues_b
+    issues_a=$(sqlite3 "$db_a" "SELECT $issue_cols FROM issues WHERE deleted_at IS NULL ORDER BY id;")
+    issues_b=$(sqlite3 "$db_b" "SELECT $issue_cols FROM issues WHERE deleted_at IS NULL ORDER BY id;")
+    if [ "$issues_a" != "$issues_b" ]; then
+        # Check common set (resurrection can cause one-sided extra rows)
+        local ids_a ids_b common_ids
+        ids_a=$(sqlite3 "$db_a" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;")
+        ids_b=$(sqlite3 "$db_b" "SELECT id FROM issues WHERE deleted_at IS NULL ORDER BY id;")
+        common_ids=$(comm -12 <(echo "$ids_a") <(echo "$ids_b"))
+        if [ -n "$common_ids" ]; then
+            local common_where
+            common_where=$(echo "$common_ids" | sed "s/^/'/;s/$/'/" | paste -sd, -)
+            local common_a common_b
+            common_a=$(sqlite3 "$db_a" "SELECT $issue_cols FROM issues WHERE id IN ($common_where) AND deleted_at IS NULL ORDER BY id;")
+            common_b=$(sqlite3 "$db_b" "SELECT $issue_cols FROM issues WHERE id IN ($common_where) AND deleted_at IS NULL ORDER BY id;")
+            if [ "$common_a" != "$common_b" ]; then
+                diverged=1
+                [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test: issues diverged (common set mismatch)"
+            fi
+        fi
+    fi
+
+    # Boards — all fields must match
+    local boards_a boards_b
+    boards_a=$(sqlite3 "$db_a" "SELECT name, is_builtin, query, view_mode FROM boards ORDER BY name;")
+    boards_b=$(sqlite3 "$db_b" "SELECT name, is_builtin, query, view_mode FROM boards ORDER BY name;")
+    if [ "$boards_a" != "$boards_b" ]; then
+        diverged=1
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test: boards diverged"
+    fi
+
+    # Board issue positions — critical for board state
+    local pos_a pos_b
+    pos_a=$(sqlite3 "$db_a" "SELECT bp.board_id, bp.issue_id, bp.position FROM board_issue_positions bp JOIN boards b ON bp.board_id = b.id JOIN issues i ON bp.issue_id = i.id WHERE i.deleted_at IS NULL AND bp.deleted_at IS NULL ORDER BY bp.board_id, bp.issue_id;")
+    pos_b=$(sqlite3 "$db_b" "SELECT bp.board_id, bp.issue_id, bp.position FROM board_issue_positions bp JOIN boards b ON bp.board_id = b.id JOIN issues i ON bp.issue_id = i.id WHERE i.deleted_at IS NULL AND bp.deleted_at IS NULL ORDER BY bp.board_id, bp.issue_id;")
+    if [ "$pos_a" != "$pos_b" ]; then
+        diverged=1
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test: board positions diverged"
+    fi
+
+    return $diverged
+}
+
+# maybe_check_convergence: Periodically check convergence during chaos test.
+# Only runs after sync completes and at configured interval.
+# Does not fail the test on divergence — logs it as transient.
+maybe_check_convergence() {
+    [ "$CHAOS_MID_TEST_CHECKS_ENABLED" != "true" ] && return
+    [ "$CHAOS_ACTIONS_SINCE_SYNC" -ne 0 ] && return  # only check after sync
+
+    # Check if we've done enough actions since last check
+    local actions_since_check=$(( CHAOS_ACTION_COUNT - _CHAOS_LAST_CONVERGENCE_CHECK_AT ))
+    [ "$actions_since_check" -lt "$CHAOS_MID_TEST_CHECK_INTERVAL" ] && return
+
+    # Perform quick convergence check
+    _CHAOS_LAST_CONVERGENCE_CHECK_AT=$CHAOS_ACTION_COUNT
+    CHAOS_MID_TEST_CONVERGENCE_CHECKS=$(( CHAOS_MID_TEST_CONVERGENCE_CHECKS + 1 ))
+
+    local db_a="$CLIENT_A_DIR/.todos/issues.db"
+    local db_b="$CLIENT_B_DIR/.todos/issues.db"
+
+    if verify_convergence_quick "$db_a" "$db_b"; then
+        CHAOS_MID_TEST_CONVERGENCE_PASSES=$(( CHAOS_MID_TEST_CONVERGENCE_PASSES + 1 ))
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test convergence check #$CHAOS_MID_TEST_CONVERGENCE_CHECKS: PASS (action $CHAOS_ACTION_COUNT)"
+    else
+        CHAOS_MID_TEST_CONVERGENCE_FAILURES=$(( CHAOS_MID_TEST_CONVERGENCE_FAILURES + 1 ))
+        [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test convergence check #$CHAOS_MID_TEST_CONVERGENCE_CHECKS: TRANSIENT DIVERGENCE (action $CHAOS_ACTION_COUNT)"
+    fi
+
+    # For 3-actor tests, also check A vs C
+    if [ "${HARNESS_ACTORS:-2}" -ge 3 ]; then
+        local db_c="$CLIENT_C_DIR/.todos/issues.db"
+        CHAOS_MID_TEST_CONVERGENCE_CHECKS=$(( CHAOS_MID_TEST_CONVERGENCE_CHECKS + 1 ))
+        if verify_convergence_quick "$db_a" "$db_c"; then
+            CHAOS_MID_TEST_CONVERGENCE_PASSES=$(( CHAOS_MID_TEST_CONVERGENCE_PASSES + 1 ))
+            [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test convergence check (A vs C) #$CHAOS_MID_TEST_CONVERGENCE_CHECKS: PASS"
+        else
+            CHAOS_MID_TEST_CONVERGENCE_FAILURES=$(( CHAOS_MID_TEST_CONVERGENCE_FAILURES + 1 ))
+            [ "$CHAOS_VERBOSE" = "true" ] && _ok "mid-test convergence check (A vs C) #$CHAOS_MID_TEST_CONVERGENCE_CHECKS: TRANSIENT DIVERGENCE"
+        fi
+    fi
+}
+
+# ============================================================
 # 10. Convergence Verification
 # ============================================================
 
@@ -2638,6 +2742,17 @@ chaos_report() {
         _report_line "convergence: $CHAOS_CONVERGENCE_PASSED passed, $CHAOS_CONVERGENCE_FAILED failed"
     fi
 
+    # Mid-test convergence summary
+    if [ "$CHAOS_MID_TEST_CONVERGENCE_CHECKS" -gt 0 ]; then
+        local mid_test_healed=""
+        if [ "$CHAOS_MID_TEST_CONVERGENCE_FAILURES" -gt 0 ] && [ "$CHAOS_CONVERGENCE_FAILED" -eq 0 ]; then
+            mid_test_healed=" (all healed)"
+        elif [ "$CHAOS_MID_TEST_CONVERGENCE_FAILURES" -gt 0 ] && [ "$CHAOS_CONVERGENCE_FAILED" -gt 0 ]; then
+            mid_test_healed=" (persistent)"
+        fi
+        _report_line "mid-test convergence: $CHAOS_MID_TEST_CONVERGENCE_CHECKS checks, $CHAOS_MID_TEST_CONVERGENCE_PASSES passes, $CHAOS_MID_TEST_CONVERGENCE_FAILURES transient failures${mid_test_healed}"
+    fi
+
     # Per-action breakdown table (verbose mode or file output)
     if [ "$CHAOS_VERBOSE" = "true" ] || [ -n "$report_file" ]; then
         _step "Per-action breakdown"
@@ -2812,6 +2927,12 @@ chaos_report_json() {
     "failed": $CHAOS_CONVERGENCE_FAILED,
     "details": {$convergence_json
     }
+  },
+  "mid_test_convergence": {
+    "checks": $CHAOS_MID_TEST_CONVERGENCE_CHECKS,
+    "passes": $CHAOS_MID_TEST_CONVERGENCE_PASSES,
+    "transient_failures": $CHAOS_MID_TEST_CONVERGENCE_FAILURES,
+    "all_healed": $([ "$CHAOS_MID_TEST_CONVERGENCE_FAILURES" -gt 0 ] && [ "$CHAOS_CONVERGENCE_FAILED" -eq 0 ] && echo "true" || echo "false")
   }
 }
 ENDJSON
