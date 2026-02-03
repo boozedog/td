@@ -353,7 +353,7 @@ const pills = [
   { icon: <RotateCcw size={14} />, label: 'Undo support' },
   { icon: <BarChart3 size={14} />, label: 'Analytics' },
   { icon: <FileText size={14} />, label: 'File tracking' },
-  { icon: <ExternalLink size={14} />, label: 'Sidecar integration', link: 'https://marcus.github.io/sidecar/' },
+  { icon: <ExternalLink size={14} />, label: 'Sidecar integration', link: 'https://sidecar.haplab.com/' },
 ];
 
 function FeaturesGrid() {
@@ -407,20 +407,23 @@ function SisterProjects() {
     <section className="sc-sister-projects">
       <div className="sc-section-container">
         <h2 className="sc-sister-projects__title">Sister Projects</h2>
+        <a href="https://haplab.com" className="sc-sisterHaplab">
+          <img src={useBaseUrl('/img/haplab-logo.png')} alt="Haplab" />
+        </a>
         <div className="sc-sister-projects__grid">
-          <a href="https://marcus.github.io/td/" className="sc-sister-card sc-sister-card--purple sc-sister-card--current">
+          <a href="https://td.haplab.com/" className="sc-sister-card sc-sister-card--purple sc-sister-card--current">
             <div className="sc-sister-card__logo-wrapper">
               <img src={useBaseUrl('/img/td-logo.png')} alt="td" className="sc-sister-card__logo" />
             </div>
             <p>Task management for AI-assisted development.</p>
           </a>
-          <a href="https://marcus.github.io/sidecar/" className="sc-sister-card sc-sister-card--green">
+          <a href="https://sidecar.haplab.com/" className="sc-sister-card sc-sister-card--green">
             <div className="sc-sister-card__logo-wrapper">
               <img src={useBaseUrl('/img/sidecar-logo.png')} alt="Sidecar" className="sc-sister-card__logo" />
             </div>
             <p>You might never open your editor again.</p>
           </a>
-          <a href="https://marcus.github.io/betamax/" className="sc-sister-card sc-sister-card--blue">
+          <a href="https://betamax.haplab.com/" className="sc-sister-card sc-sister-card--blue">
             <div className="sc-sister-card__logo-wrapper">
               <img src={useBaseUrl('/img/betamax-logo-fuzzy.png')} alt="Betamax" className="sc-sister-card__logo" />
             </div>

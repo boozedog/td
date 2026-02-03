@@ -1394,3 +1394,20 @@ a.sc-features-grid__item:hover {
   margin: 0;
   line-height: 1.5;
 }
+
+.sc-sisterHaplab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2rem;
+}
+.sc-sisterHaplab img {
+  max-width: 200px;
+  max-height: 100px;
+  filter: drop-shadow(0 4px 16px rgba(180, 100, 255, 0.5));
+  transition: filter 0.3s ease, transform 0.3s ease;
+}
+.sc-sisterHaplab:hover img {
+  filter: drop-shadow(0 6px 24px rgba(180, 100, 255, 0.7));
+  transform: translateY(-2px);
+}

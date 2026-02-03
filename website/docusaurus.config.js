@@ -10,8 +10,8 @@ const config = {
     v4: true,
   },
 
-  url: 'https://marcus.github.io',
-  baseUrl: '/td/',
+  url: 'https://td.haplab.com',
+  baseUrl: '/',
 
   organizationName: 'marcus',
   projectName: 'td',
@@ -99,6 +99,11 @@ const config = {
             sidebarId: 'docsSidebar',
             position: 'left',
             label: 'Docs',
+          },
+          {
+            href: 'https://haplab.com',
+            position: 'left',
+            label: 'Haplab',
           },
           {
             href: 'https://github.com/marcus/td',
