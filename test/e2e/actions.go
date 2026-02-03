@@ -88,7 +88,7 @@ func execUpdate(e *ChaosEngine, actor string) ActionResult {
 
 	nFields := 1 + e.Rng.Intn(3)
 	args := []string{"update", id}
-	for i := 0; i < nFields; i++ {
+	for range nFields {
 		switch e.Rng.Intn(8) {
 		case 0:
 			t, edg := randTitle(e.Rng, 100)
@@ -160,7 +160,7 @@ func execUpdateBulk(e *ChaosEngine, actor string) ActionResult {
 	count := 2 + e.Rng.Intn(2)
 	seen := make(map[string]bool)
 	var ids []string
-	for i := 0; i < count; i++ {
+	for range count {
 		id := e.selectIssue("not_deleted")
 		if id != "" && !seen[id] {
 			seen[id] = true
@@ -375,7 +375,7 @@ func execBulkStart(e *ChaosEngine, actor string) ActionResult {
 	count := 2 + e.Rng.Intn(3)
 	seen := make(map[string]bool)
 	var ids []string
-	for i := 0; i < count; i++ {
+	for range count {
 		id := e.selectIssue("open")
 		if id != "" && !seen[id] {
 			seen[id] = true
@@ -406,7 +406,7 @@ func execBulkReview(e *ChaosEngine, actor string) ActionResult {
 	count := 2 + e.Rng.Intn(3)
 	seen := make(map[string]bool)
 	var ids []string
-	for i := 0; i < count; i++ {
+	for range count {
 		id := e.selectIssue("in_progress")
 		if id != "" && !seen[id] {
 			seen[id] = true
@@ -437,7 +437,7 @@ func execBulkClose(e *ChaosEngine, actor string) ActionResult {
 	count := 2 + e.Rng.Intn(3)
 	seen := make(map[string]bool)
 	var ids []string
-	for i := 0; i < count; i++ {
+	for range count {
 		id := e.selectIssue("not_deleted")
 		if id != "" && !seen[id] && e.Issues[id].Status != "closed" {
 			seen[id] = true

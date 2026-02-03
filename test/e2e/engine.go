@@ -101,7 +101,7 @@ func (e *ChaosEngine) randActor() string {
 // otherActor returns a different actor from the given one.
 func (e *ChaosEngine) otherActor(actor string) string {
 	names := actorNames(e.NumActors)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		other := names[e.Rng.Intn(len(names))]
 		if other != actor {
 			return other
@@ -250,7 +250,7 @@ func (e *ChaosEngine) RunAction() ActionResult {
 // RunN executes n random actions and returns all results.
 func (e *ChaosEngine) RunN(n int) []ActionResult {
 	results := make([]ActionResult, 0, n)
-	for i := 0; i < n; i++ {
+	for range n {
 		r := e.RunAction()
 		results = append(results, r)
 	}

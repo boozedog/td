@@ -283,7 +283,7 @@ func (h *Harness) TdC(args ...string) (string, error) {
 // Performs 3 rounds of push+pull for each actor.
 func (h *Harness) SyncAll() error {
 	actors := actorNames(h.config.NumActors)
-	for round := 0; round < 3; round++ {
+	for round := range 3 {
 		for _, actor := range actors {
 			out, err := h.Td(actor, "sync")
 			if err != nil {
@@ -476,7 +476,7 @@ func (h *Harness) authenticate(actor, email string) error {
 // extractProjectID finds p_<hex> in the output string.
 func extractProjectID(output string) string {
 	// Split on any whitespace or parentheses
-	for _, word := range strings.FieldsFunc(output, func(r rune) bool {
+	for word := range strings.FieldsFuncSeq(output, func(r rune) bool {
 		return r == ' ' || r == '\t' || r == '\n' || r == '(' || r == ')' || r == ','
 	}) {
 		if strings.HasPrefix(word, "p_") {

@@ -138,10 +138,10 @@ func randDescription(rng *rand.Rand, paragraphs int) (string, bool) {
 		paragraphs = 1 + rng.Intn(5)
 	}
 	var paras []string
-	for i := 0; i < paragraphs; i++ {
+	for range paragraphs {
 		nSentences := 2 + rng.Intn(4)
 		var sents []string
-		for j := 0; j < nSentences; j++ {
+		for range nSentences {
 			sents = append(sents, chaosSentences[rng.Intn(len(chaosSentences))])
 		}
 		paras = append(paras, strings.Join(sents, " "))
@@ -156,7 +156,7 @@ func randLabels(rng *rand.Rand, count int) string {
 	}
 	seen := make(map[string]bool)
 	var result []string
-	for i := 0; i < count; i++ {
+	for range count {
 		label := chaosLabels[rng.Intn(len(chaosLabels))]
 		if !seen[label] {
 			seen[label] = true
@@ -188,7 +188,7 @@ func randAcceptance(rng *rand.Rand, items int) (string, bool) {
 		items = 1 + rng.Intn(5)
 	}
 	var lines []string
-	for i := 0; i < items; i++ {
+	for range items {
 		lines = append(lines, "- "+acceptanceCriteria[rng.Intn(len(acceptanceCriteria))])
 	}
 	return strings.Join(lines, "\n"), false
