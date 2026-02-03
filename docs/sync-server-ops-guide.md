@@ -282,34 +282,24 @@ nginx -t && systemctl start nginx
 
 ### 5. Deploy the Application
 
-Transfer the source code to the VPS:
+Use the deploy script (see [Multi-Environment Deployment](#multi-environment-deployment) for details):
 
 ```bash
-# From your local machine
-rsync -avz --exclude '.git' --exclude '.todos' --exclude 'test/' \
-  . root@<VPS_IP>:/opt/td-sync/
+# 1. Copy and configure the environment template
+cp deploy/envs/.env.staging.example deploy/envs/.env.staging
+
+# 2. Edit with your values
+#    - DEPLOY_HOST: Your VPS IP or hostname
+#    - DEPLOY_USER: SSH user (e.g., root or deploy)
+#    - DEPLOY_PATH: Remote path (e.g., /opt/td-sync)
+#    - SYNC_BASE_URL: Your public URL
+vim deploy/envs/.env.staging
+
+# 3. Deploy
+./deploy/deploy.sh staging --build
 ```
 
-Create the environment file on the VPS:
-
-```bash
-ssh root@<VPS_IP>
-
-cat > /opt/td-sync/deploy/.env << 'EOF'
-SYNC_LISTEN_PORT=8080
-SYNC_ALLOW_SIGNUP=true
-SYNC_BASE_URL=https://sync.example.com
-SYNC_SHUTDOWN_TIMEOUT=30s
-EOF
-```
-
-Build and start:
-
-```bash
-cd /opt/td-sync/deploy
-docker compose build
-docker compose up -d
-```
+The deploy script handles rsync, environment config, and docker compose automatically.
 
 ### 6. Firewall Configuration
 
@@ -351,12 +341,14 @@ td auth login
 
 ### 8. Post-Deployment Security
 
-After creating your initial user account, disable public signups:
+After creating your initial user account, disable public signups by editing your local env file:
 
 ```bash
-ssh root@<VPS_IP>
-sed -i 's/SYNC_ALLOW_SIGNUP=true/SYNC_ALLOW_SIGNUP=false/' /opt/td-sync/deploy/.env
-cd /opt/td-sync/deploy && docker compose up -d
+# Edit deploy/envs/.env.staging (or .env.prod)
+# Change: SYNC_ALLOW_SIGNUP=true -> SYNC_ALLOW_SIGNUP=false
+
+# Re-deploy
+./deploy/deploy.sh staging
 ```
 
 ### Updating the Server
@@ -364,29 +356,97 @@ cd /opt/td-sync/deploy && docker compose up -d
 To deploy updates:
 
 ```bash
-# From local machine
-rsync -avz --exclude '.git' --exclude '.todos' --exclude 'test/' \
-  . root@<VPS_IP>:/opt/td-sync/
+./deploy/deploy.sh staging
 
-# On VPS
-ssh root@<VPS_IP>
-cd /opt/td-sync/deploy
-docker compose build
-docker compose up -d
+# Or force a rebuild:
+./deploy/deploy.sh staging --build
 ```
 
 ### Viewing Logs
 
 ```bash
-# Container logs
-docker compose logs -f td-sync
+# Quick status check (container status + recent logs + health)
+./deploy/deploy.sh staging --status
 
-# nginx access logs
+# Tail container logs after deploy
+./deploy/deploy.sh staging --logs
+
+# On VPS directly
+ssh root@<VPS_IP>
+cd /opt/td-sync/deploy && docker compose logs -f td-sync
+
+# nginx logs
 tail -f /var/log/nginx/td-sync.access.log
-
-# nginx error logs
 tail -f /var/log/nginx/td-sync.error.log
 ```
+
+## Multi-Environment Deployment
+
+The deploy system supports dev, staging, and production environments with a unified deployment script.
+
+### Quick Start
+
+```bash
+# 1. Copy the environment template
+cp deploy/envs/.env.prod.example deploy/envs/.env.prod
+
+# 2. Fill in your values (DEPLOY_HOST, S3 credentials, etc.)
+vim deploy/envs/.env.prod
+
+# 3. Deploy
+./deploy/deploy.sh prod
+```
+
+### Environments
+
+| Environment | Purpose | Runs On | S3 Backup |
+|-------------|---------|---------|-----------|
+| dev | Local development | localhost | No |
+| staging | Pre-production testing | VPS | Optional |
+| prod | Production | VPS | Required |
+
+### Deploy Script
+
+```bash
+./deploy.sh <env> [options]
+
+Environments: dev, staging, prod
+
+Options:
+  --build      Force Docker rebuild
+  --logs       Tail logs after deployment
+  --dry-run    Validate config only
+  --status     Check deployment status
+  --stop       Stop the deployment
+```
+
+### Environment Configuration
+
+Each environment has a template in `deploy/envs/`:
+
+- `.env.dev.example` - Local development (relaxed rate limits, debug logging)
+- `.env.staging.example` - Staging VPS (production-like settings)
+- `.env.prod.example` - Production VPS (strict settings, S3 backup required)
+
+Copy the template to `.env.<env>` and fill in your values. The actual `.env` files are gitignored to protect secrets.
+
+### Required Variables
+
+**All environments:**
+- `SYNC_BASE_URL` - Public URL of the server
+
+**Remote environments (staging, prod):**
+- `DEPLOY_HOST` - VPS hostname or IP
+- `DEPLOY_USER` - SSH user for deployment
+- `DEPLOY_PATH` - Remote path (e.g., `/opt/td-sync`)
+
+**Production only:**
+- `LITESTREAM_S3_BUCKET` - S3 bucket for backups
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` - AWS credentials
+
+### Adding a New Environment
+
+See `deploy/envs/README.md` for instructions on creating additional environments.
 
 ## Backup and Recovery
 
