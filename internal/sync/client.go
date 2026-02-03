@@ -80,12 +80,17 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 	var events []Event
 	for rows.Next() {
 		var (
-			rowid                                       int64
-			id, actionType, entityType, entityID, tsStr string
-			newDataStr, prevDataStr                     sql.NullString
+			rowid                                  int64
+			id                                     sql.NullString
+			actionType, entityType, entityID, tsStr string
+			newDataStr, prevDataStr                sql.NullString
 		)
 		if err := rows.Scan(&rowid, &id, &actionType, &entityType, &entityID, &newDataStr, &prevDataStr, &tsStr); err != nil {
 			return nil, fmt.Errorf("scan action_log row: %w", err)
+		}
+		if !id.Valid || id.String == "" {
+			slog.Warn("sync: skipping action_log with NULL/empty id", "rowid", rowid)
+			continue
 		}
 
 		clientTS, err := parseTimestamp(tsStr)
@@ -95,7 +100,7 @@ func GetPendingEvents(tx *sql.Tx, deviceID, sessionID string) ([]Event, error) {
 
 		canonicalType, ok := normalizeEntityType(entityType)
 		if !ok {
-			slog.Warn("sync: skipping unsupported entity type", "entity_type", entityType, "action_id", id)
+			slog.Warn("sync: skipping unsupported entity type", "entity_type", entityType, "action_id", id.String)
 			continue
 		}
 
