@@ -10,30 +10,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// VerifyResult records the outcome of a single verification check.
-type VerifyResult struct {
-	Name    string
-	Passed  bool
-	Details string // explanation on failure
-}
-
-// truncate shortens a string to maxLen, replacing newlines.
-func truncate(s string, maxLen int) string {
-	s = strings.ReplaceAll(s, "\n", "\\n")
-	if len(s) > maxLen {
-		return s[:maxLen] + "..."
-	}
-	return s
-}
-
-func pass(name string) VerifyResult {
-	return VerifyResult{Name: name, Passed: true}
-}
-
-func fail(name, details string) VerifyResult {
-	return VerifyResult{Name: name, Passed: false, Details: details}
-}
-
 // queryDB runs a SQL query against an actor's database and returns rows as strings.
 func queryDB(h *Harness, actor, query string) (string, error) {
 	db, err := sql.Open("sqlite3", h.DBPath(actor)+"?mode=ro")

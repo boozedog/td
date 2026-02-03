@@ -30,7 +30,7 @@ func ScenarioServerRestart(h *Harness) []VerifyResult {
 			fail("alice_create_pre", fmt.Sprintf("create %d failed: %v\n%s", i, err, out))
 			return results
 		}
-		id := ExtractIssueID(out)
+		id := extractIssueID(out)
 		if id == "" {
 			fail("alice_create_pre", fmt.Sprintf("no ID from create %d: %s", i, out))
 			return results
@@ -46,7 +46,7 @@ func ScenarioServerRestart(h *Harness) []VerifyResult {
 			fail("bob_create_pre", fmt.Sprintf("create %d failed: %v\n%s", i, err, out))
 			return results
 		}
-		id := ExtractIssueID(out)
+		id := extractIssueID(out)
 		if id == "" {
 			fail("bob_create_pre", fmt.Sprintf("no ID from create %d: %s", i, out))
 			return results
@@ -94,7 +94,7 @@ func ScenarioServerRestart(h *Harness) []VerifyResult {
 			fail("alice_offline_create", fmt.Sprintf("create %d failed: %v\n%s", i, err, out))
 			return results
 		}
-		id := ExtractIssueID(out)
+		id := extractIssueID(out)
 		if id != "" {
 			aliceNewIDs = append(aliceNewIDs, id)
 		}
