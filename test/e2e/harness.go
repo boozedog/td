@@ -52,10 +52,12 @@ type Harness struct {
 	homeDirs   map[string]string // actor -> HOME dir
 	sessionIDs map[string]string // actor -> TD_SESSION_ID
 
-	serverCmd *exec.Cmd
-	serverLog string // path to server log file
-	config    Config
-	t         *testing.T // nil when used standalone
+	serverCmd  *exec.Cmd
+	serverLog  string // path to server log file
+	serverPort int    // port the server listens on
+	serverData string // path to server-data directory
+	config     Config
+	t          *testing.T // nil when used standalone
 }
 
 // actorNames returns the actor names for the configured number of actors.
@@ -145,6 +147,8 @@ func Setup(t *testing.T, cfg Config) *Harness {
 		t.Fatalf("random port: %v", err)
 	}
 	h.ServerURL = fmt.Sprintf("http://localhost:%d", port)
+	h.serverPort = port
+	h.serverData = serverData
 
 	// Start server
 	h.serverLog = filepath.Join(workDir, "server.log")
@@ -317,6 +321,53 @@ func (h *Harness) HomeDir(actor string) string {
 func (h *Harness) ServerLogContents() string {
 	data, _ := os.ReadFile(h.serverLog)
 	return string(data)
+}
+
+// StopServer kills the running server process and waits for it to exit.
+func (h *Harness) StopServer() error {
+	if h.serverCmd == nil || h.serverCmd.Process == nil {
+		return fmt.Errorf("server not running")
+	}
+	if err := h.serverCmd.Process.Kill(); err != nil {
+		return fmt.Errorf("kill server: %w", err)
+	}
+	// Wait for process to fully exit (ignore error since Kill causes non-zero exit)
+	h.serverCmd.Wait()
+	h.serverCmd = nil
+	return nil
+}
+
+// StartServer starts a new server process using the same data directory and port.
+// Blocks until the server passes a health check.
+func (h *Harness) StartServer() error {
+	logFile, err := os.OpenFile(h.serverLog, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("open server log: %w", err)
+	}
+
+	h.serverCmd = exec.Command(h.SyncBin)
+	h.serverCmd.Env = append(os.Environ(),
+		fmt.Sprintf("SYNC_LISTEN_ADDR=:%d", h.serverPort),
+		fmt.Sprintf("SYNC_SERVER_DB_PATH=%s/server.db", h.serverData),
+		fmt.Sprintf("SYNC_PROJECT_DATA_DIR=%s/projects", h.serverData),
+		"SYNC_ALLOW_SIGNUP=true",
+		fmt.Sprintf("SYNC_BASE_URL=%s", h.ServerURL),
+		"SYNC_LOG_FORMAT=text",
+		"SYNC_LOG_LEVEL=info",
+	)
+	h.serverCmd.Stdout = logFile
+	h.serverCmd.Stderr = logFile
+
+	if err := h.serverCmd.Start(); err != nil {
+		logFile.Close()
+		return fmt.Errorf("start server: %w", err)
+	}
+	logFile.Close()
+
+	if err := h.waitForHealth(30 * time.Second); err != nil {
+		return fmt.Errorf("server not healthy after restart: %w", err)
+	}
+	return nil
 }
 
 // --- internal helpers ---
