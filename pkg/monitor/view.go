@@ -1593,6 +1593,13 @@ func (m Model) renderFormModal() string {
 
 	modalWidth, modalHeight := m.formModalDimensions()
 
+	// Set form width to match modal content area (modalWidth minus Padding(1,2) = 4 horizontal chars)
+	formWidth := modalWidth - 4
+	if formWidth > 0 {
+		m.FormState.Width = formWidth
+		m.FormState.Form.WithWidth(formWidth)
+	}
+
 	// Render the huh form
 	formView := m.FormState.Form.View()
 
@@ -1603,7 +1610,7 @@ func (m Model) renderFormModal() string {
 	cancelHovered := m.FormState.ButtonHover == 2
 	buttons := renderButtonPair("Submit", "Cancel", submitFocused, cancelFocused, submitHovered, cancelHovered, false, false)
 
-	// Build footer with key hints
+	// Build footer with key hints (truncated to fit modal content width)
 	var footerParts []string
 	if m.FormState.ShowExtended {
 		footerParts = append(footerParts, subtleStyle.Render("Ctrl+X:hide extended"))
@@ -1613,6 +1620,9 @@ func (m Model) renderFormModal() string {
 	footerParts = append(footerParts, subtleStyle.Render("Tab:next  Shift+Tab:prev  Enter:select"))
 	footerParts = append(footerParts, subtleStyle.Render("Ctrl+S:submit  Esc:cancel"))
 	footer := strings.Join(footerParts, "  ")
+	if lipgloss.Width(footer) > formWidth {
+		footer = lipgloss.NewStyle().MaxWidth(formWidth).Render(footer)
+	}
 
 	// Combine form and footer
 	inner := lipgloss.JoinVertical(lipgloss.Left, formView, "", buttons, "", footer)

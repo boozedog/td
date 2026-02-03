@@ -25,6 +25,12 @@ func (m Model) openNewIssueForm() (tea.Model, tea.Cmd) {
 	m.FormState = NewFormState(FormModeCreate, parentID)
 	m.FormOpen = true
 
+	// Set form width for text wrapping (subtract modal horizontal padding)
+	modalWidth, _ := m.formModalDimensions()
+	formWidth := modalWidth - 4
+	m.FormState.Width = formWidth
+	m.FormState.Form.WithWidth(formWidth)
+
 	// Initialize the form
 	return m, m.FormState.Form.Init()
 }
@@ -52,6 +58,12 @@ func (m Model) openEditIssueForm() (tea.Model, tea.Cmd) {
 	// Create form state with issue data
 	m.FormState = NewFormStateForEdit(issue)
 	m.FormOpen = true
+
+	// Set form width for text wrapping (subtract modal horizontal padding)
+	modalWidth, _ := m.formModalDimensions()
+	formWidth := modalWidth - 4
+	m.FormState.Width = formWidth
+	m.FormState.Form.WithWidth(formWidth)
 
 	// Initialize the form
 	return m, m.FormState.Form.Init()

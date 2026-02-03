@@ -62,6 +62,9 @@ type FormState struct {
 	// Button focus: -1 = form fields focused, 0 = submit, 1 = cancel
 	ButtonFocus int
 	ButtonHover int // 0 = none, 1 = submit, 2 = cancel
+
+	// Width for form fields (set from modal dimensions, reapplied on rebuild)
+	Width int
 }
 
 // NewFormState creates a new form state for creating an issue
@@ -213,6 +216,11 @@ func (fs *FormState) buildForm() {
 
 	// Configure form appearance
 	fs.Form.WithTheme(huh.ThemeDracula())
+
+	// Apply width if set (ensures text wrapping works after form rebuild)
+	if fs.Width > 0 {
+		fs.Form.WithWidth(fs.Width)
+	}
 }
 
 // ToggleExtended toggles the extended fields visibility and rebuilds the form

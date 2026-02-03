@@ -168,6 +168,10 @@ func (m Model) handleFormUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.Width = sizeMsg.Width
 		m.Height = sizeMsg.Height
 		m.updatePanelBounds()
+		modalWidth, _ := m.formModalDimensions()
+		formWidth := modalWidth - 4
+		m.FormState.Width = formWidth
+		m.FormState.Form.WithWidth(formWidth)
 	}
 
 	// Forward message to huh form
