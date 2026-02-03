@@ -228,11 +228,49 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 		}
 		previousData := marshalBoard(prev)
 
-		// Soft-delete positions first
+		// Query active positions before soft-deleting them
 		now := time.Now()
+		rows, err := db.conn.Query(`SELECT issue_id, position FROM board_issue_positions WHERE board_id = ? AND deleted_at IS NULL`, boardID)
+		if err != nil {
+			return err
+		}
+		type posRow struct {
+			issueID  string
+			position int
+		}
+		var positions []posRow
+		for rows.Next() {
+			var r posRow
+			if err := rows.Scan(&r.issueID, &r.position); err != nil {
+				rows.Close()
+				return err
+			}
+			positions = append(positions, r)
+		}
+		rows.Close()
+
+		// Soft-delete positions
 		_, err = db.conn.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, now.UTC(), boardID)
 		if err != nil {
 			return err
+		}
+
+		// Log individual soft_delete event for each position row
+		for _, p := range positions {
+			bipID := BoardIssuePosID(boardID, p.issueID)
+			prevData, _ := json.Marshal(map[string]interface{}{
+				"id": bipID, "board_id": boardID, "issue_id": p.issueID,
+				"position": p.position,
+			})
+			posActionID, err := generateActionID()
+			if err != nil {
+				return fmt.Errorf("generate action ID: %w", err)
+			}
+			_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+				posActionID, sessionID, string(models.ActionBoardUnposition), "board_issue_positions", bipID, string(prevData), "", now)
+			if err != nil {
+				return fmt.Errorf("log position action: %w", err)
+			}
 		}
 
 		// Delete board
