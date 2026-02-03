@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 25
+const SchemaVersion = 26
 
 const schema = `
 -- Issues table
@@ -434,6 +434,12 @@ ALTER TABLE boards_new RENAME TO boards;
 		Version:     25,
 		Description: "Add deleted_at to board_issue_positions for soft delete sync",
 		// Handled by custom Go code in migrations.go (migrateBoardPositionSoftDelete)
+		SQL: "",
+	},
+	{
+		Version:     26,
+		Description: "Enforce NOT NULL on action_log.id by fixing NULL values and recreating table",
+		// Handled by custom Go code in migrations.go (migrateActionLogNotNullID)
 		SQL: "",
 	},
 }
