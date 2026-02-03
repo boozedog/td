@@ -120,34 +120,36 @@ echo "  Symmetric skew:         A +$SKEW_SYMMETRIC_A_MIN / B -$SKEW_SYMMETRIC_B_
 # Positive offset = clock ahead, Negative = clock behind
 #
 # Note: Go stores timestamps in format "2006-01-02 15:04:05.999999 -0700 MST m=+0.000"
-# SQLite datetime() cannot parse this, so we extract the ISO portion first.
+# but can also be "2006-01-02 15:04:05 -0700 MST" (no microseconds) when time.Now()
+# happens at an exact second boundary. We extract only the first 19 chars (YYYY-MM-DD HH:MM:SS)
+# to handle both formats safely.
 offset_action_log_timestamps() {
     local db="$1"
     local offset="$2"
 
     # Update unsynced action_log entries' timestamps
-    # Extract ISO portion (first 26 chars) then apply offset
+    # Extract datetime portion (first 19 chars: "YYYY-MM-DD HH:MM:SS") then apply offset
     if [ "$offset" -ge 0 ]; then
-        sqlite3 "$db" "UPDATE action_log SET timestamp = datetime(substr(timestamp, 1, 26), '+$offset seconds') WHERE synced_at IS NULL AND timestamp IS NOT NULL;"
+        sqlite3 "$db" "UPDATE action_log SET timestamp = datetime(substr(timestamp, 1, 19), '+$offset seconds') WHERE synced_at IS NULL AND timestamp IS NOT NULL;"
     else
         local abs_offset=${offset#-}
-        sqlite3 "$db" "UPDATE action_log SET timestamp = datetime(substr(timestamp, 1, 26), '-$abs_offset seconds') WHERE synced_at IS NULL AND timestamp IS NOT NULL;"
+        sqlite3 "$db" "UPDATE action_log SET timestamp = datetime(substr(timestamp, 1, 19), '-$abs_offset seconds') WHERE synced_at IS NULL AND timestamp IS NOT NULL;"
     fi
 }
 
 # Usage: offset_issue_timestamps <db_path> <issue_id> <offset_seconds>
 # Offsets both created_at and updated_at for an issue
-# Note: Issue timestamps may also be in Go format, so extract ISO portion
+# Note: Issue timestamps may also be in Go format, so extract only YYYY-MM-DD HH:MM:SS
 offset_issue_timestamps() {
     local db="$1"
     local issue_id="$2"
     local offset="$3"
 
     if [ "$offset" -ge 0 ]; then
-        sqlite3 "$db" "UPDATE issues SET created_at = datetime(substr(created_at, 1, 26), '+$offset seconds'), updated_at = datetime(substr(updated_at, 1, 26), '+$offset seconds') WHERE id = '$issue_id';"
+        sqlite3 "$db" "UPDATE issues SET created_at = datetime(substr(created_at, 1, 19), '+$offset seconds'), updated_at = datetime(substr(updated_at, 1, 19), '+$offset seconds') WHERE id = '$issue_id';"
     else
         local abs_offset=${offset#-}
-        sqlite3 "$db" "UPDATE issues SET created_at = datetime(substr(created_at, 1, 26), '-$abs_offset seconds'), updated_at = datetime(substr(updated_at, 1, 26), '-$abs_offset seconds') WHERE id = '$issue_id';"
+        sqlite3 "$db" "UPDATE issues SET created_at = datetime(substr(created_at, 1, 19), '-$abs_offset seconds'), updated_at = datetime(substr(updated_at, 1, 19), '-$abs_offset seconds') WHERE id = '$issue_id';"
     fi
 }
 
