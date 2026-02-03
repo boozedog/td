@@ -94,6 +94,7 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	var parentID, acceptance, sprint sql.NullString
 	var implSession, creatorSession, reviewerSession sql.NullString
 	var createdBranch sql.NullString
+	var pointsNull sql.NullInt64
 
 	err := db.conn.QueryRow(`
 		SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
@@ -101,7 +102,7 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	FROM issues WHERE id = ?
 	`, id).Scan(
 		&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-		&issue.Points, &labels, &parentID, &acceptance, &sprint,
+		&pointsNull, &labels, &parentID, &acceptance, &sprint,
 		&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 	)
 
@@ -111,6 +112,7 @@ func (db *DB) GetIssue(id string) (*models.Issue, error) {
 	if err != nil {
 		return nil, err
 	}
+	issue.Points = int(pointsNull.Int64)
 
 	if labels != "" {
 		issue.Labels = strings.Split(labels, ",")
@@ -176,9 +178,10 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		var parentID, acceptance, sprint sql.NullString
 		var implSession, creatorSession, reviewerSession sql.NullString
 		var createdBranch sql.NullString
+		var pointsNull sql.NullInt64
 		if err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-			&issue.Points, &labels, &parentID, &acceptance, &sprint,
+			&pointsNull, &labels, &parentID, &acceptance, &sprint,
 			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		); err != nil {
 			return nil, err
@@ -192,6 +195,7 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		if deletedAt.Valid {
 			issue.DeletedAt = &deletedAt.Time
 		}
+		issue.Points = int(pointsNull.Int64)
 		issue.ParentID = parentID.String
 		issue.Acceptance = acceptance.String
 		issue.Sprint = sprint.String
@@ -494,10 +498,11 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		var parentID, acceptance, sprint sql.NullString
 		var implSession, creatorSession, reviewerSession sql.NullString
 		var createdBranch sql.NullString
+		var pointsNull sql.NullInt64
 
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-			&issue.Points, &labels, &parentID, &acceptance, &sprint,
+			&pointsNull, &labels, &parentID, &acceptance, &sprint,
 			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		)
 		if err != nil {
@@ -513,6 +518,7 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		if deletedAt.Valid {
 			issue.DeletedAt = &deletedAt.Time
 		}
+		issue.Points = int(pointsNull.Int64)
 		issue.ParentID = parentID.String
 		issue.Acceptance = acceptance.String
 		issue.Sprint = sprint.String

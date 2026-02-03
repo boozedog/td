@@ -80,7 +80,7 @@ type Issue struct {
 	Status             Status     `json:"status"`
 	Type               Type       `json:"type"`
 	Priority           Priority   `json:"priority"`
-	Points             int        `json:"points,omitempty"`
+	Points             int        `json:"points"`
 	Labels             []string   `json:"labels,omitempty"`
 	ParentID           string     `json:"parent_id,omitempty"`
 	Acceptance         string     `json:"acceptance,omitempty"`
@@ -92,7 +92,7 @@ type Issue struct {
 	UpdatedAt          time.Time  `json:"updated_at"`
 	ClosedAt           *time.Time `json:"closed_at,omitempty"`
 	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
-	Minor              bool       `json:"minor,omitempty"`
+	Minor              bool       `json:"minor"`
 	CreatedBranch      string     `json:"created_branch,omitempty"`
 }
 

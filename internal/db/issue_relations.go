@@ -83,10 +83,11 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		var parentID, acceptance, sprint sql.NullString
 		var implSession, creatorSession, reviewerSession sql.NullString
 		var createdBranch sql.NullString
+		var pointsNull sql.NullInt64
 
 		err := rows.Scan(
 			&issue.ID, &issue.Title, &issue.Description, &issue.Status, &issue.Type, &issue.Priority,
-			&issue.Points, &labels, &parentID, &acceptance, &sprint,
+			&pointsNull, &labels, &parentID, &acceptance, &sprint,
 			&implSession, &creatorSession, &reviewerSession, &issue.CreatedAt, &issue.UpdatedAt, &closedAt, &deletedAt, &issue.Minor, &createdBranch,
 		)
 		if err != nil {
@@ -102,6 +103,7 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		if deletedAt.Valid {
 			issue.DeletedAt = &deletedAt.Time
 		}
+		issue.Points = int(pointsNull.Int64)
 		issue.ParentID = parentID.String
 		issue.Acceptance = acceptance.String
 		issue.Sprint = sprint.String
