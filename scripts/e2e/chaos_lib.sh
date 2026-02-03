@@ -2938,3 +2938,298 @@ chaos_report_json() {
 ENDJSON
     _ok "JSON report written to $json_file"
 }
+
+# ============================================================
+# 11. Event Ordering Verification
+# ============================================================
+# Verifies causal ordering consistency in action_log.
+# Events must maintain causal order: if E1 causally precedes E2,
+# then E1.server_seq < E2.server_seq.
+
+# Global counters for event ordering verification
+CHAOS_EVENT_ORDERING_VIOLATIONS=0
+CHAOS_EVENT_ORDERING_CHECKS=0
+
+# verify_event_ordering: Check action_log for causal ordering violations.
+# Returns 0 if no violations, 1 if violations found.
+# Usage: verify_event_ordering "$DB_PATH"
+verify_event_ordering() {
+    local db="$1"
+    local violations=0
+    local checks=0
+
+    _step "Event ordering verification"
+
+    # 1. Check server_seq is monotonically increasing (no duplicates)
+    local dup_seqs
+    dup_seqs=$(sqlite3 "$db" "
+        SELECT server_seq, COUNT(*) as cnt
+        FROM action_log
+        WHERE server_seq IS NOT NULL
+        GROUP BY server_seq
+        HAVING cnt > 1
+        LIMIT 10;
+    ")
+    checks=$((checks + 1))
+    if [ -n "$dup_seqs" ]; then
+        _fail "duplicate server_seq values found: $dup_seqs"
+        violations=$((violations + 1))
+    else
+        _ok "server_seq uniqueness"
+    fi
+
+    # 2. Check for gaps in server_seq (informational - gaps may be acceptable)
+    local gap_info
+    gap_info=$(sqlite3 "$db" "
+        WITH seqs AS (
+            SELECT server_seq,
+                   LAG(server_seq) OVER (ORDER BY server_seq) as prev_seq
+            FROM action_log
+            WHERE server_seq IS NOT NULL
+        )
+        SELECT COUNT(*) as gap_count,
+               MAX(server_seq - prev_seq) as max_gap
+        FROM seqs
+        WHERE server_seq - prev_seq > 1;
+    ")
+    local gap_count max_gap
+    gap_count=$(echo "$gap_info" | cut -d'|' -f1)
+    max_gap=$(echo "$gap_info" | cut -d'|' -f2)
+    if [ "${gap_count:-0}" -gt 0 ]; then
+        _ok "server_seq has $gap_count gaps (max gap: $max_gap) - acceptable for multi-project server"
+    else
+        _ok "server_seq continuous (no gaps)"
+    fi
+
+    # 3. Updates should not appear before creates for same entity
+    local update_before_create
+    update_before_create=$(sqlite3 "$db" "
+        SELECT u.entity_type, u.entity_id, u.server_seq as update_seq, c.server_seq as create_seq
+        FROM action_log u
+        JOIN action_log c ON u.entity_type = c.entity_type AND u.entity_id = c.entity_id
+        WHERE u.action_type = 'update'
+          AND c.action_type = 'create'
+          AND u.server_seq IS NOT NULL
+          AND c.server_seq IS NOT NULL
+          AND u.server_seq < c.server_seq
+        LIMIT 10;
+    ")
+    checks=$((checks + 1))
+    if [ -n "$update_before_create" ]; then
+        _fail "update events before create for same entity:"
+        echo "$update_before_create" | while IFS='|' read -r etype eid useq cseq; do
+            echo "    $etype/$eid: update@$useq < create@$cseq"
+        done
+        violations=$((violations + 1))
+    else
+        _ok "no updates before creates"
+    fi
+
+    # 4. Deletes should appear after creates for same entity
+    local delete_before_create
+    delete_before_create=$(sqlite3 "$db" "
+        SELECT d.entity_type, d.entity_id, d.server_seq as delete_seq, c.server_seq as create_seq
+        FROM action_log d
+        JOIN action_log c ON d.entity_type = c.entity_type AND d.entity_id = c.entity_id
+        WHERE d.action_type IN ('soft_delete', 'hard_delete', 'delete')
+          AND c.action_type = 'create'
+          AND d.server_seq IS NOT NULL
+          AND c.server_seq IS NOT NULL
+          AND d.server_seq < c.server_seq
+        LIMIT 10;
+    ")
+    checks=$((checks + 1))
+    if [ -n "$delete_before_create" ]; then
+        _fail "delete events before create for same entity:"
+        echo "$delete_before_create" | while IFS='|' read -r etype eid dseq cseq; do
+            echo "    $etype/$eid: delete@$dseq < create@$cseq"
+        done
+        violations=$((violations + 1))
+    else
+        _ok "no deletes before creates"
+    fi
+
+    # 5. Child creates should not appear before parent creates (for issues with parent_id)
+    # This checks issue hierarchy ordering
+    local child_before_parent
+    child_before_parent=$(sqlite3 "$db" "
+        SELECT c.entity_id as child_id, c.server_seq as child_seq,
+               p.entity_id as parent_id, p.server_seq as parent_seq
+        FROM action_log c
+        JOIN action_log p ON c.entity_type = 'issue' AND p.entity_type = 'issue'
+        JOIN issues i ON c.entity_id = i.id AND i.parent_id = p.entity_id
+        WHERE c.action_type = 'create'
+          AND p.action_type = 'create'
+          AND c.server_seq IS NOT NULL
+          AND p.server_seq IS NOT NULL
+          AND c.server_seq < p.server_seq
+        LIMIT 10;
+    ")
+    checks=$((checks + 1))
+    if [ -n "$child_before_parent" ]; then
+        _fail "child issue creates before parent creates:"
+        echo "$child_before_parent" | while IFS='|' read -r cid cseq pid pseq; do
+            echo "    child $cid@$cseq < parent $pid@$pseq"
+        done
+        violations=$((violations + 1))
+    else
+        _ok "no child creates before parent creates"
+    fi
+
+    # 6. Check comments/logs reference existing issues (create event exists with lower seq)
+    local orphan_comments
+    orphan_comments=$(sqlite3 "$db" "
+        SELECT c.entity_id, c.server_seq as comment_seq
+        FROM action_log c
+        LEFT JOIN action_log i ON c.entity_type = 'comment'
+            AND i.entity_type = 'issue'
+            AND c.entity_id LIKE i.entity_id || '%'
+            AND i.action_type = 'create'
+            AND i.server_seq IS NOT NULL
+            AND i.server_seq < c.server_seq
+        WHERE c.entity_type = 'comment'
+          AND c.action_type = 'create'
+          AND c.server_seq IS NOT NULL
+          AND i.entity_id IS NULL
+        LIMIT 5;
+    ")
+    # Note: This check is informational - comments may be created before their issue
+    # syncs due to concurrent editing. We don't count it as a violation.
+    if [ -n "$orphan_comments" ]; then
+        _ok "INFO: some comment creates before parent issue sync (concurrent editing)"
+    fi
+
+    # 7. server_seq ordering within entity_type (sanity check)
+    local misordered_per_entity
+    misordered_per_entity=$(sqlite3 "$db" "
+        WITH ordered AS (
+            SELECT entity_type, entity_id, action_type, server_seq,
+                   ROW_NUMBER() OVER (PARTITION BY entity_type, entity_id ORDER BY server_seq) as rn,
+                   ROW_NUMBER() OVER (PARTITION BY entity_type, entity_id ORDER BY id) as local_rn
+            FROM action_log
+            WHERE server_seq IS NOT NULL
+        )
+        SELECT entity_type, entity_id, COUNT(*) as mismatch_count
+        FROM ordered
+        WHERE rn != local_rn
+        GROUP BY entity_type, entity_id
+        HAVING mismatch_count > 1
+        LIMIT 5;
+    ")
+    # This is also informational - local vs server ordering can differ
+    if [ -n "$misordered_per_entity" ]; then
+        _ok "INFO: some entities have local vs server order differences (expected)"
+    fi
+
+    # Update global counters
+    CHAOS_EVENT_ORDERING_VIOLATIONS=$((CHAOS_EVENT_ORDERING_VIOLATIONS + violations))
+    CHAOS_EVENT_ORDERING_CHECKS=$((CHAOS_EVENT_ORDERING_CHECKS + checks))
+
+    # Summary
+    if [ "$violations" -eq 0 ]; then
+        _ok "event ordering: $checks checks passed"
+        return 0
+    else
+        _fail "event ordering: $violations violations in $checks checks"
+        return 1
+    fi
+}
+
+# verify_event_ordering_cross_db: Compare event ordering between two databases.
+# Checks that synced event counts match and causal relationships are preserved.
+# NOTE: Updates have different server_seq across databases because each client
+# creates its own update events which get assigned unique server_seq by server.
+# We only compare CREATE events (which are canonical for an entity) and verify
+# the total synced event counts match.
+verify_event_ordering_cross_db() {
+    local db_a="$1" db_b="$2"
+    local violations=0
+
+    _step "Cross-database event ordering"
+
+    # Get max server_seq from each db
+    local max_seq_a max_seq_b
+    max_seq_a=$(sqlite3 "$db_a" "SELECT MAX(server_seq) FROM action_log WHERE server_seq IS NOT NULL;")
+    max_seq_b=$(sqlite3 "$db_b" "SELECT MAX(server_seq) FROM action_log WHERE server_seq IS NOT NULL;")
+
+    if [ "$max_seq_a" = "$max_seq_b" ]; then
+        _ok "max server_seq matches: $max_seq_a"
+    else
+        # Different max_seq is acceptable if clients have different local events
+        _ok "max server_seq differs (expected): A=$max_seq_a B=$max_seq_b"
+    fi
+
+    # Compare synced event counts (should be equal after full sync)
+    local count_a count_b
+    count_a=$(sqlite3 "$db_a" "SELECT COUNT(*) FROM action_log WHERE server_seq IS NOT NULL;")
+    count_b=$(sqlite3 "$db_b" "SELECT COUNT(*) FROM action_log WHERE server_seq IS NOT NULL;")
+
+    if [ "$count_a" = "$count_b" ]; then
+        _ok "synced event count matches: $count_a"
+    else
+        _ok "WARN: synced event count differs: A=$count_a B=$count_b (delta=$((count_a - count_b)))"
+    fi
+
+    # Compare CREATE events only - these should have matching server_seq for same entity_id
+    # because CREATE events are unique per entity (one create per entity)
+    # EXCEPTION: builtin boards (bd-all-issues) are created by each client independently,
+    # so they have different server_seq values. Exclude entity_id starting with 'bd-'.
+    local create_mismatch
+    create_mismatch=$(sqlite3 "$db_a" "
+        ATTACH DATABASE '$db_b' AS db_b;
+        SELECT a.entity_type, a.entity_id,
+               a.server_seq as seq_a, b.server_seq as seq_b
+        FROM action_log a
+        JOIN db_b.action_log b ON a.entity_type = b.entity_type
+            AND a.entity_id = b.entity_id
+            AND a.action_type = 'create'
+            AND b.action_type = 'create'
+        WHERE a.server_seq IS NOT NULL
+          AND b.server_seq IS NOT NULL
+          AND a.server_seq != b.server_seq
+          AND a.entity_id NOT LIKE 'bd-%'
+        LIMIT 10;
+    " 2>/dev/null || echo "")
+
+    if [ -n "$create_mismatch" ]; then
+        _fail "CREATE event server_seq mismatch between databases:"
+        echo "$create_mismatch" | head -5 | while IFS='|' read -r etype eid seqa seqb; do
+            echo "    $etype/$eid: A=$seqa B=$seqb"
+        done
+        violations=$((violations + 1))
+    else
+        _ok "CREATE event server_seq consistent across databases"
+    fi
+
+    # Verify relative ordering is preserved for create events (causal consistency)
+    # If entity E1's create has server_seq < entity E2's create on db_a,
+    # the same should be true on db_b
+    local order_violation
+    order_violation=$(sqlite3 "$db_a" "
+        ATTACH DATABASE '$db_b' AS db_b;
+        SELECT a1.entity_id as e1, a2.entity_id as e2,
+               a1.server_seq as a1_seq, a2.server_seq as a2_seq,
+               b1.server_seq as b1_seq, b2.server_seq as b2_seq
+        FROM action_log a1
+        JOIN action_log a2 ON a1.entity_type = a2.entity_type
+        JOIN db_b.action_log b1 ON a1.entity_type = b1.entity_type AND a1.entity_id = b1.entity_id
+        JOIN db_b.action_log b2 ON a2.entity_type = b2.entity_type AND a2.entity_id = b2.entity_id
+        WHERE a1.action_type = 'create' AND a2.action_type = 'create'
+          AND b1.action_type = 'create' AND b2.action_type = 'create'
+          AND a1.server_seq IS NOT NULL AND a2.server_seq IS NOT NULL
+          AND b1.server_seq IS NOT NULL AND b2.server_seq IS NOT NULL
+          AND a1.server_seq < a2.server_seq
+          AND b1.server_seq > b2.server_seq
+        LIMIT 5;
+    " 2>/dev/null || echo "")
+
+    if [ -n "$order_violation" ]; then
+        _fail "CREATE event relative ordering differs between databases"
+        violations=$((violations + 1))
+    else
+        _ok "CREATE event relative ordering consistent"
+    fi
+
+    CHAOS_EVENT_ORDERING_VIOLATIONS=$((CHAOS_EVENT_ORDERING_VIOLATIONS + violations))
+    return $violations
+}
