@@ -298,6 +298,45 @@ EOF
     _ok "Late joiner $actor ($email) ready, linked to $PROJECT_ID"
 }
 
+# ---- Server Lifecycle ----
+# These functions enable mid-test server restart scenarios.
+# Server config is stored in env vars during setup for restart capability.
+
+stop_server() {
+    if [ -n "$SERVER_PID" ]; then
+        kill "$SERVER_PID" 2>/dev/null || true
+        wait "$SERVER_PID" 2>/dev/null || true
+        SERVER_PID=""
+        _ok "Server stopped"
+    fi
+}
+
+start_server() {
+    _step "Starting server (:$PORT)"
+    SYNC_LISTEN_ADDR=":$PORT" \
+    SYNC_SERVER_DB_PATH="$SERVER_DATA/server.db" \
+    SYNC_PROJECT_DATA_DIR="$SERVER_DATA/projects" \
+    SYNC_ALLOW_SIGNUP=true \
+    SYNC_BASE_URL="$SERVER_URL" \
+    SYNC_LOG_FORMAT=text \
+    SYNC_LOG_LEVEL=info \
+      "$SYNC_BIN" >> "$WORKDIR/server.log" 2>&1 &
+    SERVER_PID=$!
+
+    for _ in $(seq 1 30); do
+        curl -sf "$SERVER_URL/healthz" > /dev/null 2>&1 && break
+        kill -0 "$SERVER_PID" 2>/dev/null || { cat "$WORKDIR/server.log"; _fatal "Server died on restart"; }
+        sleep 0.2
+    done
+    curl -sf "$SERVER_URL/healthz" > /dev/null || { cat "$WORKDIR/server.log"; _fatal "Server not healthy after restart"; }
+    _ok "Server started (PID: $SERVER_PID)"
+}
+
+restart_server() {
+    stop_server
+    start_server
+}
+
 # ---- Report ----
 
 report() {
