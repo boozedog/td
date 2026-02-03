@@ -32,6 +32,7 @@ var allowedEntityTypes = map[string]bool{
 	"issue_dependencies":    true,
 	"git_snapshots":         true,
 	"issue_session_history": true,
+	"notes":                 true,
 }
 
 func isValidEntityType(et string) bool {
