@@ -200,3 +200,46 @@ func GetTitleLengthLimits(baseDir string) (min, max int, err error) {
 
 	return min, max, nil
 }
+
+// GetFeatureFlag returns a feature flag from local config.
+// The second return value indicates whether the flag is explicitly set.
+func GetFeatureFlag(baseDir, name string) (bool, bool, error) {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return false, false, err
+	}
+	if cfg.FeatureFlags == nil {
+		return false, false, nil
+	}
+	value, ok := cfg.FeatureFlags[name]
+	return value, ok, nil
+}
+
+// SetFeatureFlag persists a feature flag in local config.
+func SetFeatureFlag(baseDir, name string, enabled bool) error {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return err
+	}
+	if cfg.FeatureFlags == nil {
+		cfg.FeatureFlags = make(map[string]bool)
+	}
+	cfg.FeatureFlags[name] = enabled
+	return Save(baseDir, cfg)
+}
+
+// UnsetFeatureFlag removes an explicitly-set feature flag from local config.
+func UnsetFeatureFlag(baseDir, name string) error {
+	cfg, err := Load(baseDir)
+	if err != nil {
+		return err
+	}
+	if cfg.FeatureFlags == nil {
+		return nil
+	}
+	delete(cfg.FeatureFlags, name)
+	if len(cfg.FeatureFlags) == 0 {
+		cfg.FeatureFlags = nil
+	}
+	return Save(baseDir, cfg)
+}

@@ -362,6 +362,76 @@ func TestActiveWorkSession(t *testing.T) {
 	})
 }
 
+func TestFeatureFlags(t *testing.T) {
+	t.Run("SetFeatureFlag/GetFeatureFlag round trip", func(t *testing.T) {
+		dir := t.TempDir()
+
+		if err := SetFeatureFlag(dir, "sync_cli", true); err != nil {
+			t.Fatalf("SetFeatureFlag failed: %v", err)
+		}
+
+		value, ok, err := GetFeatureFlag(dir, "sync_cli")
+		if err != nil {
+			t.Fatalf("GetFeatureFlag failed: %v", err)
+		}
+		if !ok {
+			t.Fatal("feature flag should exist")
+		}
+		if !value {
+			t.Fatal("sync_cli should be true")
+		}
+	})
+
+	t.Run("UnsetFeatureFlag removes value", func(t *testing.T) {
+		dir := t.TempDir()
+
+		if err := SetFeatureFlag(dir, "sync_cli", true); err != nil {
+			t.Fatalf("SetFeatureFlag failed: %v", err)
+		}
+		if err := UnsetFeatureFlag(dir, "sync_cli"); err != nil {
+			t.Fatalf("UnsetFeatureFlag failed: %v", err)
+		}
+
+		_, ok, err := GetFeatureFlag(dir, "sync_cli")
+		if err != nil {
+			t.Fatalf("GetFeatureFlag failed: %v", err)
+		}
+		if ok {
+			t.Fatal("sync_cli should be unset")
+		}
+	})
+
+	t.Run("feature flag updates preserve existing config fields", func(t *testing.T) {
+		dir := t.TempDir()
+
+		cfg := &models.Config{
+			FocusedIssueID: "td-123",
+			SearchQuery:    "existing",
+		}
+		if err := Save(dir, cfg); err != nil {
+			t.Fatalf("Save failed: %v", err)
+		}
+
+		if err := SetFeatureFlag(dir, "sync_cli", true); err != nil {
+			t.Fatalf("SetFeatureFlag failed: %v", err)
+		}
+
+		loaded, err := Load(dir)
+		if err != nil {
+			t.Fatalf("Load failed: %v", err)
+		}
+		if loaded.FocusedIssueID != "td-123" {
+			t.Fatalf("FocusedIssueID changed: %q", loaded.FocusedIssueID)
+		}
+		if loaded.SearchQuery != "existing" {
+			t.Fatalf("SearchQuery changed: %q", loaded.SearchQuery)
+		}
+		if loaded.FeatureFlags == nil || !loaded.FeatureFlags["sync_cli"] {
+			t.Fatal("sync_cli should be persisted in feature_flags")
+		}
+	})
+}
+
 func TestPaneHeights(t *testing.T) {
 	t.Run("DefaultPaneHeights returns equal thirds", func(t *testing.T) {
 		heights := DefaultPaneHeights()
