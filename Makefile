@@ -1,4 +1,4 @@
-.PHONY: help fmt test install install-dev tag release check-clean check-version
+.PHONY: help fmt test install tag release check-clean check-version
 
 SHELL := /bin/sh
 
@@ -14,8 +14,7 @@ help:
 		"Targets:" \
 		"  make fmt                       # gofmt -w ." \
 		"  make test                      # go test ./..." \
-		"  make install                   # go install ." \
-		"  make install-dev               # go install with -ldflags version from git" \
+		"  make install                   # build and install with version from git" \
 		"  make tag VERSION=vX.Y.Z        # create annotated git tag (requires clean tree)" \
 		"  make release VERSION=vX.Y.Z    # tag + push (triggers GoReleaser via GitHub Actions)"
 
@@ -26,15 +25,8 @@ test:
 	go test ./...
 
 install:
-	go install .
-
-install-dev:
-	@if [ -n "$(GIT_DESCRIBE)" ]; then \
-		V="$(GIT_DESCRIBE)"; \
-	else \
-		V="dev"; \
-	fi; \
-	echo "Installing td with Version=$$V"; \
+	@V="$(GIT_DESCRIBE)"; V=$${V:-dev}; \
+	echo "Installing td $$V"; \
 	go install -ldflags "-X main.Version=$$V" .
 
 check-clean:

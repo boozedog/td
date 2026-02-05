@@ -66,6 +66,16 @@ td version
 
 Issue lifecycle: open → in_progress → in_review → closed (or blocked)
 
+## Settings Persistence
+
+Monitor settings stored in two places:
+- **`config.json`**: pane heights, filter state (search, sort, type filter, include_closed)
+- **Database**: last viewed board (`boards.last_viewed_at`), board view mode, board issue positions
+
+Save pattern: async `tea.Cmd` via `saveFilterState()` / `savePaneHeightsAsync()` (fire-and-forget).
+
+**Known issue**: `saveFilterState()` doesn't persist when td runs embedded in sidecar. The quit interceptor in `sidecar/internal/plugins/tdmonitor/plugin.go:241-250` wraps `tea.Batch` commands in a single `func() tea.Msg`, which may prevent Bubble Tea from dispatching batched sub-commands (like the config save alongside `fetchData`).
+
 ## Undo Support
 
 Log actions via `database.LogAction()`. See `cmd/undo.go` for implementation.
