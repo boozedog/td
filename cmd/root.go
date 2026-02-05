@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 	"strings"
@@ -37,15 +38,36 @@ var rootCmd = &cobra.Command{
 Optimized for session continuity—capturing working state so new context windows can resume where previous ones stopped.`,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		cmdStartTime = time.Now()
+		runGatedSyncStartupHook(cmd)
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		// Capture executed command for analytics (logged in Execute() to avoid double logging)
 		executedCmd = cmd
+		runGatedSyncMutationHook(cmd)
 	},
+}
+
+// initLogFile redirects slog to a file if TD_LOG_FILE is set.
+// Useful for debugging auto-sync errors while running td monitor.
+func initLogFile() *os.File {
+	path := os.Getenv("TD_LOG_FILE")
+	if path == "" {
+		return nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		return nil
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	return f
 }
 
 // Execute runs the root command
 func Execute() {
+	if f := initLogFile(); f != nil {
+		defer f.Close()
+	}
+
 	cmdStartTime = time.Now()
 	executedCmd = nil // Reset for this execution
 

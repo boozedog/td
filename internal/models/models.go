@@ -44,11 +44,11 @@ const (
 type LogType string
 
 const (
-	LogTypeProgress   LogType = "progress"
-	LogTypeSecurity   LogType = "security"
-	LogTypeBlocker    LogType = "blocker"
-	LogTypeDecision   LogType = "decision"
-	LogTypeHypothesis LogType = "hypothesis"
+	LogTypeProgress      LogType = "progress"
+	LogTypeSecurity      LogType = "security"
+	LogTypeBlocker       LogType = "blocker"
+	LogTypeDecision      LogType = "decision"
+	LogTypeHypothesis    LogType = "hypothesis"
 	LogTypeTried         LogType = "tried"
 	LogTypeResult        LogType = "result"
 	LogTypeOrchestration LogType = "orchestration"
@@ -82,19 +82,19 @@ type Issue struct {
 	Status             Status     `json:"status"`
 	Type               Type       `json:"type"`
 	Priority           Priority   `json:"priority"`
-	Points             int        `json:"points,omitempty"`
+	Points             int        `json:"points"`
 	Labels             []string   `json:"labels,omitempty"`
 	ParentID           string     `json:"parent_id,omitempty"`
 	Acceptance         string     `json:"acceptance,omitempty"`
 	Sprint             string     `json:"sprint,omitempty"`
-	ImplementerSession string     `json:"implementer_session,omitempty"`
-	CreatorSession     string     `json:"creator_session,omitempty"`
-	ReviewerSession    string     `json:"reviewer_session,omitempty"`
+	ImplementerSession string     `json:"implementer_session"`
+	CreatorSession     string     `json:"creator_session"`
+	ReviewerSession    string     `json:"reviewer_session"`
 	CreatedAt          time.Time  `json:"created_at"`
 	UpdatedAt          time.Time  `json:"updated_at"`
 	ClosedAt           *time.Time `json:"closed_at,omitempty"`
 	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
-	Minor              bool       `json:"minor,omitempty"`
+	Minor              bool       `json:"minor"`
 	CreatedBranch      string     `json:"created_branch,omitempty"`
 }
 
@@ -216,9 +216,10 @@ type Comment struct {
 
 // Config represents the local config state
 type Config struct {
-	FocusedIssueID    string     `json:"focused_issue_id,omitempty"`
-	ActiveWorkSession string     `json:"active_work_session,omitempty"`
-	PaneHeights       [3]float64 `json:"pane_heights,omitempty"` // Ratios for 3 horizontal panes (sum=1.0)
+	FocusedIssueID    string          `json:"focused_issue_id,omitempty"`
+	ActiveWorkSession string          `json:"active_work_session,omitempty"`
+	PaneHeights       [3]float64      `json:"pane_heights,omitempty"`  // Ratios for 3 horizontal panes (sum=1.0)
+	FeatureFlags      map[string]bool `json:"feature_flags,omitempty"` // Experimental feature gates
 	// Filter state for monitor
 	SearchQuery   string `json:"search_query,omitempty"`
 	SortMode      string `json:"sort_mode,omitempty"`   // "priority", "created", "updated"
@@ -233,23 +234,23 @@ type Config struct {
 type ActionType string
 
 const (
-	ActionCreate     ActionType = "create"
-	ActionUpdate     ActionType = "update"
-	ActionDelete     ActionType = "delete"
-	ActionRestore    ActionType = "restore"
-	ActionStart      ActionType = "start"
-	ActionReview     ActionType = "review"
-	ActionApprove    ActionType = "approve"
-	ActionReject     ActionType = "reject"
-	ActionBlock      ActionType = "block"
-	ActionUnblock    ActionType = "unblock"
-	ActionClose      ActionType = "close"
-	ActionReopen     ActionType = "reopen"
-	ActionAddDep     ActionType = "add_dependency"
-	ActionRemoveDep  ActionType = "remove_dependency"
-	ActionLinkFile   ActionType = "link_file"
-	ActionUnlinkFile ActionType = "unlink_file"
-	ActionHandoff    ActionType = "handoff"
+	ActionCreate           ActionType = "create"
+	ActionUpdate           ActionType = "update"
+	ActionDelete           ActionType = "delete"
+	ActionRestore          ActionType = "restore"
+	ActionStart            ActionType = "start"
+	ActionReview           ActionType = "review"
+	ActionApprove          ActionType = "approve"
+	ActionReject           ActionType = "reject"
+	ActionBlock            ActionType = "block"
+	ActionUnblock          ActionType = "unblock"
+	ActionClose            ActionType = "close"
+	ActionReopen           ActionType = "reopen"
+	ActionAddDep           ActionType = "add_dependency"
+	ActionRemoveDep        ActionType = "remove_dependency"
+	ActionLinkFile         ActionType = "link_file"
+	ActionUnlinkFile       ActionType = "unlink_file"
+	ActionHandoff          ActionType = "handoff"
 	ActionBoardCreate      ActionType = "board_create"
 	ActionBoardDelete      ActionType = "board_delete"
 	ActionBoardUpdate      ActionType = "board_update"
@@ -258,6 +259,8 @@ const (
 	ActionBoardMoveIssue   ActionType = "board_move_issue"
 	ActionBoardSetPosition ActionType = "board_set_position"
 	ActionBoardUnposition  ActionType = "board_unposition"
+	ActionWorkSessionTag   ActionType = "work_session_tag"
+	ActionWorkSessionUntag ActionType = "work_session_untag"
 )
 
 // ActionLog represents a logged action that can be undone
