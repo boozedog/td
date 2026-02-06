@@ -250,19 +250,21 @@ func NewModel(database *db.DB, sessionID string, interval time.Duration, ver str
 // Model values are copied in Update().
 // The caller must call Close() when done to release resources.
 func NewEmbedded(baseDir string, interval time.Duration, ver string) (*Model, error) {
+	resolvedBaseDir := db.ResolveBaseDir(baseDir)
+
 	// Use shared DB to prevent connection leaks on Model value copies
-	database, err := getSharedDB(baseDir)
+	database, err := getSharedDB(resolvedBaseDir)
 	if err != nil {
 		return nil, err
 	}
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {
-		releaseSharedDB(baseDir)
+		releaseSharedDB(resolvedBaseDir)
 		return nil, err
 	}
 
-	m := NewModel(database, sess.ID, interval, ver, baseDir)
+	m := NewModel(database, sess.ID, interval, ver, resolvedBaseDir)
 	m.Embedded = true
 	return &m, nil
 }
@@ -286,19 +288,21 @@ type EmbeddedOptions struct {
 // Model values are copied in Update().
 // The caller must call Close() when done to release resources.
 func NewEmbeddedWithOptions(opts EmbeddedOptions) (*Model, error) {
+	resolvedBaseDir := db.ResolveBaseDir(opts.BaseDir)
+
 	// Use shared DB to prevent connection leaks on Model value copies
-	database, err := getSharedDB(opts.BaseDir)
+	database, err := getSharedDB(resolvedBaseDir)
 	if err != nil {
 		return nil, err
 	}
 
 	sess, err := session.GetOrCreate(database)
 	if err != nil {
-		releaseSharedDB(opts.BaseDir)
+		releaseSharedDB(resolvedBaseDir)
 		return nil, err
 	}
 
-	m := NewModel(database, sess.ID, opts.Interval, opts.Version, opts.BaseDir)
+	m := NewModel(database, sess.ID, opts.Interval, opts.Version, resolvedBaseDir)
 	m.Embedded = true
 	m.PanelRenderer = opts.PanelRenderer
 	m.ModalRenderer = opts.ModalRenderer

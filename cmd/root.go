@@ -12,6 +12,7 @@ import (
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/session"
 	"github.com/marcus/td/internal/suggest"
+	"github.com/marcus/td/internal/workdir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -325,6 +326,7 @@ func initBaseDir() {
 		fmt.Fprintf(os.Stderr, "Error: cannot determine working directory: %v\n", err)
 		os.Exit(1)
 	}
+	baseDir = workdir.ResolveBaseDir(baseDir)
 }
 
 // getBaseDir returns the base directory for the project
