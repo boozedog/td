@@ -12,20 +12,7 @@ setup
 DB_A="$CLIENT_A_DIR/.todos/issues.db"
 DB_B="$CLIENT_B_DIR/.todos/issues.db"
 
-# Notes table schema (may not exist since sidecar creates it)
-NOTES_SCHEMA='CREATE TABLE IF NOT EXISTS notes (
-    id TEXT PRIMARY KEY,
-    title TEXT NOT NULL DEFAULT "",
-    content TEXT NOT NULL DEFAULT "",
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at DATETIME
-);'
-
-_step "Create notes table in both clients"
-sqlite3 "$DB_A" "$NOTES_SCHEMA"
-sqlite3 "$DB_B" "$NOTES_SCHEMA"
-_ok "Notes tables created"
+# Notes table created by migration v28 during setup — no manual schema needed.
 
 # Generate a unique note ID
 NOTE_ID="note-$(openssl rand -hex 4)"
