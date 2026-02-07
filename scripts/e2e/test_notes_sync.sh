@@ -5,6 +5,7 @@
 #
 set -euo pipefail
 source "$(dirname "$0")/harness.sh"
+export TD_FEATURE_SYNC_NOTES=true
 
 setup
 

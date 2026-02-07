@@ -96,6 +96,20 @@ CREATE TABLE IF NOT EXISTS sync_conflicts (
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_entity ON sync_conflicts(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_time ON sync_conflicts(overwritten_at);
 CREATE INDEX IF NOT EXISTS idx_sync_conflicts_seq ON sync_conflicts(server_seq);
+
+-- notes table
+CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    pinned INTEGER DEFAULT 0,
+    archived INTEGER DEFAULT 0,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_deleted ON notes(deleted_at);
 `
 
 // migrationColumns are ALTER TABLE statements for columns added by migrations
@@ -106,7 +120,7 @@ var migrationColumns = []string{
 }
 
 // entityTables lists the tables that hold user data (not action_log or sync_state).
-var entityTables = []string{"issues", "logs", "handoffs", "comments", "boards", "work_sessions", "board_issue_positions", "issue_dependencies", "issue_files", "work_session_issues"}
+var entityTables = []string{"issues", "logs", "handoffs", "comments", "boards", "work_sessions", "board_issue_positions", "issue_dependencies", "issue_files", "work_session_issues", "notes"}
 
 // validEntities is the set of entity types accepted by the validator.
 var validEntities = map[string]bool{
@@ -120,6 +134,7 @@ var validEntities = map[string]bool{
 	"issue_dependencies":    true,
 	"issue_files":           true,
 	"work_session_issues":   true,
+	"notes":                 true,
 }
 
 // SimulatedClient represents a single sync client with its own database.

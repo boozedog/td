@@ -1,7 +1,7 @@
 package db
 
 // SchemaVersion is the current database schema version
-const SchemaVersion = 27
+const SchemaVersion = 28
 
 const schema = `
 -- Issues table
@@ -449,6 +449,24 @@ ALTER TABLE boards_new RENAME TO boards;
 UPDATE issues SET implementer_session = '' WHERE implementer_session IS NULL;
 UPDATE issues SET reviewer_session = '' WHERE reviewer_session IS NULL;
 UPDATE issues SET creator_session = '' WHERE creator_session IS NULL;
+`,
+	},
+	{
+		Version:     28,
+		Description: "Add notes table for sidecar notes sync",
+		SQL: `
+CREATE TABLE IF NOT EXISTS notes (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    pinned INTEGER DEFAULT 0,
+    archived INTEGER DEFAULT 0,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_deleted ON notes(deleted_at);
 `,
 	},
 }

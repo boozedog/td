@@ -41,7 +41,7 @@ var (
 	// SyncNotes gates notes entity sync for sidecar notes plugin rollout.
 	SyncNotes = Feature{
 		Name:        "sync_notes",
-		Default:     false,
+		Default:     true,
 		Description: "Enable sync transport for notes entities",
 	}
 )
