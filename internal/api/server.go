@@ -199,6 +199,18 @@ func (s *Server) routes() http.Handler {
 	adminMux.HandleFunc("GET /v1/admin/users/{id}", s.requireAdmin(AdminScopeReadServer, s.handleAdminGetUser))
 	adminMux.HandleFunc("GET /v1/admin/users/{id}/keys", s.requireAdmin(AdminScopeReadServer, s.handleAdminUserKeys))
 	adminMux.HandleFunc("GET /v1/admin/auth/events", s.requireAdmin(AdminScopeReadServer, s.handleAdminAuthEvents))
+	adminMux.HandleFunc("GET /v1/admin/projects", s.requireAdmin(AdminScopeReadProjects, s.handleAdminListProjects))
+	adminMux.HandleFunc("GET /v1/admin/projects/{id}", s.requireAdmin(AdminScopeReadProjects, s.handleAdminGetProject))
+	adminMux.HandleFunc("GET /v1/admin/projects/{id}/members", s.requireAdmin(AdminScopeReadProjects, s.handleAdminProjectMembers))
+	adminMux.HandleFunc("GET /v1/admin/projects/{id}/sync/status", s.requireAdmin(AdminScopeReadProjects, s.handleAdminSyncStatus))
+	adminMux.HandleFunc("GET /v1/admin/projects/{id}/sync/cursors", s.requireAdmin(AdminScopeReadProjects, s.handleAdminSyncCursors))
+	// Events (must register specific path before general)
+	adminMux.HandleFunc("GET /v1/admin/projects/{id}/events/{server_seq}", s.requireAdmin(AdminScopeReadEvents, s.handleAdminProjectEvent))
+	adminMux.HandleFunc("GET /v1/admin/projects/{id}/events", s.requireAdmin(AdminScopeReadEvents, s.handleAdminProjectEvents))
+	adminMux.HandleFunc("GET /v1/admin/entity-types", s.requireAdmin(AdminScopeReadEvents, s.handleAdminEntityTypes))
+	// Snapshots
+	adminMux.HandleFunc("GET /v1/admin/projects/{id}/snapshot/meta", s.requireAdmin(AdminScopeReadSnapshots, s.handleAdminSnapshotMeta))
+	adminMux.HandleFunc("GET /v1/admin/projects/{id}/snapshot/query", s.requireAdmin(AdminScopeReadSnapshots, s.handleAdminSnapshotQuery))
 	mux.Handle("/v1/admin/", s.CORSMiddleware(adminMux))
 
 	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20), authRateLimitMiddleware(s.rateLimiter, s.config.RateLimitAuth, s.store))
