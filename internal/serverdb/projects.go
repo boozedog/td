@@ -11,6 +11,8 @@ type Project struct {
 	ID          string
 	Name        string
 	Description string
+	EventCount  int
+	LastEventAt *time.Time
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	DeletedAt   *time.Time
@@ -97,13 +99,13 @@ func (db *ServerDB) CreateProjectWithID(id, name, description, ownerUserID strin
 
 // GetProject returns a project by ID. If includeSoftDeleted is false, soft-deleted projects are excluded.
 func (db *ServerDB) GetProject(id string, includeSoftDeleted bool) (*Project, error) {
-	query := `SELECT id, name, description, created_at, updated_at, deleted_at FROM projects WHERE id = ?`
+	query := `SELECT id, name, description, event_count, last_event_at, created_at, updated_at, deleted_at FROM projects WHERE id = ?`
 	if !includeSoftDeleted {
 		query += ` AND deleted_at IS NULL`
 	}
 
 	p := &Project{}
-	err := db.conn.QueryRow(query, id).Scan(&p.ID, &p.Name, &p.Description, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
+	err := db.conn.QueryRow(query, id).Scan(&p.ID, &p.Name, &p.Description, &p.EventCount, &p.LastEventAt, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -116,7 +118,7 @@ func (db *ServerDB) GetProject(id string, includeSoftDeleted bool) (*Project, er
 // ListProjectsForUser returns all non-deleted projects the user is a member of.
 func (db *ServerDB) ListProjectsForUser(userID string) ([]*Project, error) {
 	rows, err := db.conn.Query(`
-		SELECT p.id, p.name, p.description, p.created_at, p.updated_at, p.deleted_at
+		SELECT p.id, p.name, p.description, p.event_count, p.last_event_at, p.created_at, p.updated_at, p.deleted_at
 		FROM projects p
 		JOIN memberships m ON m.project_id = p.id
 		WHERE m.user_id = ? AND p.deleted_at IS NULL
@@ -130,7 +132,7 @@ func (db *ServerDB) ListProjectsForUser(userID string) ([]*Project, error) {
 	var projects []*Project
 	for rows.Next() {
 		p := &Project{}
-		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.EventCount, &p.LastEventAt, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
 			return nil, fmt.Errorf("scan project: %w", err)
 		}
 		projects = append(projects, p)
@@ -173,4 +175,29 @@ func (db *ServerDB) SoftDeleteProject(id string) error {
 		return fmt.Errorf("project not found: %s", id)
 	}
 	return nil
+}
+
+// UpdateProjectEventCount atomically increments event_count and updates last_event_at.
+func (db *ServerDB) UpdateProjectEventCount(projectID string, newEvents int, lastEventAt time.Time) error {
+	_, err := db.conn.Exec(
+		`UPDATE projects SET event_count = event_count + ?, last_event_at = ? WHERE id = ?`,
+		newEvents, lastEventAt, projectID,
+	)
+	return err
+}
+
+// GetProjectEventCount returns the cached event count and last event timestamp for a project.
+func (db *ServerDB) GetProjectEventCount(projectID string) (int, *time.Time, error) {
+	var count int
+	var lastEventAt *time.Time
+	err := db.conn.QueryRow(
+		`SELECT event_count, last_event_at FROM projects WHERE id = ?`, projectID,
+	).Scan(&count, &lastEventAt)
+	if err == sql.ErrNoRows {
+		return 0, nil, fmt.Errorf("project not found: %s", projectID)
+	}
+	if err != nil {
+		return 0, nil, fmt.Errorf("get project event count: %w", err)
+	}
+	return count, lastEventAt, nil
 }

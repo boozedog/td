@@ -195,6 +195,13 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update cached event count in server.db
+	if result.Accepted > 0 {
+		if err := s.store.UpdateProjectEventCount(projectID, result.Accepted, time.Now().UTC()); err != nil {
+			logFor(r.Context()).Warn("update project event count", "project", projectID, "err", err)
+		}
+	}
+
 	s.metrics.RecordPushEvents(int64(result.Accepted))
 
 	resp := PushResponse{Accepted: result.Accepted}
