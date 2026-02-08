@@ -22,10 +22,11 @@ const (
 
 // AuthUser holds the authenticated user information extracted from the API key.
 type AuthUser struct {
-	UserID string
-	Email  string
-	KeyID  string
-	Scopes []string
+	UserID  string
+	Email   string
+	KeyID   string
+	Scopes  []string
+	IsAdmin bool
 }
 
 // getUserFromContext returns the authenticated user from the request context, or nil.
@@ -160,11 +161,20 @@ func (s *Server) requireAuth(handler http.HandlerFunc) http.HandlerFunc {
 		}
 
 		scopes := parseScopes(ak.Scopes)
+
+		isAdmin, err := s.store.IsUserAdmin(user.ID)
+		if err != nil {
+			logFor(r.Context()).Error("check admin status", "err", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to verify user")
+			return
+		}
+
 		authUser := &AuthUser{
-			UserID: user.ID,
-			Email:  user.Email,
-			KeyID:  ak.ID,
-			Scopes: scopes,
+			UserID:  user.ID,
+			Email:   user.Email,
+			KeyID:   ak.ID,
+			Scopes:  scopes,
+			IsAdmin: isAdmin,
 		}
 
 		ctx := context.WithValue(r.Context(), ctxKeyAuthUser, authUser)
