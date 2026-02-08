@@ -168,6 +168,13 @@ func (db *ServerDB) RemoveMember(projectID, userID string) error {
 	return nil
 }
 
+// CountMembers returns the total number of memberships.
+func (db *ServerDB) CountMembers() (int, error) {
+	var count int
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM memberships").Scan(&count)
+	return count, err
+}
+
 func isValidRole(role string) bool {
 	return role == RoleOwner || role == RoleWriter || role == RoleReader
 }

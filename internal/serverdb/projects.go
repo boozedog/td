@@ -201,3 +201,10 @@ func (db *ServerDB) GetProjectEventCount(projectID string) (int, *time.Time, err
 	}
 	return count, lastEventAt, nil
 }
+
+// CountProjects returns the total number of non-deleted projects.
+func (db *ServerDB) CountProjects() (int, error) {
+	var count int
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM projects WHERE deleted_at IS NULL").Scan(&count)
+	return count, err
+}

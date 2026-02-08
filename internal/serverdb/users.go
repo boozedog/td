@@ -146,6 +146,13 @@ func (db *ServerDB) IsUserAdmin(userID string) (bool, error) {
 	return isAdmin, nil
 }
 
+// CountUsers returns the total number of users.
+func (db *ServerDB) CountUsers() (int, error) {
+	var count int
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM users").Scan(&count)
+	return count, err
+}
+
 // CountAdmins returns the number of users with admin privileges.
 func (db *ServerDB) CountAdmins() (int, error) {
 	var count int

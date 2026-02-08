@@ -20,6 +20,7 @@ type Server struct {
 	metrics     *Metrics
 	rateLimiter *RateLimiter
 	cancel      context.CancelFunc
+	startTime   time.Time
 }
 
 // NewServer creates a new Server with the given config and store.
@@ -30,6 +31,7 @@ func NewServer(cfg Config, store *serverdb.ServerDB) (*Server, error) {
 		dbPool:      NewProjectDBPool(cfg.ProjectDataDir),
 		metrics:     NewMetrics(),
 		rateLimiter: NewRateLimiter(),
+		startTime:   time.Now(),
 	}
 
 	s.http = &http.Server{
@@ -188,8 +190,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /v1/projects/{id}/sync/status", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncStatus, s.config.RateLimitOther)))
 	mux.HandleFunc("GET /v1/projects/{id}/sync/snapshot", s.requireProjectAuth(serverdb.RoleReader, s.withRateLimit(s.handleSyncSnapshot, s.config.RateLimitOther)))
 
-	// Admin (CORS-enabled) — admin route handlers added by later tasks
+	// Admin (CORS-enabled)
 	adminMux := http.NewServeMux()
+	adminMux.HandleFunc("GET /v1/admin/server/overview", s.requireAdmin(AdminScopeReadServer, s.handleAdminServerOverview))
+	adminMux.HandleFunc("GET /v1/admin/server/config", s.requireAdmin(AdminScopeReadServer, s.handleAdminServerConfig))
+	adminMux.HandleFunc("GET /v1/admin/server/rate-limit-violations", s.requireAdmin(AdminScopeReadServer, s.handleAdminRateLimitViolations))
 	mux.Handle("/v1/admin/", s.CORSMiddleware(adminMux))
 
 	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20), authRateLimitMiddleware(s.rateLimiter, s.config.RateLimitAuth, s.store))
