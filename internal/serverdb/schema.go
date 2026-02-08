@@ -1,7 +1,7 @@
 package serverdb
 
 // ServerSchemaVersion is the current server database schema version
-const ServerSchemaVersion = 2
+const ServerSchemaVersion = 3
 
 const serverSchema = `
 -- Users table
@@ -101,5 +101,35 @@ var Migrations = []Migration{
 		CREATE INDEX IF NOT EXISTS idx_auth_requests_user_code ON auth_requests(user_code);
 		CREATE INDEX IF NOT EXISTS idx_auth_requests_status ON auth_requests(status);
 		CREATE INDEX IF NOT EXISTS idx_auth_requests_cleanup ON auth_requests(status, expires_at);`,
+	},
+	{
+		Version:     3,
+		Description: "Add is_admin, auth_events, rate_limit_events, project event caching",
+		SQL: `ALTER TABLE users ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0;
+
+		CREATE TABLE IF NOT EXISTS auth_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			auth_request_id TEXT NOT NULL,
+			email TEXT NOT NULL,
+			event_type TEXT NOT NULL,
+			metadata TEXT DEFAULT '{}',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_auth_events_type ON auth_events(event_type);
+		CREATE INDEX IF NOT EXISTS idx_auth_events_email ON auth_events(email);
+		CREATE INDEX IF NOT EXISTS idx_auth_events_created ON auth_events(created_at);
+
+		CREATE TABLE IF NOT EXISTS rate_limit_events (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			key_id TEXT,
+			ip TEXT,
+			endpoint_class TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_rle_created ON rate_limit_events(created_at);
+		CREATE INDEX IF NOT EXISTS idx_rle_key ON rate_limit_events(key_id);
+
+		ALTER TABLE projects ADD COLUMN event_count INTEGER NOT NULL DEFAULT 0;
+		ALTER TABLE projects ADD COLUMN last_event_at DATETIME;`,
 	},
 }

@@ -98,13 +98,13 @@ func (db *ServerDB) VerifyAPIKey(plaintextKey string) (*APIKey, *User, error) {
 	u := &User{}
 	err := db.conn.QueryRow(`
 		SELECT ak.id, ak.user_id, ak.key_prefix, ak.name, ak.scopes, ak.expires_at, ak.last_used_at, ak.created_at,
-		       u.id, u.email, u.email_verified_at, u.created_at, u.updated_at
+		       u.id, u.email, u.email_verified_at, u.is_admin, u.created_at, u.updated_at
 		FROM api_keys ak
 		JOIN users u ON u.id = ak.user_id
 		WHERE ak.key_hash = ?
 	`, keyHash).Scan(
 		&ak.ID, &ak.UserID, &ak.KeyPrefix, &ak.Name, &ak.Scopes, &ak.ExpiresAt, &ak.LastUsedAt, &ak.CreatedAt,
-		&u.ID, &u.Email, &u.EmailVerifiedAt, &u.CreatedAt, &u.UpdatedAt,
+		&u.ID, &u.Email, &u.EmailVerifiedAt, &u.IsAdmin, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		slog.Debug("api key not found", "key_hash_prefix", keyHash[:8])

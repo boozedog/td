@@ -611,3 +611,186 @@ func TestSchemaVersion(t *testing.T) {
 		t.Fatalf("expected version %d, got %d", ServerSchemaVersion, v)
 	}
 }
+
+// --- Migration v2→v3 tests ---
+
+func TestMigrationV3_SchemaVersion(t *testing.T) {
+	db := newTestDB(t)
+	if v := db.getSchemaVersion(); v != 3 {
+		t.Fatalf("expected schema version 3, got %d", v)
+	}
+}
+
+func TestMigrationV3_IsAdminColumnDefaults(t *testing.T) {
+	db := newTestDB(t)
+	// Insert user directly to bypass first-user logic
+	_, err := db.conn.Exec(`INSERT INTO users (id, email, created_at, updated_at) VALUES ('u_test', 'raw@test.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`)
+	if err != nil {
+		t.Fatalf("insert raw user: %v", err)
+	}
+	var isAdmin bool
+	err = db.conn.QueryRow(`SELECT is_admin FROM users WHERE id = 'u_test'`).Scan(&isAdmin)
+	if err != nil {
+		t.Fatalf("scan is_admin: %v", err)
+	}
+	if isAdmin {
+		t.Fatal("is_admin should default to false")
+	}
+}
+
+func TestMigrationV3_AuthEventsTable(t *testing.T) {
+	db := newTestDB(t)
+	_, err := db.conn.Exec(`INSERT INTO auth_events (auth_request_id, email, event_type) VALUES ('ar_1', 'test@test.com', 'started')`)
+	if err != nil {
+		t.Fatalf("insert auth_event: %v", err)
+	}
+	var id int
+	var authReqID, email, eventType string
+	err = db.conn.QueryRow(`SELECT id, auth_request_id, email, event_type FROM auth_events WHERE id = 1`).Scan(&id, &authReqID, &email, &eventType)
+	if err != nil {
+		t.Fatalf("select auth_event: %v", err)
+	}
+	if authReqID != "ar_1" || email != "test@test.com" || eventType != "started" {
+		t.Fatalf("unexpected auth_event values: %s %s %s", authReqID, email, eventType)
+	}
+}
+
+func TestMigrationV3_RateLimitEventsTable(t *testing.T) {
+	db := newTestDB(t)
+	_, err := db.conn.Exec(`INSERT INTO rate_limit_events (key_id, ip, endpoint_class) VALUES ('ak_1', '127.0.0.1', 'sync')`)
+	if err != nil {
+		t.Fatalf("insert rate_limit_event: %v", err)
+	}
+	var id int
+	var keyID, ip, endpointClass string
+	err = db.conn.QueryRow(`SELECT id, key_id, ip, endpoint_class FROM rate_limit_events WHERE id = 1`).Scan(&id, &keyID, &ip, &endpointClass)
+	if err != nil {
+		t.Fatalf("select rate_limit_event: %v", err)
+	}
+	if keyID != "ak_1" || ip != "127.0.0.1" || endpointClass != "sync" {
+		t.Fatalf("unexpected rate_limit_event values: %s %s %s", keyID, ip, endpointClass)
+	}
+}
+
+func TestMigrationV3_ProjectEventColumns(t *testing.T) {
+	db := newTestDB(t)
+	u, _ := db.CreateUser("projcol@test.com")
+	p, _ := db.CreateProject("test", "", u.ID)
+
+	var eventCount int
+	var lastEventAt *time.Time
+	err := db.conn.QueryRow(`SELECT event_count, last_event_at FROM projects WHERE id = ?`, p.ID).Scan(&eventCount, &lastEventAt)
+	if err != nil {
+		t.Fatalf("select project event columns: %v", err)
+	}
+	if eventCount != 0 {
+		t.Fatalf("expected event_count 0, got %d", eventCount)
+	}
+	if lastEventAt != nil {
+		t.Fatalf("expected last_event_at nil, got %v", lastEventAt)
+	}
+}
+
+// --- Admin logic tests ---
+
+func TestFirstUserIsAdmin(t *testing.T) {
+	db := newTestDB(t)
+	u1, err := db.CreateUser("first@test.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !u1.IsAdmin {
+		t.Fatal("first user should be admin")
+	}
+
+	u2, err := db.CreateUser("second@test.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u2.IsAdmin {
+		t.Fatal("second user should NOT be admin")
+	}
+}
+
+func TestSetUserAdmin(t *testing.T) {
+	db := newTestDB(t)
+	db.CreateUser("admin@test.com")
+	u2, _ := db.CreateUser("normal@test.com")
+
+	// u2 is not admin
+	if u2.IsAdmin {
+		t.Fatal("second user should not be admin initially")
+	}
+
+	// Promote
+	if err := db.SetUserAdmin("normal@test.com", true); err != nil {
+		t.Fatal(err)
+	}
+	isAdmin, _ := db.IsUserAdmin(u2.ID)
+	if !isAdmin {
+		t.Fatal("user should be admin after SetUserAdmin(true)")
+	}
+
+	// Demote
+	if err := db.SetUserAdmin("normal@test.com", false); err != nil {
+		t.Fatal(err)
+	}
+	isAdmin, _ = db.IsUserAdmin(u2.ID)
+	if isAdmin {
+		t.Fatal("user should not be admin after SetUserAdmin(false)")
+	}
+}
+
+func TestSetUserAdminNotFound(t *testing.T) {
+	db := newTestDB(t)
+	err := db.SetUserAdmin("nobody@test.com", true)
+	if err == nil {
+		t.Fatal("expected error for missing user")
+	}
+}
+
+func TestIsUserAdmin(t *testing.T) {
+	db := newTestDB(t)
+	u, _ := db.CreateUser("check@test.com")
+	isAdmin, err := db.IsUserAdmin(u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isAdmin {
+		t.Fatal("first user should be admin")
+	}
+}
+
+func TestIsUserAdminNotFound(t *testing.T) {
+	db := newTestDB(t)
+	_, err := db.IsUserAdmin("u_nonexistent")
+	if err == nil {
+		t.Fatal("expected error for missing user")
+	}
+}
+
+func TestCountAdmins(t *testing.T) {
+	db := newTestDB(t)
+	count, _ := db.CountAdmins()
+	if count != 0 {
+		t.Fatalf("expected 0 admins, got %d", count)
+	}
+
+	db.CreateUser("a@test.com") // first user = admin
+	count, _ = db.CountAdmins()
+	if count != 1 {
+		t.Fatalf("expected 1 admin, got %d", count)
+	}
+
+	db.CreateUser("b@test.com") // second user = not admin
+	count, _ = db.CountAdmins()
+	if count != 1 {
+		t.Fatalf("expected still 1 admin, got %d", count)
+	}
+
+	db.SetUserAdmin("b@test.com", true)
+	count, _ = db.CountAdmins()
+	if count != 2 {
+		t.Fatalf("expected 2 admins, got %d", count)
+	}
+}
