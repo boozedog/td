@@ -195,6 +195,10 @@ func (s *Server) routes() http.Handler {
 	adminMux.HandleFunc("GET /v1/admin/server/overview", s.requireAdmin(AdminScopeReadServer, s.handleAdminServerOverview))
 	adminMux.HandleFunc("GET /v1/admin/server/config", s.requireAdmin(AdminScopeReadServer, s.handleAdminServerConfig))
 	adminMux.HandleFunc("GET /v1/admin/server/rate-limit-violations", s.requireAdmin(AdminScopeReadServer, s.handleAdminRateLimitViolations))
+	adminMux.HandleFunc("GET /v1/admin/users", s.requireAdmin(AdminScopeReadServer, s.handleAdminListUsers))
+	adminMux.HandleFunc("GET /v1/admin/users/{id}", s.requireAdmin(AdminScopeReadServer, s.handleAdminGetUser))
+	adminMux.HandleFunc("GET /v1/admin/users/{id}/keys", s.requireAdmin(AdminScopeReadServer, s.handleAdminUserKeys))
+	adminMux.HandleFunc("GET /v1/admin/auth/events", s.requireAdmin(AdminScopeReadServer, s.handleAdminAuthEvents))
 	mux.Handle("/v1/admin/", s.CORSMiddleware(adminMux))
 
 	return chain(mux, recoveryMiddleware, requestIDMiddleware, loggerMiddleware, metricsMiddleware(s.metrics), loggingMiddleware, maxBytesMiddleware(10<<20), authRateLimitMiddleware(s.rateLimiter, s.config.RateLimitAuth, s.store))
