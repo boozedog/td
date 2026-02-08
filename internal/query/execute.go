@@ -24,7 +24,7 @@ type ExecuteOptions struct {
 }
 
 // Execute parses and executes a TDQ query
-func Execute(database *db.DB, queryStr string, sessionID string, opts ExecuteOptions) ([]models.Issue, error) {
+func Execute(database QuerySource, queryStr string, sessionID string, opts ExecuteOptions) ([]models.Issue, error) {
 	// Parse the query
 	query, err := Parse(queryStr)
 	if err != nil {
@@ -98,7 +98,7 @@ func Execute(database *db.DB, queryStr string, sessionID string, opts ExecuteOpt
 	return filtered, nil
 }
 
-func applyCrossEntityFilters(database *db.DB, issues []models.Issue, query *Query, ctx *EvalContext) ([]models.Issue, error) {
+func applyCrossEntityFilters(database QuerySource, issues []models.Issue, query *Query, ctx *EvalContext) ([]models.Issue, error) {
 	if query.Root == nil {
 		return issues, nil
 	}
@@ -130,7 +130,7 @@ type crossEntityPrefetch struct {
 }
 
 // prefetchCrossEntityData walks the AST to find what bulk data needs pre-fetching
-func prefetchCrossEntityData(database *db.DB, n Node) (*crossEntityPrefetch, error) {
+func prefetchCrossEntityData(database QuerySource, n Node) (*crossEntityPrefetch, error) {
 	p := &crossEntityPrefetch{}
 	needs := collectFunctionNames(n)
 	var err error
@@ -173,7 +173,7 @@ func collectFunctionNames(n Node) map[string]bool {
 // respecting AND/OR/NOT boolean operators for all conditions.
 // When hasMixedOR is true, regular field conditions are also evaluated here
 // (not just passed through) so that OR between cross-entity and regular fields works correctly.
-func evalCrossEntityNode(database *db.DB, issue models.Issue, n Node, ctx *EvalContext, pf *crossEntityPrefetch) (bool, error) {
+func evalCrossEntityNode(database QuerySource, issue models.Issue, n Node, ctx *EvalContext, pf *crossEntityPrefetch) (bool, error) {
 	switch node := n.(type) {
 	case *BinaryExpr:
 		left, err := evalCrossEntityNode(database, issue, node.Left, ctx, pf)
@@ -315,7 +315,7 @@ type crossEntityFilter struct {
 	negated  bool // true if wrapped in NOT (unused in new AST-walk approach)
 }
 
-func applyCrossEntityFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, ctx *EvalContext, reworkIDs, issuesWithOpenDeps map[string]bool) (bool, error) {
+func applyCrossEntityFilter(database QuerySource, issue models.Issue, filter crossEntityFilter, ctx *EvalContext, reworkIDs, issuesWithOpenDeps map[string]bool) (bool, error) {
 	switch filter.entity {
 	case "log":
 		logs, err := database.GetLogs(issue.ID, 0) // 0 = no limit
@@ -440,7 +440,7 @@ func matchFiles(files []models.IssueFile, filter crossEntityFilter, ctx *EvalCon
 // matchEpicAncestor traverses up the parent chain to find an epic ancestor
 // and checks if the epic's field matches the filter condition.
 // Returns (true, nil) if an epic ancestor matches, (false, nil) if no match or no epic.
-func matchEpicAncestor(database *db.DB, issue models.Issue, filter crossEntityFilter, ctx *EvalContext) (bool, error) {
+func matchEpicAncestor(database QuerySource, issue models.Issue, filter crossEntityFilter, ctx *EvalContext) (bool, error) {
 	// Traverse up the parent chain looking for an epic
 	current := issue.ParentID
 	visited := make(map[string]bool)
@@ -514,7 +514,7 @@ func matchValue(fieldValue, operator string, value interface{}, ctx *EvalContext
 	}
 }
 
-func applyFunctionFilter(database *db.DB, issue models.Issue, filter crossEntityFilter, reworkIDs, issuesWithOpenDeps map[string]bool) (bool, error) {
+func applyFunctionFilter(database QuerySource, issue models.Issue, filter crossEntityFilter, reworkIDs, issuesWithOpenDeps map[string]bool) (bool, error) {
 	// Handle no-arg functions first
 	switch filter.field {
 	case "rework":
