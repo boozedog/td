@@ -2,6 +2,19 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.32.0] - 2026-02-08
+
+### Features
+- Admin API: server overview, config, and rate-limit-violations endpoints
+- Admin API: user/auth endpoints — users list, detail, keys, auth events
+- Admin API: project, events, and snapshots endpoints
+- TDQ-powered snapshot query endpoint with server-side execution
+- Integration test harness with fluent builder and assertion helpers
+- Error code constants for consistent API responses
+
+### Improvements
+- Homebrew formula now builds from source (avoids macOS Gatekeeper warnings)
+
 ## [v0.31.0] - 2026-02-07
 
 ### Features
