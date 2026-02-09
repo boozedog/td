@@ -29,3 +29,7 @@ deploy/envs/.env.*
 
 # Personal runbooks with server details
 *.local.md
+
+# Test artifacts
+data/
+api.test
