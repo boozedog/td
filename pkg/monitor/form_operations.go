@@ -101,6 +101,9 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		}
 
 		m.closeForm()
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
+		}
 		return m, m.fetchData()
 
 	} else if m.FormState.Mode == FormModeEdit {
