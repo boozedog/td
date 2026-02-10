@@ -87,10 +87,16 @@ func (m Model) markForReview() (tea.Model, tea.Cmd) {
 
 	// If we're in a modal, refresh instead of closing to keep context
 	if modal := m.CurrentModal(); modal != nil {
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID), m.fetchIssueDetails(modal.IssueID))
+		}
 		// Refresh the modal issue data and epic tasks list
 		return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(modal.IssueID))
 	}
 
+	if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+		return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
+	}
 	return m, m.fetchData()
 }
 
@@ -146,6 +152,9 @@ func (m Model) executeDelete() (tea.Model, tea.Cmd) {
 		m.closeModal()
 	}
 
+	if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+		return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
+	}
 	return m, m.fetchData()
 }
 
@@ -277,11 +286,17 @@ func (m Model) executeCloseWithReason() (tea.Model, tea.Cmd) {
 
 	// If we're in a modal, refresh instead of closing
 	if modal := m.CurrentModal(); modal != nil {
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID), m.fetchIssueDetails(modal.IssueID))
+		}
 		// If we closed an epic task (not the modal's main issue), refresh to update the list
 		// If we closed the main issue, also refresh to show updated status
 		return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(modal.IssueID))
 	}
 
+	if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+		return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
+	}
 	return m, m.fetchData()
 }
 
@@ -369,6 +384,9 @@ func (m Model) approveIssue() (tea.Model, tea.Cmd) {
 	// The item will move to Closed, and we want cursor at same index for next item
 	m.SelectedID[PanelTaskList] = ""
 
+	if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+		return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
+	}
 	return m, m.fetchData()
 }
 
@@ -437,17 +455,25 @@ func (m Model) reopenIssue() (tea.Model, tea.Cmd) {
 			modal.Issue.Status = models.StatusOpen
 			modal.Issue.ClosedAt = nil
 		}
-		return m, tea.Batch(
+		cmds := []tea.Cmd{
 			tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
 			m.fetchData(),
 			m.fetchIssueDetails(modal.IssueID),
-		)
+		}
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+		}
+		return m, tea.Batch(cmds...)
 	}
 
-	return m, tea.Batch(
+	cmds := []tea.Cmd{
 		tea.Tick(2*time.Second, func(t time.Time) tea.Msg { return ClearStatusMsg{} }),
 		m.fetchData(),
-	)
+	}
+	if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+		cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+	}
+	return m, tea.Batch(cmds...)
 }
 
 // copyCurrentIssueToClipboard copies the current issue to clipboard as markdown
