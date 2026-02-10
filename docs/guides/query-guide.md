@@ -98,6 +98,19 @@ Search across related data:
 Log types: progress, blocker, decision, hypothesis, tried, result
 File roles: implementation, test, reference, config
 
+### Note Fields
+
+Notes are standalone entities (not linked to issues). Use the `note.` prefix to query notes via `ExecuteNotes`:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `note.title` | string | Note title |
+| `note.content` | string | Note body content |
+| `note.created` | date | Creation timestamp |
+| `note.updated` | date | Last update timestamp |
+| `note.pinned` | bool | Pinned status (true/false) |
+| `note.archived` | bool | Archived status (true/false) |
+
 ## Functions
 
 | Function | Description | Example |
@@ -199,6 +212,33 @@ td query 'handoff.remaining ~ "TODO"'
 
 # Issues with test files linked
 td query "file.role = test"
+```
+
+### Note Queries
+
+Notes use the `note.` prefix and are queried separately from issues via `ExecuteNotes`:
+
+```bash
+# Find notes by title
+note.title ~ "meeting"
+
+# Search note content
+note.content ~ "project timeline"
+
+# Pinned notes only
+note.pinned = true
+
+# Non-archived notes
+NOT note.archived = true
+
+# Recently updated notes
+note.updated >= -7d
+
+# Combined: pinned notes mentioning "design"
+note.pinned = true AND note.content ~ "design"
+
+# Bare text search across note title, content, and ID
+"important"
 ```
 
 ### Complex Queries

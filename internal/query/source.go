@@ -18,3 +18,9 @@ type QuerySource interface {
 	GetRejectedInProgressIssueIDs() (map[string]bool, error)
 	GetIssuesWithOpenDeps() (map[string]bool, error)
 }
+
+// NoteQuerySource abstracts note-related database operations for TDQ note queries.
+// Notes are standalone entities (not linked to issues), so they use a separate interface.
+type NoteQuerySource interface {
+	ListNotes(opts db.ListNotesOptions) ([]models.Note, error)
+}

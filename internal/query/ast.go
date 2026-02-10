@@ -166,6 +166,7 @@ var KnownFields = map[string]string{
 	"handoff": "prefix",
 	"file":    "prefix",
 	"dep":     "prefix",
+	"note":    "prefix",
 }
 
 // Cross-entity field mappings
@@ -195,6 +196,14 @@ var CrossEntityFields = map[string]map[string]string{
 	"dep": {
 		"blocks":     "string",
 		"depends_on": "string",
+	},
+	"note": {
+		"title":    "string",
+		"content":  "string",
+		"created":  "date",
+		"updated":  "date",
+		"pinned":   "bool",
+		"archived": "bool",
 	},
 }
 
@@ -255,6 +264,15 @@ var SortFieldToColumn = map[string]string{
 	"status":   "status",
 	"points":   "points",
 	"sprint":   "sprint",
+}
+
+// NoteSortFieldToColumn maps user-facing sort field names to DB columns for notes
+var NoteSortFieldToColumn = map[string]string{
+	"created":  "created_at",
+	"updated":  "updated_at",
+	"title":    "title",
+	"pinned":   "pinned",
+	"archived": "archived",
 }
 
 // Query represents a parsed TDQ query
