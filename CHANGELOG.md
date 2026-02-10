@@ -2,6 +2,17 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.33.0] - 2026-02-09
+
+### Features
+- Notes CLI: full CRUD via `td note` (add, list, show, edit, delete, pin, unpin, archive, unarchive)
+- Notes CRUD database layer with soft-delete, undo support, and list filtering
+- TDQ note query support: `note.` cross-entity fields (title, content, created, updated, pinned, archived)
+
+### Bug Fixes
+- Remove accidentally committed test artifacts
+- Fix time parsing for TEXT timestamp columns in notes DB methods
+
 ## [v0.32.0] - 2026-02-08
 
 ### Features
