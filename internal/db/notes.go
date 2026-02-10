@@ -124,7 +124,7 @@ func (db *DB) GetNote(id string) (*models.Note, error) {
 func (db *DB) ListNotes(opts ListNotesOptions) ([]models.Note, error) {
 	query := `SELECT id, title, content, created_at, updated_at, pinned, archived, deleted_at
 	          FROM notes WHERE 1=1`
-	var args []interface{}
+	var args []any
 
 	// Soft-delete filter
 	if !opts.IncludeDeleted {
