@@ -15,6 +15,7 @@ const (
 	handoffIDPrefix  = "ho-"
 	commentIDPrefix  = "cm-"
 	snapshotIDPrefix = "gs-"
+	noteIDPrefix     = "nt-"
 	actionIDPrefix = "al-"
 
 	// Deterministic ID prefixes for composite-key tables
@@ -106,6 +107,15 @@ func generateSnapshotID() (string, error) {
 		return "", err
 	}
 	return snapshotIDPrefix + hex.EncodeToString(bytes), nil
+}
+
+// generateNoteID generates a unique note ID
+func generateNoteID() (string, error) {
+	bytes := make([]byte, 3) // 6 hex characters
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return noteIDPrefix + hex.EncodeToString(bytes), nil
 }
 
 // generateActionID generates a unique action log ID
