@@ -426,6 +426,31 @@ type RestoreFilterMsg struct {
 
 // Update implements tea.Model
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Handle TickMsg before any UI-mode interceptions to keep the poll chain
+	// alive. Without this, opening a form (or other overlay that intercepts all
+	// messages) would swallow the TickMsg, preventing scheduleTick() from being
+	// called, permanently breaking the periodic refresh cycle.
+	if _, ok := msg.(TickMsg); ok {
+		cmds := []tea.Cmd{m.fetchData(), m.scheduleTick()}
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
+		}
+		if modalCmd := m.fetchModalDataIfOpen(); modalCmd != nil {
+			cmds = append(cmds, modalCmd)
+		}
+		// Periodic auto-sync (backup path — primary sync runs in independent goroutine
+		// in cmd/monitor.go, since BubbleTea Cmd dispatch can stall under some PTYs)
+		if m.AutoSyncFunc != nil && m.AutoSyncInterval > 0 && time.Since(m.LastAutoSync) >= m.AutoSyncInterval {
+			m.LastAutoSync = time.Now()
+			syncFn := m.AutoSyncFunc
+			cmds = append(cmds, func() tea.Msg {
+				syncFn()
+				return nil
+			})
+		}
+		return m, tea.Batch(cmds...)
+	}
+
 	// Form mode: forward all messages to huh form first
 	if m.FormOpen && m.FormState != nil && m.FormState.Form != nil {
 		return m.handleFormUpdate(msg)
@@ -499,26 +524,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		return m.handleMouse(msg)
 
-	case TickMsg:
-		cmds := []tea.Cmd{m.fetchData(), m.scheduleTick()}
-		// Also refresh board issues if in board mode
-		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
-			cmds = append(cmds, m.fetchBoardIssues(m.BoardMode.Board.ID))
-		}
-		if modalCmd := m.fetchModalDataIfOpen(); modalCmd != nil {
-			cmds = append(cmds, modalCmd)
-		}
-		// Periodic auto-sync (backup path — primary sync runs in independent goroutine
-		// in cmd/monitor.go, since BubbleTea Cmd dispatch can stall under some PTYs)
-		if m.AutoSyncFunc != nil && m.AutoSyncInterval > 0 && time.Since(m.LastAutoSync) >= m.AutoSyncInterval {
-			m.LastAutoSync = time.Now()
-			syncFn := m.AutoSyncFunc
-			cmds = append(cmds, func() tea.Msg {
-				syncFn()
-				return nil
-			})
-		}
-		return m, tea.Batch(cmds...)
+	// NOTE: TickMsg is handled above the form/overlay interception block
+	// to prevent the poll chain from breaking. Do not add a TickMsg case here.
 
 	case RefreshDataMsg:
 		m.FocusedIssue = msg.FocusedIssue

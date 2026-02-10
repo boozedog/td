@@ -517,6 +517,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 
 	case keymap.CmdRefresh:
 		if modal := m.CurrentModal(); modal != nil {
+			if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+				return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID), m.fetchIssueDetails(modal.IssueID))
+			}
 			return m, tea.Batch(m.fetchData(), m.fetchIssueDetails(modal.IssueID))
 		}
 		if m.HandoffsOpen {
@@ -524,6 +527,9 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		}
 		if m.StatsOpen {
 			return m, m.fetchStats()
+		}
+		if m.TaskListMode == TaskListModeBoard && m.BoardMode.Board != nil {
+			return m, tea.Batch(m.fetchData(), m.fetchBoardIssues(m.BoardMode.Board.ID))
 		}
 		return m, m.fetchData()
 
