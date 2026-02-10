@@ -45,12 +45,32 @@ func TestComputeBoardIssueCategories(t *testing.T) {
 	// Create an explicitly blocked issue
 	explicitBlocked := createTestIssue(t, database, "Explicit blocked", models.StatusBlocked)
 
+	// Create an in-progress issue (not rejected) -> should be CategoryInProgress
+	inProgress := createTestIssue(t, database, "In progress issue", models.StatusInProgress)
+
+	// Create an in_review issue with different implementer -> CategoryReviewable
+	reviewByOther := createTestIssue(t, database, "Review by other", models.StatusInReview)
+	reviewByOther.ImplementerSession = "other-session"
+	if err := database.UpdateIssue(reviewByOther); err != nil {
+		t.Fatalf("failed to update issue: %v", err)
+	}
+
+	// Create an in_review issue with same implementer -> CategoryPendingReview
+	reviewBySelf := createTestIssue(t, database, "Review by self", models.StatusInReview)
+	reviewBySelf.ImplementerSession = "test-session"
+	if err := database.UpdateIssue(reviewBySelf); err != nil {
+		t.Fatalf("failed to update issue: %v", err)
+	}
+
 	// Build BoardIssueViews
 	issues := []models.BoardIssueView{
 		{Issue: *blocker},
 		{Issue: *blocked},
 		{Issue: *ready},
 		{Issue: *explicitBlocked},
+		{Issue: *inProgress},
+		{Issue: *reviewByOther},
+		{Issue: *reviewBySelf},
 	}
 
 	// Compute categories
@@ -66,6 +86,9 @@ func TestComputeBoardIssueCategories(t *testing.T) {
 		{"blocked by dep is blocked", blocked.ID, CategoryBlocked},
 		{"ready issue is ready", ready.ID, CategoryReady},
 		{"explicit blocked is blocked", explicitBlocked.ID, CategoryBlocked},
+		{"in progress is in_progress", inProgress.ID, CategoryInProgress},
+		{"review by other is reviewable", reviewByOther.ID, CategoryReviewable},
+		{"review by self is pending_review", reviewBySelf.ID, CategoryPendingReview},
 	}
 
 	// Build lookup map

@@ -448,15 +448,21 @@ func (m *Model) buildCurrentWorkRows() {
 // buildTaskListRows builds the flattened list of task list rows with category metadata
 func (m *Model) buildTaskListRows() {
 	m.TaskListRows = nil
-	// Order: Reviewable, NeedsRework, Ready, Blocked, Closed (matches display order)
+	// Order: Reviewable, NeedsRework, InProgress, Ready, PendingReview, Blocked, Closed
 	for _, issue := range m.TaskList.Reviewable {
 		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryReviewable})
 	}
 	for _, issue := range m.TaskList.NeedsRework {
 		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryNeedsRework})
 	}
+	for _, issue := range m.TaskList.InProgress {
+		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryInProgress})
+	}
 	for _, issue := range m.TaskList.Ready {
 		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryReady})
+	}
+	for _, issue := range m.TaskList.PendingReview {
+		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryPendingReview})
 	}
 	for _, issue := range m.TaskList.Blocked {
 		m.TaskListRows = append(m.TaskListRows, TaskListRow{Issue: issue, Category: CategoryBlocked})
