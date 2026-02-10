@@ -1053,6 +1053,9 @@ func (m *Model) ensureSwimlaneCursorVisible() {
 			if newOffset-1 > 0 {
 				available-- // up indicator when scrolled
 			}
+			if cursor+1 < totalItems {
+				available-- // down indicator when more items below
+			}
 			if lines > available {
 				break
 			}

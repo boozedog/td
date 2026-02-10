@@ -4635,3 +4635,54 @@ func TestEnsureSwimlaneCursorVisible_SingleCategory(t *testing.T) {
 			m.BoardMode.SwimlaneScroll, lines, available)
 	}
 }
+
+// TestEnsureSwimlaneCursorVisible_MidListCursor tests that when cursor is in the
+// middle of the list (items both above and below), both up and down indicators
+// are accounted for and the cursor remains visible.
+func TestEnsureSwimlaneCursorVisible_MidListCursor(t *testing.T) {
+	rows := make([]TaskListRow, 0)
+	categories := []TaskListCategory{CategoryReady, CategoryReviewable, CategoryBlocked, CategoryClosed}
+	for _, cat := range categories {
+		for j := 0; j < 5; j++ {
+			rows = append(rows, TaskListRow{
+				Category: cat,
+				Issue:    models.Issue{ID: fmt.Sprintf("td-%s-%d", cat, j)},
+			})
+		}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      30,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			SwimlaneRows: rows,
+			ViewMode:     BoardViewSwimlanes,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	// Move cursor to the middle (first item of 3rd category = index 10)
+	m.BoardMode.SwimlaneCursor = 10
+	m.ensureSwimlaneCursorVisible()
+
+	totalItems := len(rows)
+	offset := m.BoardMode.SwimlaneScroll
+	cursor := m.BoardMode.SwimlaneCursor
+	contentHeight := m.panelHeight(PanelTaskList) - 3
+
+	// Count lines from offset to cursor+1 (to include cursor row)
+	lines := m.swimlaneLinesFromOffset(offset, cursor+1)
+	available := contentHeight
+	if offset > 0 {
+		available-- // up indicator
+	}
+	if cursor+1 < totalItems {
+		available-- // down indicator
+	}
+
+	if lines > available {
+		t.Errorf("Mid-list cursor %d not visible: offset=%d, lines=%d, available=%d (contentHeight=%d)",
+			cursor, offset, lines, available, contentHeight)
+	}
+}
