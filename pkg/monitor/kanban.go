@@ -16,7 +16,9 @@ import (
 var kanbanColumnOrder = []TaskListCategory{
 	CategoryReviewable,
 	CategoryNeedsRework,
+	CategoryInProgress,
 	CategoryReady,
+	CategoryPendingReview,
 	CategoryBlocked,
 	CategoryClosed,
 }
@@ -28,8 +30,12 @@ func kanbanColumnLabel(cat TaskListCategory) string {
 		return "REVIEW"
 	case CategoryNeedsRework:
 		return "REWORK"
+	case CategoryInProgress:
+		return "WIP"
 	case CategoryReady:
 		return "READY"
+	case CategoryPendingReview:
+		return "P.REVIEW"
 	case CategoryBlocked:
 		return "BLOCKED"
 	case CategoryClosed:
@@ -47,8 +53,12 @@ func kanbanColumnColor(cat TaskListCategory) lipgloss.Color {
 		return secondaryColor // purple (in_review)
 	case CategoryNeedsRework:
 		return warningColor // orange (needs action)
+	case CategoryInProgress:
+		return cyanColor // cyan (in_progress)
 	case CategoryReady:
-		return cyanColor // cyan (open/ready)
+		return successColor // green (open/ready)
+	case CategoryPendingReview:
+		return lipgloss.Color("183") // light purple (pending review)
 	case CategoryBlocked:
 		return errorColor // red (blocked)
 	case CategoryClosed:
@@ -65,8 +75,12 @@ func kanbanColumnIssues(data TaskListData, cat TaskListCategory) []models.Issue 
 		return data.Reviewable
 	case CategoryNeedsRework:
 		return data.NeedsRework
+	case CategoryInProgress:
+		return data.InProgress
 	case CategoryReady:
 		return data.Ready
+	case CategoryPendingReview:
+		return data.PendingReview
 	case CategoryBlocked:
 		return data.Blocked
 	case CategoryClosed:
