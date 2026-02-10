@@ -2,6 +2,17 @@
 
 All notable changes to td are documented in this file.
 
+## [Unreleased]
+
+### Features
+- Event taxonomy normalizer: centralized validation and normalization of entity and action types
+  - Accepts both singular and plural entity type names for backward compatibility (e.g., 'issue' and 'issues', 'board' and 'boards')
+  - Normalizes all legacy td action types to canonical sync types (handoff → create, add_dependency → create, etc.)
+  - Comprehensive validation ensures all entity+action combinations used throughout the sync/API layer are supported
+  - Existing event data with old action/entity type formats remains queryable
+  - Clients can send events using either old or new naming conventions without breaking
+  - Documentation in internal/events/taxonomy.go explains the design and backward-compatibility guarantees
+
 ## [v0.33.0] - 2026-02-09
 
 ### Features

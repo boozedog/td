@@ -575,3 +575,198 @@ func TestIntegration_ErrorCodes_ScopeConsistency(t *testing.T) {
 		AssertErrorResponse(t, resp, http.StatusForbidden, ErrCodeInsufficientAdminScope)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Backward Compatibility Tests (singular/plural entity types)
+// ---------------------------------------------------------------------------
+
+func TestIntegration_BackwardCompat_EntityTypeSingularPlural(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	state := h.Build().
+		WithUser("user@test.com").
+		WithAdmin("admin@test.com", "admin:read:events,sync").
+		WithProject("proj1", "user@test.com").
+		Done()
+
+	token := state.AdminToken("admin@test.com")
+	pid := state.ProjectID("proj1")
+	userToken := state.UserToken("user@test.com")
+
+	// Push events using both singular and plural entity type names
+	h.PushEvents(userToken, pid, []EventInput{
+		{ClientActionID: 1, ActionType: "create", EntityType: "issue", EntityID: "td-bc001",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"title":"singular issue","status":"open"}}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+		{ClientActionID: 2, ActionType: "create", EntityType: "issues", EntityID: "td-bc002",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"title":"plural issue","status":"open"}}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+		{ClientActionID: 3, ActionType: "create", EntityType: "comment", EntityID: "td-bc003",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"text":"singular comment"}}`), ClientTimestamp: "2025-01-01T00:00:02Z"},
+		{ClientActionID: 4, ActionType: "create", EntityType: "comments", EntityID: "td-bc004",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"text":"plural comment"}}`), ClientTimestamp: "2025-01-01T00:00:03Z"},
+	})
+
+	// Query using canonical plural form should retrieve both singular and plural input events
+	var eventsResp adminEventsResponse
+	h.DoJSON("GET", fmt.Sprintf("/v1/admin/projects/%s/events?entity_type=issues", pid), token, nil, &eventsResp)
+	if len(eventsResp.Data) != 2 {
+		t.Fatalf("expected 2 issue events (singular+plural), got %d", len(eventsResp.Data))
+	}
+
+	// Query comments using plural
+	h.DoJSON("GET", fmt.Sprintf("/v1/admin/projects/%s/events?entity_type=comments", pid), token, nil, &eventsResp)
+	if len(eventsResp.Data) != 2 {
+		t.Fatalf("expected 2 comment events (singular+plural), got %d", len(eventsResp.Data))
+	}
+}
+
+func TestIntegration_BackwardCompat_SyncPushSingularPlural(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	state := h.Build().
+		WithUser("user@test.com").
+		WithProject("proj1", "user@test.com").
+		Done()
+
+	userToken := state.UserToken("user@test.com")
+	pid := state.ProjectID("proj1")
+
+	// Push events using singular forms
+	h.PushEvents(userToken, pid, []EventInput{
+		{ClientActionID: 1, ActionType: "create", EntityType: "board", EntityID: "bd-001",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"name":"singular board"}}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+		{ClientActionID: 2, ActionType: "create", EntityType: "note", EntityID: "nt-001",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"content":"singular note"}}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+	})
+
+	// Verify events were accepted and stored by checking sync status
+	var statusResp SyncStatusResponse
+	h.DoJSON("GET", fmt.Sprintf("/v1/projects/%s/sync/status", pid), userToken, nil, &statusResp)
+	if statusResp.EventCount < 2 {
+		t.Fatalf("expected at least 2 events synced, got count %d", statusResp.EventCount)
+	}
+}
+
+func TestIntegration_BackwardCompat_LegacyActionTypes(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	state := h.Build().
+		WithUser("user@test.com").
+		WithAdmin("admin@test.com", "admin:read:events,sync").
+		WithProject("proj1", "user@test.com").
+		Done()
+
+	userToken := state.UserToken("user@test.com")
+	adminToken := state.AdminToken("admin@test.com")
+	pid := state.ProjectID("proj1")
+
+	// Push events using legacy action type names that should map to canonical types
+	h.PushEvents(userToken, pid, []EventInput{
+		{ClientActionID: 1, ActionType: "handoff", EntityType: "issues", EntityID: "td-lat001",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"title":"handoff action"}}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+		{ClientActionID: 2, ActionType: "add_dependency", EntityType: "issue_dependencies", EntityID: "td-lat002",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"blocker":"td-1","blocked":"td-2"}}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+		{ClientActionID: 3, ActionType: "link_file", EntityType: "issue_files", EntityID: "td-lat003",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"file":"test.txt"}}`), ClientTimestamp: "2025-01-01T00:00:02Z"},
+		{ClientActionID: 4, ActionType: "board_create", EntityType: "boards", EntityID: "bd-lat001",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"name":"new board"}}`), ClientTimestamp: "2025-01-01T00:00:03Z"},
+	})
+
+	// Verify events were normalized and stored correctly
+	var eventsResp adminEventsResponse
+	h.DoJSON("GET", fmt.Sprintf("/v1/admin/projects/%s/events", pid), adminToken, nil, &eventsResp)
+	if len(eventsResp.Data) < 4 {
+		t.Fatalf("expected at least 4 events, got %d", len(eventsResp.Data))
+	}
+
+	// Verify action types were normalized to canonical forms (create)
+	for i, ev := range eventsResp.Data {
+		if ev.ActionType != "create" {
+			t.Errorf("event %d: expected action_type 'create', got %q", i, ev.ActionType)
+		}
+	}
+}
+
+func TestIntegration_BackwardCompat_QueryableWithOldFormat(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	state := h.Build().
+		WithUser("user@test.com").
+		WithAdmin("admin@test.com", "admin:read:events,sync").
+		WithProject("proj1", "user@test.com").
+		Done()
+
+	token := state.AdminToken("admin@test.com")
+	pid := state.ProjectID("proj1")
+	userToken := state.UserToken("user@test.com")
+
+	// Push events with old singular entity type names
+	h.PushEvents(userToken, pid, []EventInput{
+		{ClientActionID: 1, ActionType: "create", EntityType: "handoff", EntityID: "td-qof001",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"reviewer":"someone"}}`), ClientTimestamp: "2025-01-01T00:00:00Z"},
+		{ClientActionID: 2, ActionType: "create", EntityType: "work_session", EntityID: "ws-qof001",
+			Payload: json.RawMessage(`{"schema_version":1,"new_data":{"status":"open"}}`), ClientTimestamp: "2025-01-01T00:00:01Z"},
+	})
+
+	// Query using new canonical plural names should still find the old data
+	var eventsResp adminEventsResponse
+	h.DoJSON("GET", fmt.Sprintf("/v1/admin/projects/%s/events?entity_type=handoffs", pid), token, nil, &eventsResp)
+	if len(eventsResp.Data) != 1 {
+		t.Fatalf("expected 1 handoff event, got %d", len(eventsResp.Data))
+	}
+
+	h.DoJSON("GET", fmt.Sprintf("/v1/admin/projects/%s/events?entity_type=work_sessions", pid), token, nil, &eventsResp)
+	if len(eventsResp.Data) != 1 {
+		t.Fatalf("expected 1 work_session event, got %d", len(eventsResp.Data))
+	}
+}
+
+func TestIntegration_BackwardCompat_AllEntityTypesSupported(t *testing.T) {
+	t.Parallel()
+	h := newTestHarness(t)
+	state := h.Build().
+		WithUser("user@test.com").
+		WithProject("proj1", "user@test.com").
+		Done()
+
+	pid := state.ProjectID("proj1")
+	userToken := state.UserToken("user@test.com")
+
+	// Push one event for each entity type using both singular and plural forms
+	testCases := []struct {
+		entityType string
+		id         string
+	}{
+		{"issue", "td-aes001"},
+		{"board", "bd-aes001"},
+		{"log", "lg-aes001"},
+		{"comment", "cm-aes001"},
+		{"session", "ss-aes001"},
+		{"note", "nt-aes001"},
+		{"work_session", "ws-aes001"},
+		{"dependency", "dp-aes001"},
+		{"file_link", "fl-aes001"},
+		{"work_session_issue", "wsi-aes001"},
+		{"board_position", "bp-aes001"},
+		{"git_snapshot", "gs-aes001"},
+	}
+
+	events := []EventInput{}
+	for i, tc := range testCases {
+		events = append(events, EventInput{
+			ClientActionID:  int64(i + 1),
+			ActionType:      "create",
+			EntityType:      tc.entityType,
+			EntityID:        tc.id,
+			Payload:         json.RawMessage(`{"schema_version":1,"new_data":{}}`),
+			ClientTimestamp: "2025-01-01T00:00:00Z",
+		})
+	}
+	h.PushEvents(userToken, pid, events)
+
+	// All should have been accepted
+	var statusResp SyncStatusResponse
+	h.DoJSON("GET", fmt.Sprintf("/v1/projects/%s/sync/status", pid), userToken, nil, &statusResp)
+	if statusResp.EventCount < int64(len(testCases)) {
+		t.Fatalf("expected at least %d events, got %d", len(testCases), statusResp.EventCount)
+	}
+}
