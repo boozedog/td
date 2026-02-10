@@ -233,17 +233,18 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 						data.Ready = append(data.Ready, issue)
 					}
 				case models.StatusInProgress:
-					// In-progress issues: check if needs rework (rejected without re-submission)
 					if rejectedIDs[issue.ID] {
 						data.NeedsRework = append(data.NeedsRework, issue)
 					} else {
-						data.Ready = append(data.Ready, issue)
+						data.InProgress = append(data.InProgress, issue)
 					}
 				case models.StatusBlocked:
 					data.Blocked = append(data.Blocked, issue)
 				case models.StatusInReview:
 					if issue.ImplementerSession != sessionID {
 						data.Reviewable = append(data.Reviewable, issue)
+					} else {
+						data.PendingReview = append(data.PendingReview, issue)
 					}
 				case models.StatusClosed:
 					if includeClosed {
@@ -281,7 +282,7 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 		}
 	}
 
-	// In-progress issues: categorize as Ready or NeedsRework
+	// In-progress issues: categorize as InProgress or NeedsRework
 	var inProgressIssues []models.Issue
 	if searchQuery != "" && !useTDQ {
 		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
@@ -299,7 +300,7 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 		if rejectedIDs[issue.ID] {
 			data.NeedsRework = append(data.NeedsRework, issue)
 		} else {
-			data.Ready = append(data.Ready, issue)
+			data.InProgress = append(data.InProgress, issue)
 		}
 	}
 
@@ -315,6 +316,26 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 			SortBy:       sortBy,
 			SortDesc:     sortDesc,
 		})
+	}
+
+	// Pending review: in_review status, own implementation (implementer is current session)
+	var inReviewIssues []models.Issue
+	if searchQuery != "" && !useTDQ {
+		results, _ := database.SearchIssuesRanked(searchQuery, db.ListIssuesOptions{
+			Status: []models.Status{models.StatusInReview},
+		})
+		inReviewIssues = extractIssues(results)
+	} else if searchQuery == "" {
+		inReviewIssues, _ = database.ListIssues(db.ListIssuesOptions{
+			Status:   []models.Status{models.StatusInReview},
+			SortBy:   sortBy,
+			SortDesc: sortDesc,
+		})
+	}
+	for _, issue := range inReviewIssues {
+		if issue.ImplementerSession == sessionID {
+			data.PendingReview = append(data.PendingReview, issue)
+		}
 	}
 
 	// Blocked issues: explicit blocked status + issues blocked by dependencies
@@ -491,7 +512,7 @@ func ComputeBoardIssueCategories(database *db.DB, issues []models.BoardIssueView
 			if rejectedIDs[issue.ID] {
 				category = CategoryNeedsRework
 			} else {
-				category = CategoryReady
+				category = CategoryInProgress
 			}
 		case models.StatusBlocked:
 			category = CategoryBlocked
@@ -499,7 +520,7 @@ func ComputeBoardIssueCategories(database *db.DB, issues []models.BoardIssueView
 			if issue.ImplementerSession != sessionID {
 				category = CategoryReviewable
 			} else {
-				category = CategoryReady // Own issues in review show as ready
+				category = CategoryPendingReview
 			}
 		case models.StatusClosed:
 			category = CategoryClosed
@@ -528,11 +549,13 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 
 	// Group by category (preserve BoardIssueView for position-aware sorting)
 	categories := map[TaskListCategory][]models.BoardIssueView{
-		CategoryReady:       {},
-		CategoryNeedsRework: {},
-		CategoryBlocked:     {},
-		CategoryReviewable:  {},
-		CategoryClosed:      {},
+		CategoryReviewable:    {},
+		CategoryNeedsRework:   {},
+		CategoryInProgress:    {},
+		CategoryReady:         {},
+		CategoryPendingReview: {},
+		CategoryBlocked:       {},
+		CategoryClosed:        {},
 	}
 	for _, biv := range issues {
 		cat := TaskListCategory(biv.Category)
@@ -546,14 +569,20 @@ func CategorizeBoardIssues(database *db.DB, issues []models.BoardIssueView, sess
 	}
 
 	// Extract Issues into TaskListData
-	for _, biv := range categories[CategoryReady] {
-		data.Ready = append(data.Ready, biv.Issue)
-	}
 	for _, biv := range categories[CategoryReviewable] {
 		data.Reviewable = append(data.Reviewable, biv.Issue)
 	}
 	for _, biv := range categories[CategoryNeedsRework] {
 		data.NeedsRework = append(data.NeedsRework, biv.Issue)
+	}
+	for _, biv := range categories[CategoryInProgress] {
+		data.InProgress = append(data.InProgress, biv.Issue)
+	}
+	for _, biv := range categories[CategoryReady] {
+		data.Ready = append(data.Ready, biv.Issue)
+	}
+	for _, biv := range categories[CategoryPendingReview] {
+		data.PendingReview = append(data.PendingReview, biv.Issue)
 	}
 	for _, biv := range categories[CategoryBlocked] {
 		data.Blocked = append(data.Blocked, biv.Issue)
@@ -663,9 +692,19 @@ func BuildSwimlaneRows(data TaskListData) []TaskListRow {
 		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryNeedsRework})
 	}
 
+	// Add in progress issues
+	for _, issue := range data.InProgress {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryInProgress})
+	}
+
 	// Add ready issues
 	for _, issue := range data.Ready {
 		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryReady})
+	}
+
+	// Add pending review issues
+	for _, issue := range data.PendingReview {
+		rows = append(rows, TaskListRow{Issue: issue, Category: CategoryPendingReview})
 	}
 
 	// Add blocked issues

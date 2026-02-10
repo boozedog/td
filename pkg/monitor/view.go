@@ -181,10 +181,12 @@ func (m Model) renderCompact() string {
 	}
 
 	s.WriteString(fmt.Sprintf("In Progress: %d\n", len(m.InProgress)))
-	s.WriteString(fmt.Sprintf("Ready: %d | Review: %d | Rework: %d | Blocked: %d\n",
+	s.WriteString(fmt.Sprintf("Ready: %d | WIP: %d | Review: %d | Rework: %d | PRev: %d | Blocked: %d\n",
 		len(m.TaskList.Ready),
+		len(m.TaskList.InProgress),
 		len(m.TaskList.Reviewable),
 		len(m.TaskList.NeedsRework),
+		len(m.TaskList.PendingReview),
 		len(m.TaskList.Blocked)))
 
 	s.WriteString("\nq:quit r:refresh ?:help")
@@ -928,9 +930,15 @@ func (m Model) formatSwimlaneCategoryHeader(cat TaskListCategory) string {
 	case CategoryNeedsRework:
 		count = len(m.BoardMode.SwimlaneData.NeedsRework)
 		return reworkColor.Render("⚠ NEEDS REWORK") + fmt.Sprintf(" (%d):", count)
+	case CategoryInProgress:
+		count = len(m.BoardMode.SwimlaneData.InProgress)
+		return inProgressHeaderStyle.Render("IN PROGRESS") + fmt.Sprintf(" (%d):", count)
 	case CategoryReady:
 		count = len(m.BoardMode.SwimlaneData.Ready)
 		return readyHeaderStyle.Render("READY") + fmt.Sprintf(" (%d):", count)
+	case CategoryPendingReview:
+		count = len(m.BoardMode.SwimlaneData.PendingReview)
+		return pendingReviewHeaderStyle.Render("PENDING REVIEW") + fmt.Sprintf(" (%d):", count)
 	case CategoryBlocked:
 		count = len(m.BoardMode.SwimlaneData.Blocked)
 		return blockedHeaderStyle.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
@@ -951,9 +959,15 @@ func (m Model) formatCategoryHeader(cat TaskListCategory) string {
 	case CategoryNeedsRework:
 		count = len(m.TaskList.NeedsRework)
 		return reworkColor.Render("⚠ NEEDS REWORK") + fmt.Sprintf(" (%d):", count)
+	case CategoryInProgress:
+		count = len(m.TaskList.InProgress)
+		return inProgressHeaderStyle.Render("IN PROGRESS") + fmt.Sprintf(" (%d):", count)
 	case CategoryReady:
 		count = len(m.TaskList.Ready)
 		return readyHeaderStyle.Render("READY") + fmt.Sprintf(" (%d):", count)
+	case CategoryPendingReview:
+		count = len(m.TaskList.PendingReview)
+		return pendingReviewHeaderStyle.Render("PENDING REVIEW") + fmt.Sprintf(" (%d):", count)
 	case CategoryBlocked:
 		count = len(m.TaskList.Blocked)
 		return blockedHeaderStyle.Render("BLOCKED") + fmt.Sprintf(" (%d):", count)
@@ -971,8 +985,12 @@ func (m Model) formatCategoryTag(cat TaskListCategory) string {
 		return reviewColor.Render("[REV]")
 	case CategoryNeedsRework:
 		return reworkColor.Render("[RWK]")
+	case CategoryInProgress:
+		return inProgressColor.Render("[WIP]")
 	case CategoryReady:
 		return readyColor.Render("[RDY]")
+	case CategoryPendingReview:
+		return pendingReviewColor.Render("[PRV]")
 	case CategoryBlocked:
 		return blockedColor.Render("[BLK]")
 	case CategoryClosed:
@@ -2359,10 +2377,12 @@ func truncateSession(sessionID string) string {
 
 // Color styles for task list sections
 var (
-	readyColor   = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	reviewColor  = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
-	blockedColor = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	reworkColor  = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // Orange/warning
+	readyColor         = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	reviewColor        = lipgloss.NewStyle().Foreground(lipgloss.Color("141"))
+	blockedColor       = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	reworkColor        = lipgloss.NewStyle().Foreground(lipgloss.Color("214")) // Orange/warning
+	inProgressColor    = lipgloss.NewStyle().Foreground(lipgloss.Color("45"))  // Cyan
+	pendingReviewColor = lipgloss.NewStyle().Foreground(lipgloss.Color("183")) // Light purple
 
 	// Prominent style for review alert in footer
 	reviewAlertStyle = lipgloss.NewStyle().
@@ -2380,6 +2400,16 @@ var (
 				Bold(true).
 				Foreground(lipgloss.Color("255")).
 				Background(lipgloss.Color("196")) // Red bg
+
+	inProgressHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("0")).
+				Background(lipgloss.Color("45")) // Cyan bg
+
+	pendingReviewHeaderStyle = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color("0")).
+					Background(lipgloss.Color("183")) // Light purple bg
 
 	// Prominent style for handoff alert - green background
 	handoffAlertStyle = lipgloss.NewStyle().
