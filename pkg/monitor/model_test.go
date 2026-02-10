@@ -4686,3 +4686,77 @@ func TestEnsureSwimlaneCursorVisible_MidListCursor(t *testing.T) {
 			cursor, offset, lines, available, contentHeight)
 	}
 }
+
+// TestEnsureSwimlaneCursorVisible_ManyCategoriesFewItems tests the edge case where
+// totalItems <= contentHeight (so old code's needsScroll would be false) but
+// totalDisplayLines > contentHeight (due to many category headers + separators).
+// This is the root cause of the cursor-disappears-in-swimlanes bug.
+func TestEnsureSwimlaneCursorVisible_ManyCategoriesFewItems(t *testing.T) {
+	// 4 categories x 4 items = 16 items
+	// Display lines: 16 items + 4 headers + 3 separators = 23 lines
+	// With contentHeight = 17 (typical for 60-line terminal), 16 <= 17 (old needsScroll = false)
+	// but 23 > 17 (correct needsScroll = true)
+	rows := make([]TaskListRow, 0)
+	categories := []TaskListCategory{CategoryReady, CategoryReviewable, CategoryBlocked, CategoryClosed}
+	for _, cat := range categories {
+		for j := 0; j < 4; j++ {
+			rows = append(rows, TaskListRow{
+				Category: cat,
+				Issue:    models.Issue{ID: fmt.Sprintf("td-%v-%d", cat, j)},
+			})
+		}
+	}
+
+	m := Model{
+		Width:       80,
+		Height:      60,
+		PaneHeights: defaultPaneHeights(),
+		BoardMode: BoardMode{
+			SwimlaneRows: rows,
+			ViewMode:     BoardViewSwimlanes,
+		},
+		TaskListMode: TaskListModeBoard,
+	}
+
+	totalItems := len(rows)
+	contentHeight := m.panelHeight(PanelTaskList) - 3
+	totalDisplayLines := m.swimlaneLinesFromOffset(0, totalItems)
+
+	t.Logf("totalItems=%d, contentHeight=%d, totalDisplayLines=%d", totalItems, contentHeight, totalDisplayLines)
+
+	// Verify this IS the edge case where old needsScroll would be wrong
+	if totalItems > contentHeight {
+		t.Skipf("Not the target edge case: totalItems %d > contentHeight %d", totalItems, contentHeight)
+	}
+	if totalDisplayLines <= contentHeight {
+		t.Skipf("Not the target edge case: totalDisplayLines %d <= contentHeight %d", totalDisplayLines, contentHeight)
+	}
+
+	// Move cursor to the very last item
+	m.BoardMode.SwimlaneCursor = totalItems - 1
+	m.ensureSwimlaneCursorVisible()
+
+	offset := m.BoardMode.SwimlaneScroll
+	cursor := m.BoardMode.SwimlaneCursor
+
+	// Verify cursor is visible: lines from offset to cursor+1 must fit
+	lines := m.swimlaneLinesFromOffset(offset, cursor+1)
+	available := contentHeight
+	if offset > 0 {
+		available-- // up indicator
+	}
+	if cursor+1 < totalItems {
+		available-- // down indicator (shouldn't apply for last item)
+	}
+
+	t.Logf("offset=%d, cursor=%d, lines=%d, available=%d", offset, cursor, lines, available)
+
+	if lines > available {
+		t.Errorf("Cursor %d not visible: offset=%d, lines=%d, available=%d (contentHeight=%d)",
+			cursor, offset, lines, available, contentHeight)
+	}
+	if offset == 0 {
+		t.Errorf("Expected scrolling (offset > 0) since display lines %d > contentHeight %d, but offset=0",
+			totalDisplayLines, contentHeight)
+	}
+}

@@ -1025,14 +1025,16 @@ func (m *Model) ensureSwimlaneCursorVisible() {
 
 	cursor := m.BoardMode.SwimlaneCursor
 	offset := m.BoardMode.SwimlaneScroll
-	needsScroll := totalItems > contentHeight
+	// Use total display lines (items + headers + separators) not raw item count
+	totalDisplayLines := m.swimlaneLinesFromOffset(0, totalItems)
+	needsScroll := totalDisplayLines > contentHeight
 
 	// Calculate effective visible items accounting for indicators and headers
 	effectiveHeight := contentHeight
 	if needsScroll && offset > 0 {
 		effectiveHeight-- // up indicator
 	}
-	if needsScroll && offset+effectiveHeight < totalItems {
+	if needsScroll && m.swimlaneLinesFromOffset(offset, totalItems) > effectiveHeight {
 		effectiveHeight-- // down indicator
 	}
 	// Subtract category header lines between offset and cursor
