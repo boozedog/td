@@ -41,29 +41,29 @@ type ActionType string
 
 // Canonical entity types
 const (
-	EntityIssues             EntityType = "issues"
-	EntityLogs               EntityType = "logs"
-	EntityHandoffs           EntityType = "handoffs"
-	EntityComments           EntityType = "comments"
-	EntitySessions           EntityType = "sessions"
-	EntityBoards             EntityType = "boards"
+	EntityIssues              EntityType = "issues"
+	EntityLogs                EntityType = "logs"
+	EntityHandoffs            EntityType = "handoffs"
+	EntityComments            EntityType = "comments"
+	EntitySessions            EntityType = "sessions"
+	EntityBoards              EntityType = "boards"
 	EntityBoardIssuePositions EntityType = "board_issue_positions"
-	EntityWorkSessions       EntityType = "work_sessions"
-	EntityWorkSessionIssues  EntityType = "work_session_issues"
-	EntityIssueFiles         EntityType = "issue_files"
-	EntityIssueDependencies  EntityType = "issue_dependencies"
-	EntityGitSnapshots       EntityType = "git_snapshots"
+	EntityWorkSessions        EntityType = "work_sessions"
+	EntityWorkSessionIssues   EntityType = "work_session_issues"
+	EntityIssueFiles          EntityType = "issue_files"
+	EntityIssueDependencies   EntityType = "issue_dependencies"
+	EntityGitSnapshots        EntityType = "git_snapshots"
 	EntityIssueSessionHistory EntityType = "issue_session_history"
-	EntityNotes              EntityType = "notes"
+	EntityNotes               EntityType = "notes"
 )
 
 // Canonical action types
 const (
-	ActionCreate    ActionType = "create"
-	ActionUpdate    ActionType = "update"
-	ActionDelete    ActionType = "delete"
+	ActionCreate     ActionType = "create"
+	ActionUpdate     ActionType = "update"
+	ActionDelete     ActionType = "delete"
 	ActionSoftDelete ActionType = "soft_delete"
-	ActionRestore   ActionType = "restore"
+	ActionRestore    ActionType = "restore"
 )
 
 // AllEntityTypes returns all valid entity types.
@@ -89,11 +89,11 @@ func AllEntityTypes() map[EntityType]bool {
 // AllActionTypes returns all valid action types.
 func AllActionTypes() map[ActionType]bool {
 	return map[ActionType]bool{
-		ActionCreate:    true,
-		ActionUpdate:    true,
-		ActionDelete:    true,
+		ActionCreate:     true,
+		ActionUpdate:     true,
+		ActionDelete:     true,
 		ActionSoftDelete: true,
-		ActionRestore:   true,
+		ActionRestore:    true,
 	}
 }
 
@@ -151,7 +151,7 @@ func NormalizeEntityType(entityType string) (EntityType, bool) {
 func NormalizeActionType(tdAction string) ActionType {
 	switch strings.ToLower(tdAction) {
 	case "create", "handoff", "add_dependency", "link_file", "board_create",
-		 "board_update", "board_add_issue", "board_set_position", "work_session_tag":
+		"board_update", "board_add_issue", "board_set_position", "work_session_tag":
 		return ActionCreate
 	case "remove_dependency", "unlink_file", "board_delete", "work_session_untag":
 		return ActionDelete
@@ -169,26 +169,26 @@ func NormalizeActionType(tdAction string) ActionType {
 func ValidEntityActionCombinations() map[EntityType]map[ActionType]bool {
 	return map[EntityType]map[ActionType]bool{
 		EntityIssues: {
-			ActionCreate:    true,
-			ActionUpdate:    true,
-			ActionDelete:    true,
+			ActionCreate:     true,
+			ActionUpdate:     true,
+			ActionDelete:     true,
 			ActionSoftDelete: true,
-			ActionRestore:   true,
+			ActionRestore:    true,
 		},
 		EntityLogs: {
 			ActionCreate: true,
 			ActionUpdate: true,
 		},
 		EntityHandoffs: {
-			ActionCreate:    true,
-			ActionUpdate:    true,
-			ActionDelete:    true,
+			ActionCreate:     true,
+			ActionUpdate:     true,
+			ActionDelete:     true,
 			ActionSoftDelete: true,
 		},
 		EntityComments: {
-			ActionCreate:    true,
-			ActionUpdate:    true,
-			ActionDelete:    true,
+			ActionCreate:     true,
+			ActionUpdate:     true,
+			ActionDelete:     true,
 			ActionSoftDelete: true,
 		},
 		EntitySessions: {
@@ -196,9 +196,9 @@ func ValidEntityActionCombinations() map[EntityType]map[ActionType]bool {
 			ActionUpdate: true,
 		},
 		EntityBoards: {
-			ActionCreate:    true,
-			ActionUpdate:    true,
-			ActionDelete:    true,
+			ActionCreate:     true,
+			ActionUpdate:     true,
+			ActionDelete:     true,
 			ActionSoftDelete: true,
 		},
 		EntityBoardIssuePositions: {
@@ -207,9 +207,9 @@ func ValidEntityActionCombinations() map[EntityType]map[ActionType]bool {
 			ActionUpdate: true,
 		},
 		EntityWorkSessions: {
-			ActionCreate:    true,
-			ActionUpdate:    true,
-			ActionDelete:    true,
+			ActionCreate:     true,
+			ActionUpdate:     true,
+			ActionDelete:     true,
 			ActionSoftDelete: true,
 		},
 		EntityWorkSessionIssues: {
@@ -231,9 +231,9 @@ func ValidEntityActionCombinations() map[EntityType]map[ActionType]bool {
 			ActionCreate: true,
 		},
 		EntityNotes: {
-			ActionCreate:    true,
-			ActionUpdate:    true,
-			ActionDelete:    true,
+			ActionCreate:     true,
+			ActionUpdate:     true,
+			ActionDelete:     true,
 			ActionSoftDelete: true,
 		},
 	}
