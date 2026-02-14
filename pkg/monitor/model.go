@@ -152,9 +152,11 @@ type Model struct {
 	BoardEditorDeleteConfirm bool                   // Whether delete confirmation is active
 
 	// Kanban view state
-	KanbanOpen         bool // Whether kanban modal overlay is open
-	KanbanCol          int  // Currently selected column (0-based)
-	KanbanRow          int  // Currently selected row within the column (0-based)
+	KanbanOpen       bool  // Whether kanban modal overlay is open
+	KanbanCol        int   // Currently selected column (0-based)
+	KanbanRow        int   // Currently selected row within the column (0-based)
+	KanbanFullscreen bool  // Whether kanban view fills the entire viewport
+	KanbanColScrolls []int // Per-column scroll offsets (one per kanbanColumnOrder entry)
 
 	// Board mode state
 	TaskListMode         TaskListMode       // Whether Task List shows categorized or board view
@@ -761,6 +763,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Clamp kanban cursor if the kanban view is open (data may have changed)
 			if m.KanbanOpen {
 				m.clampKanbanRow()
+				m.ensureKanbanCursorVisible()
 			}
 
 			// Restore selection if we have a pending selection ID (from move operations)

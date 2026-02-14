@@ -150,8 +150,9 @@ const (
 	CmdInstallInstructions Command = "install-instructions"
 
 	// Kanban view commands
-	CmdOpenKanban  Command = "open-kanban"
-	CmdCloseKanban Command = "close-kanban"
+	CmdOpenKanban            Command = "open-kanban"
+	CmdCloseKanban           Command = "close-kanban"
+	CmdToggleKanbanFullscreen Command = "toggle-kanban-fullscreen"
 )
 
 // Binding maps a key or key sequence to a command in a specific context

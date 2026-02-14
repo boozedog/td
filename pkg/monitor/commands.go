@@ -1384,6 +1384,10 @@ func (m Model) executeCommand(cmd keymap.Command) (tea.Model, tea.Cmd) {
 		m.closeKanbanView()
 		return m, nil
 
+	case keymap.CmdToggleKanbanFullscreen:
+		m.KanbanFullscreen = !m.KanbanFullscreen
+		return m, nil
+
 	// Getting started commands
 	case keymap.CmdOpenGettingStarted:
 		return m.openGettingStarted()
