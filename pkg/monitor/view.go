@@ -1073,6 +1073,21 @@ func (m Model) renderModal() string {
 		lines = append(lines, subtleStyle.Render("Review: ")+truncateSession(issue.ReviewerSession))
 	}
 
+	// Defer/Due fields
+	if issue.DeferUntil != nil {
+		lines = append(lines, subtleStyle.Render("Deferred: ")+formatDeferUntil(*issue.DeferUntil))
+	}
+	if issue.DueDate != nil {
+		lines = append(lines, subtleStyle.Render("Due: ")+formatDueDate(*issue.DueDate))
+	}
+	if issue.DeferCount > 0 {
+		s := "s"
+		if issue.DeferCount == 1 {
+			s = ""
+		}
+		lines = append(lines, subtleStyle.Render(fmt.Sprintf("Deferred %d time%s", issue.DeferCount, s)))
+	}
+
 	lines = append(lines, "")
 
 	// Epic tasks section (if this is an epic with children)
@@ -1981,6 +1996,54 @@ func renderLogLines(log models.Log, contentWidth int) []string {
 
 // Error style for modal
 var errorStyle = lipgloss.NewStyle().Foreground(errorColor)
+var warningStyle = lipgloss.NewStyle().Foreground(warningColor)
+
+// formatDeferUntil formats a defer_until date string for display.
+func formatDeferUntil(dateStr string) string {
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return dateStr
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	days := int(t.Sub(today).Hours() / 24)
+	switch {
+	case days < 0:
+		return warningStyle.Render(t.Format("Jan 2") + " (past)")
+	case days == 0:
+		return "today"
+	case days == 1:
+		return "tomorrow"
+	default:
+		return fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days)
+	}
+}
+
+// formatDueDate formats a due_date string for display with urgency styling.
+func formatDueDate(dateStr string) string {
+	t, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return dateStr
+	}
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	days := int(t.Sub(today).Hours() / 24)
+	switch {
+	case days < 0:
+		n := -days
+		s := "s"
+		if n == 1 {
+			s = ""
+		}
+		return errorStyle.Render(fmt.Sprintf("OVERDUE by %d day%s", n, s))
+	case days == 0:
+		return warningStyle.Render("due TODAY")
+	case days <= 7:
+		return warningStyle.Render(fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days))
+	default:
+		return fmt.Sprintf("%s (%d days)", t.Format("Jan 2"), days)
+	}
+}
 
 // renderSearchBar renders the search input bar when search mode is active
 func (m Model) renderSearchBar() string {
