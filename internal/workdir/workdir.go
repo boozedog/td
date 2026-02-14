@@ -33,6 +33,11 @@ func ResolveBaseDir(baseDir string) string {
 		return baseDir
 	}
 
+	// Check directory associations (from ~/.config/td/associations.json)
+	if target, ok := LookupAssociation(baseDir); ok {
+		return target
+	}
+
 	gitRoot, err := gitTopLevel(baseDir)
 	if err != nil || gitRoot == "" {
 		return baseDir
@@ -44,6 +49,11 @@ func ResolveBaseDir(baseDir string) string {
 	}
 	if hasTodosDir(gitRoot) {
 		return gitRoot
+	}
+
+	// Check directory associations for git root
+	if target, ok := LookupAssociation(gitRoot); ok {
+		return target
 	}
 
 	// Check main worktree (handles external worktrees without .td-root)
