@@ -209,6 +209,15 @@ func (m Model) estimateModalContentLines(modal *ModalEntry) int {
 	if issue.ReviewerSession != "" {
 		lines++
 	}
+	if issue.DeferUntil != nil {
+		lines++
+	}
+	if issue.DueDate != nil {
+		lines++
+	}
+	if issue.DeferCount > 0 {
+		lines++
+	}
 	lines++ // Blank
 
 	// Epic tasks

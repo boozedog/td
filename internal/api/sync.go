@@ -14,29 +14,15 @@ import (
 	"time"
 
 	tddb "github.com/marcus/td/internal/db"
+	tdevents "github.com/marcus/td/internal/events"
 	tdsync "github.com/marcus/td/internal/sync"
 )
 
-// Allowed entity types for validation.
-var allowedEntityTypes = map[string]bool{
-	"issues":                true,
-	"logs":                  true,
-	"handoffs":              true,
-	"comments":              true,
-	"sessions":              true,
-	"boards":                true,
-	"board_issue_positions": true,
-	"work_sessions":         true,
-	"work_session_issues":   true,
-	"issue_files":           true,
-	"issue_dependencies":    true,
-	"git_snapshots":         true,
-	"issue_session_history": true,
-	"notes":                 true,
-}
-
+// isValidEntityType validates entity types using the centralized taxonomy.
+// Accepts both singular and plural forms for backward compatibility.
 func isValidEntityType(et string) bool {
-	return allowedEntityTypes[et]
+	_, ok := tdevents.NormalizeEntityType(et)
+	return ok
 }
 
 // PushRequest is the JSON body for POST /v1/projects/{id}/sync/push.
@@ -144,7 +130,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Convert to sync.Event
+	// Convert to sync.Event with normalization
 	events := make([]tdsync.Event, len(req.Events))
 	for i, ev := range req.Events {
 		ts, err := time.Parse(time.RFC3339, ev.ClientTimestamp)
@@ -155,12 +141,17 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+
+		// Normalize entity and action types to canonical forms
+		canonicalEntity, _ := tdevents.NormalizeEntityType(ev.EntityType)
+		canonicalAction := tdevents.NormalizeActionType(ev.ActionType)
+
 		events[i] = tdsync.Event{
 			ClientActionID:  ev.ClientActionID,
 			DeviceID:        req.DeviceID,
 			SessionID:       req.SessionID,
-			ActionType:      ev.ActionType,
-			EntityType:      ev.EntityType,
+			ActionType:      string(canonicalAction),
+			EntityType:      string(canonicalEntity),
 			EntityID:        ev.EntityID,
 			Payload:         ev.Payload,
 			ClientTimestamp: ts,
@@ -508,7 +499,7 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 	}
 	defer snapDB.Close()
 
-	validator := func(t string) bool { return allowedEntityTypes[t] }
+	validator := func(t string) bool { return isValidEntityType(t) }
 	afterSeq := int64(0)
 	batchSize := 1000
 

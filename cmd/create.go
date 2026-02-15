@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/marcus/td/internal/config"
+	"github.com/marcus/td/internal/dateparse"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/git"
 	"github.com/marcus/td/internal/models"
@@ -162,6 +163,26 @@ var createCmd = &cobra.Command{
 		// Minor (allows self-review)
 		issue.Minor, _ = cmd.Flags().GetBool("minor")
 
+		// Defer date
+		if deferStr, _ := cmd.Flags().GetString("defer"); deferStr != "" {
+			parsed, err := dateparse.ParseDate(deferStr)
+			if err != nil {
+				output.Error("invalid defer date: %v", err)
+				return fmt.Errorf("invalid defer date: %v", err)
+			}
+			issue.DeferUntil = &parsed
+		}
+
+		// Due date
+		if dueStr, _ := cmd.Flags().GetString("due"); dueStr != "" {
+			parsed, err := dateparse.ParseDate(dueStr)
+			if err != nil {
+				output.Error("invalid due date: %v", err)
+				return fmt.Errorf("invalid due date: %v", err)
+			}
+			issue.DueDate = &parsed
+		}
+
 		// Get session BEFORE creating issue (needed for CreatorSession)
 		sess, err := session.GetOrCreate(database)
 		if err != nil {
@@ -232,6 +253,8 @@ func init() {
 	createCmd.Flags().String("depends-on", "", "Issues this depends on")
 	createCmd.Flags().String("blocks", "", "Issues this blocks")
 	createCmd.Flags().Bool("minor", false, "Mark as minor task (allows self-review)")
+	createCmd.Flags().String("defer", "", "Defer until date (e.g., +7d, monday, 2026-03-01)")
+	createCmd.Flags().String("due", "", "Due date (e.g., friday, +2w, 2026-03-15)")
 }
 
 // parseTypeFromTitle extracts type prefix from title (e.g., "epic: Title" → "epic", "Title")

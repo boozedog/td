@@ -303,7 +303,7 @@ func TestAdminSnapshotQuery_Pagination(t *testing.T) {
 			EntityType:      "issues",
 			EntityID:        fmt.Sprintf("td-pg%04d", i+1),
 			Payload:         json.RawMessage(fmt.Sprintf(`{"schema_version":1,"new_data":{"title":"issue %d","status":"open","type":"task","priority":"P1"}}`, i+1)),
-			ClientTimestamp:  fmt.Sprintf("2025-01-01T00:00:%02dZ", i),
+			ClientTimestamp: fmt.Sprintf("2025-01-01T00:00:%02dZ", i),
 		}
 	}
 	w = doRequest(srv, "POST", fmt.Sprintf("/v1/projects/%s/sync/push", project.ID), userToken, PushRequest{

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/marcus/td/internal/dateparse"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
@@ -115,6 +116,38 @@ var updateCmd = &cobra.Command{
 
 			if parent, _ := cmd.Flags().GetString("parent"); cmd.Flags().Changed("parent") {
 				issue.ParentID = parent
+			}
+
+			// Defer date
+			if deferStr, _ := cmd.Flags().GetString("defer"); cmd.Flags().Changed("defer") {
+				if deferStr == "" {
+					issue.DeferUntil = nil
+				} else {
+					parsed, err := dateparse.ParseDate(deferStr)
+					if err != nil {
+						output.Error("invalid defer date: %v", err)
+						continue
+					}
+					// Increment defer count if pushing to a later date
+					if issue.DeferUntil != nil && parsed > *issue.DeferUntil {
+						issue.DeferCount++
+					}
+					issue.DeferUntil = &parsed
+				}
+			}
+
+			// Due date
+			if dueStr, _ := cmd.Flags().GetString("due"); cmd.Flags().Changed("due") {
+				if dueStr == "" {
+					issue.DueDate = nil
+				} else {
+					parsed, err := dateparse.ParseDate(dueStr)
+					if err != nil {
+						output.Error("invalid due date: %v", err)
+						continue
+					}
+					issue.DueDate = &parsed
+				}
 			}
 
 			// Handle --status flag for convenience
@@ -230,4 +263,6 @@ func init() {
 	updateCmd.Flags().StringP("comment", "m", "", "Add a comment to the updated issue(s)")
 	updateCmd.Flags().StringP("note", "c", "", "Alias for --comment")
 	updateCmd.Flags().MarkHidden("note")
+	updateCmd.Flags().String("defer", "", "Defer until date (e.g., +7d, monday, 2026-03-01; empty to clear)")
+	updateCmd.Flags().String("due", "", "Due date (e.g., friday, +2w, 2026-03-15; empty to clear)")
 }

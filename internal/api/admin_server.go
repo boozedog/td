@@ -60,14 +60,14 @@ func (s *Server) handleAdminServerOverview(w http.ResponseWriter, r *http.Reques
 
 // serverConfigResponse is the JSON response for GET /v1/admin/server/config.
 type serverConfigResponse struct {
-	ListenAddr                string              `json:"listen_addr"`
-	AllowSignup               bool                `json:"allow_signup"`
-	LogLevel                  string              `json:"log_level"`
-	LogFormat                 string              `json:"log_format"`
-	RateLimits                rateLimitsConfig     `json:"rate_limits"`
-	CORSOrigins               []string            `json:"cors_origins"`
-	AuthEventRetention        string              `json:"auth_event_retention"`
-	RateLimitEventRetention   string              `json:"rate_limit_event_retention"`
+	ListenAddr              string           `json:"listen_addr"`
+	AllowSignup             bool             `json:"allow_signup"`
+	LogLevel                string           `json:"log_level"`
+	LogFormat               string           `json:"log_format"`
+	RateLimits              rateLimitsConfig `json:"rate_limits"`
+	CORSOrigins             []string         `json:"cors_origins"`
+	AuthEventRetention      string           `json:"auth_event_retention"`
+	RateLimitEventRetention string           `json:"rate_limit_event_retention"`
 }
 
 type rateLimitsConfig struct {

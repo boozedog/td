@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
 )
 
 type contextKey int
@@ -16,7 +15,7 @@ type contextKey int
 const (
 	ctxKeyAuthUser contextKey = iota
 	ctxKeyRequestID
-	_              // reserved
+	_ // reserved
 	ctxKeyLogger
 )
 
@@ -238,4 +237,3 @@ func chain(h http.Handler, mws ...func(http.Handler) http.Handler) http.Handler 
 	}
 	return h
 }
-
