@@ -1043,7 +1043,6 @@ func (m *Model) createActivityDetailModal() *modal.Modal {
 	))
 
 	// Buttons
-	md.AddSection(modal.Spacer())
 	if item.IssueID != "" {
 		md.AddSection(modal.Buttons(
 			modal.Btn(" Open Issue ", "open-issue"),

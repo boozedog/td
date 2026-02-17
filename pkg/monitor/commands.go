@@ -293,6 +293,18 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Fall through to keymap for esc, etc.
 	}
 
+	// Activity detail modal: let declarative modal handle keys first
+	if m.ActivityDetailOpen && m.ActivityDetailModal != nil {
+		action, cmd := m.ActivityDetailModal.HandleKey(msg)
+		if action != "" {
+			return m.handleActivityDetailAction(action)
+		}
+		if cmd != nil {
+			return m, cmd
+		}
+		// Fall through to keymap for esc, etc.
+	}
+
 	// Stats modal: let declarative modal handle keys first (when data is ready)
 	if m.StatsOpen && m.StatsModal != nil && !m.StatsLoading && m.StatsError == nil {
 		action, cmd := m.StatsModal.HandleKey(msg)
