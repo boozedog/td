@@ -41,8 +41,7 @@ echo "==> Resetting to origin/develop..."
 git reset --hard origin/develop
 
 echo "==> Installing td..."
-LATEST=$(git describe --tags --abbrev=0 2>/dev/null || echo "dev")
-go install -ldflags "-X main.Version=$LATEST" ./...
+make install
 
 echo "==> Done! Version:"
 td version
