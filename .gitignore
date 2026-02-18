@@ -1,4 +1,5 @@
-.todos/
+.todos/*
+!.todos/backup.sql
 .sidecar/
 td
 dist/
