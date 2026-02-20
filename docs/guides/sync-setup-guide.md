@@ -2,6 +2,28 @@
 
 How to get sync running for the first time — whether you're creating a new team project or joining an existing one.
 
+## Prerequisites: Enable Sync Commands
+
+Sync commands (`td sync`, `td sync-project`, etc.) are gated behind a feature flag. If you run `td sync` and get "unknown command", you need to enable it first.
+
+**Recommended: set the environment variable**
+
+```bash
+export TD_ENABLE_FEATURE=sync_cli
+```
+
+Add this to your shell profile (`~/.zshrc`, `~/.bashrc`, etc.) so it persists across sessions.
+
+**Alternative: use `td feature set`**
+
+```bash
+td feature set sync_cli true
+```
+
+This saves the flag to your config file, but sync commands register at process init from environment variables — so the above command may not take effect until you restart your shell or re-export the variable. The env var is the more reliable path.
+
+---
+
 ## Quickest Path
 
 ### From the monitor (recommended)
@@ -74,7 +96,7 @@ This creates the remote project and links your local database in one step.
 td sync-project join
 ```
 
-With no arguments, this lists all projects you've been invited to and lets you pick one:
+With no arguments, this fetches the list of projects you've been invited to and lets you pick one interactively — this is the recommended path:
 
 ```
 Available projects:
@@ -89,6 +111,8 @@ You can also join by name directly:
 td sync-project join "backend-api"
 # ✓ Linked to project backend-api (a1b2c3d4-...)
 ```
+
+> **`sync-project join` vs `sync-project link`**: Use `join` — it validates the project ID against the server. `link <id>` is for scripting/automation; it accepts a raw project ID without checking it, so a typo or stale ID will cause 404 errors on `td sync`. If you used `link` and are seeing 404s, run `td sync-project list` to verify you're linked to a real project.
 
 ### 4. Sync
 
@@ -159,6 +183,9 @@ Your local database is always the source of truth. Sync is additive — a failed
 
 ## Troubleshooting
 
+**Sync commands not found ("unknown command")**
+Enable the sync feature — see [Prerequisites](#prerequisites-enable-sync-commands) above.
+
 **"not logged in (run: td auth login)"**
 Your credentials are missing or expired. Run `td auth login` again.
 
@@ -170,6 +197,12 @@ You haven't been invited to any remote projects yet. Ask the project owner to ru
 
 **"unauthorized"**
 Your API key is expired or revoked. Run `td auth login` to get a new one.
+
+**404 on `td sync --status`**
+Most likely a bad project ID. Run `td sync-project list` to see what you're linked to and verify it matches a real project on the server. If you linked with `sync-project link <id>`, try `sync-project join` instead.
+
+**"Nothing to push" but you're not sure if the server is reachable**
+`Nothing to push` is a local-only check — it means your local database has no unsynced events. It does not confirm the server connection is healthy. Run `td sync --status` to check your actual server connectivity.
 
 ## Related Docs
 

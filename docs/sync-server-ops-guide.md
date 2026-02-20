@@ -39,12 +39,15 @@ go build -o td-sync ./cmd/td-sync
 
 # Run with custom config
 SYNC_LISTEN_ADDR=:9090 \
+SYNC_BASE_URL=http://localhost:9090 \
 SYNC_SERVER_DB_PATH=./mydata/server.db \
 SYNC_PROJECT_DATA_DIR=./mydata/projects \
 SYNC_LOG_FORMAT=text \
 SYNC_LOG_LEVEL=debug \
 ./td-sync
 ```
+
+> **If you change `SYNC_LISTEN_ADDR`, also set `SYNC_BASE_URL`** to the same address. `SYNC_BASE_URL` is used in the device auth verification URLs sent to users. If it doesn't match the actual port, auth verification will fail with connection errors.
 
 ### Verify it's running
 
@@ -100,7 +103,7 @@ All config is via environment variables.
 | `SYNC_PROJECT_DATA_DIR` | `./data/projects` | Directory for per-project event DBs |
 | `SYNC_SHUTDOWN_TIMEOUT` | `30s` | Graceful shutdown timeout |
 | `SYNC_ALLOW_SIGNUP` | `true` | Allow new user registration via device auth |
-| `SYNC_BASE_URL` | `http://localhost:8080` | Public URL for device auth verification links |
+| `SYNC_BASE_URL` | `http://localhost:8080` | Public URL for device auth verification links. **Must match your actual listen address** — if running on `:9090`, set this to `http://localhost:9090`. Verification links in auth emails will be broken if this is wrong. |
 | `SYNC_LOG_FORMAT` | `json` | Log format: `json` or `text` |
 | `SYNC_LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 
