@@ -35,11 +35,12 @@ type ListIssuesOptions struct {
 	SortDesc        bool
 	Limit           int
 	IDs             []string
-	ExcludeDeferred bool // Hide issues where defer_until > today
-	DeferredOnly    bool // Show ONLY deferred issues (defer_until > today)
-	OverdueOnly     bool // Show ONLY overdue issues (due_date < today, not closed)
-	SurfacingOnly   bool // Show ONLY surfacing issues (defer_until <= today, defer_count > 0)
-	DueSoonDays     int  // Show issues due within N days (0 = disabled)
+	ExcludeDeferred    bool // Hide issues where defer_until > today
+	DeferredOnly       bool // Show ONLY deferred issues (defer_until > today)
+	OverdueOnly        bool // Show ONLY overdue issues (due_date < today, not closed)
+	SurfacingOnly      bool // Show ONLY surfacing issues (defer_until <= today, defer_count > 0)
+	DueSoonDays        int  // Show issues due within N days (0 = disabled)
+	ExcludeHasOpenDeps bool // Hide issues that have unresolved (non-closed) dependencies
 }
 
 // CreateIssue creates a new issue WITHOUT logging to action_log.
@@ -517,6 +518,18 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		query += fmt.Sprintf(" AND due_date IS NOT NULL AND due_date >= date('now') AND due_date <= date('now', '+%d days')", opts.DueSoonDays)
 	} else if opts.ExcludeDeferred {
 		query += " AND (defer_until IS NULL OR defer_until <= date('now'))"
+	}
+
+	// Exclude issues with open (non-closed) dependencies
+	if opts.ExcludeHasOpenDeps {
+		query += ` AND NOT EXISTS (
+			SELECT 1 FROM issue_dependencies d
+			JOIN issues dep ON d.depends_on_id = dep.id
+			WHERE d.issue_id = issues.id
+			  AND d.relation_type = 'depends_on'
+			  AND dep.status != 'closed'
+			  AND dep.deleted_at IS NULL
+		)`
 	}
 
 	// Sorting - validate column name to prevent SQL injection
