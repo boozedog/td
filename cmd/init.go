@@ -91,14 +91,15 @@ func addToGitignore(path string) {
 func suggestAgentFileAddition(baseDir string) {
 	fmt.Println()
 
+	// Check all agent files for existing td instructions (dedup)
+	if agent.AnyFileHasTDInstructions(baseDir) {
+		return // Already has td instructions somewhere
+	}
+
 	// Check for existing agent files
 	foundFile := agent.DetectAgentFile(baseDir)
 
 	if foundFile != "" {
-		// Check if already contains td instruction
-		if agent.HasTDInstructions(foundFile) {
-			return // Already has td instructions
-		}
 
 		fmt.Printf("Found %s. Add td instructions?\n", filepath.Base(foundFile))
 		fmt.Println()
