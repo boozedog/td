@@ -33,3 +33,5 @@ deploy/envs/.env.*
 # Test artifacts
 data/
 api.test
+
+.DS_store
