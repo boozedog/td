@@ -111,20 +111,21 @@ func (s *Server) Shutdown(ctx context.Context) error {
 // Route Registration
 // ============================================================================
 
-// registerRoutes registers all API routes with placeholder 501 handlers.
+// registerRoutes registers all API routes. Read endpoints use real handlers;
+// write/mutation endpoints use real handlers where implemented, or placeholders.
 func (s *Server) registerRoutes() {
-	// Health
-	s.mux.HandleFunc("GET /health", s.placeholder)
+	// Health (read)
+	s.mux.HandleFunc("GET /health", s.handleHealth)
 
-	// Monitor
-	s.mux.HandleFunc("GET /v1/monitor", s.placeholder)
+	// Monitor (read)
+	s.mux.HandleFunc("GET /v1/monitor", s.handleMonitor)
 
 	// Issues CRUD
-	s.mux.HandleFunc("GET /v1/issues", s.placeholder)
-	s.mux.HandleFunc("GET /v1/issues/{id}", s.placeholder)
-	s.mux.HandleFunc("POST /v1/issues", s.placeholder)
-	s.mux.HandleFunc("PATCH /v1/issues/{id}", s.placeholder)
-	s.mux.HandleFunc("DELETE /v1/issues/{id}", s.placeholder)
+	s.mux.HandleFunc("GET /v1/issues", s.handleListIssues)
+	s.mux.HandleFunc("GET /v1/issues/{id}", s.handleGetIssue)
+	s.mux.HandleFunc("POST /v1/issues", s.handleCreateIssue)
+	s.mux.HandleFunc("PATCH /v1/issues/{id}", s.handleUpdateIssue)
+	s.mux.HandleFunc("DELETE /v1/issues/{id}", s.handleDeleteIssue)
 
 	// Issue workflow transitions
 	s.mux.HandleFunc("POST /v1/issues/{id}/start", s.placeholder)
@@ -147,20 +148,20 @@ func (s *Server) registerRoutes() {
 	// Focus
 	s.mux.HandleFunc("PUT /v1/focus", s.placeholder)
 
-	// Boards
-	s.mux.HandleFunc("GET /v1/boards", s.placeholder)
-	s.mux.HandleFunc("GET /v1/boards/{id}", s.placeholder)
+	// Boards (read + write placeholders)
+	s.mux.HandleFunc("GET /v1/boards", s.handleListBoards)
+	s.mux.HandleFunc("GET /v1/boards/{id}", s.handleGetBoard)
 	s.mux.HandleFunc("POST /v1/boards", s.placeholder)
 	s.mux.HandleFunc("PATCH /v1/boards/{id}", s.placeholder)
 	s.mux.HandleFunc("DELETE /v1/boards/{id}", s.placeholder)
 	s.mux.HandleFunc("POST /v1/boards/{id}/issues", s.placeholder)
 	s.mux.HandleFunc("DELETE /v1/boards/{id}/issues/{issue_id}", s.placeholder)
 
-	// Sessions
-	s.mux.HandleFunc("GET /v1/sessions", s.placeholder)
+	// Sessions (read)
+	s.mux.HandleFunc("GET /v1/sessions", s.handleListSessions)
 
-	// Stats
-	s.mux.HandleFunc("GET /v1/stats", s.placeholder)
+	// Stats (read)
+	s.mux.HandleFunc("GET /v1/stats", s.handleStats)
 
 	// SSE events
 	s.mux.HandleFunc("GET /v1/events", s.placeholder)

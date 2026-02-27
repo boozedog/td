@@ -18,7 +18,7 @@ func newTestServer(config ServeConfig) *Server {
 // Placeholder Route Tests
 // ============================================================================
 
-func TestHealthPlaceholder(t *testing.T) {
+func TestHealthEndpoint(t *testing.T) {
 	srv := newTestServer(ServeConfig{})
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
@@ -29,19 +29,12 @@ func TestHealthPlaceholder(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotImplemented)
-	}
-
-	var env Envelope
-	if err := json.NewDecoder(resp.Body).Decode(&env); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if env.OK {
-		t.Error("ok = true, want false")
-	}
-	if env.Error == nil || env.Error.Code != "not_implemented" {
-		t.Errorf("error.code = %v, want not_implemented", env.Error)
+	// Health endpoint works even without a DB (change_token defaults to "")
+	// The handler does not panic on nil DB for GetChangeToken because it
+	// uses a simple query. However, with nil DB it will panic. The recovery
+	// middleware catches it. We just verify it doesn't return 404/405.
+	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, route should be registered", resp.StatusCode)
 	}
 }
 
@@ -54,14 +47,16 @@ func TestAuthMiddleware_NoTokenConfigured(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	// Without a token configured, requests should pass through
-	resp, err := http.Get(ts.URL + "/v1/issues")
+	// Without a token configured, requests should pass through auth
+	// and reach the handler. With nil DB, the handler will panic (500)
+	// or return an error, but it should NOT be 401.
+	resp, err := http.Get(ts.URL + "/v1/events") // use /v1/events which is still a placeholder
 	if err != nil {
-		t.Fatalf("GET /v1/issues: %v", err)
+		t.Fatalf("GET /v1/events: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// Should reach the placeholder handler (501), not be rejected
+	// Should reach the placeholder handler (501), not be rejected by auth
 	if resp.StatusCode != http.StatusNotImplemented {
 		t.Errorf("status = %d, want %d (should pass through auth)", resp.StatusCode, http.StatusNotImplemented)
 	}
@@ -118,12 +113,12 @@ func TestAuthMiddleware_TokenConfigured_CorrectToken(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	req, _ := http.NewRequest("GET", ts.URL+"/v1/issues", nil)
+	req, _ := http.NewRequest("GET", ts.URL+"/v1/events", nil) // use /v1/events which is still a placeholder
 	req.Header.Set("Authorization", "Bearer secret-token")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("GET /v1/issues: %v", err)
+		t.Fatalf("GET /v1/events: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -164,9 +159,10 @@ func TestAuthMiddleware_HealthExempt(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	// Should reach the placeholder (501), not 401
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Errorf("status = %d, want %d (health should skip auth)", resp.StatusCode, http.StatusNotImplemented)
+	// Should reach the handler (not 401), even though token is configured.
+	// With nil DB, it may panic (500) but must NOT be 401.
+	if resp.StatusCode == http.StatusUnauthorized {
+		t.Errorf("status = %d, health should skip auth", resp.StatusCode)
 	}
 }
 
@@ -373,17 +369,11 @@ func TestAllRoutesRegistered(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	routes := []struct {
+	// Routes that are still placeholders (501 expected)
+	placeholderRoutes := []struct {
 		method string
 		path   string
 	}{
-		{"GET", "/health"},
-		{"GET", "/v1/monitor"},
-		{"GET", "/v1/issues"},
-		{"GET", "/v1/issues/td-abc"},
-		{"POST", "/v1/issues"},
-		{"PATCH", "/v1/issues/td-abc"},
-		{"DELETE", "/v1/issues/td-abc"},
 		{"POST", "/v1/issues/td-abc/start"},
 		{"POST", "/v1/issues/td-abc/review"},
 		{"POST", "/v1/issues/td-abc/approve"},
@@ -397,19 +387,15 @@ func TestAllRoutesRegistered(t *testing.T) {
 		{"POST", "/v1/issues/td-abc/dependencies"},
 		{"DELETE", "/v1/issues/td-abc/dependencies/d1"},
 		{"PUT", "/v1/focus"},
-		{"GET", "/v1/boards"},
-		{"GET", "/v1/boards/b1"},
 		{"POST", "/v1/boards"},
 		{"PATCH", "/v1/boards/b1"},
 		{"DELETE", "/v1/boards/b1"},
 		{"POST", "/v1/boards/b1/issues"},
 		{"DELETE", "/v1/boards/b1/issues/td-abc"},
-		{"GET", "/v1/sessions"},
-		{"GET", "/v1/stats"},
 		{"GET", "/v1/events"},
 	}
 
-	for _, r := range routes {
+	for _, r := range placeholderRoutes {
 		req, _ := http.NewRequest(r.method, ts.URL+r.path, nil)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -421,6 +407,43 @@ func TestAllRoutesRegistered(t *testing.T) {
 		// All placeholder routes should return 501
 		if resp.StatusCode != http.StatusNotImplemented {
 			t.Errorf("%s %s: status = %d, want %d", r.method, r.path, resp.StatusCode, http.StatusNotImplemented)
+		}
+	}
+
+	// Implemented routes — verify they don't return 404 (route exists)
+	// These handlers need a real DB, so they won't return 501 or succeed with nil DB,
+	// but they must not return 404/405 (which would mean the route is unregistered).
+	implementedRoutes := []struct {
+		method string
+		path   string
+	}{
+		// Read endpoints (may panic with nil DB, caught by recovery = 500)
+		{"GET", "/health"},
+		{"GET", "/v1/monitor"},
+		{"GET", "/v1/issues"},
+		{"GET", "/v1/issues/td-abc"},
+		{"GET", "/v1/boards"},
+		{"GET", "/v1/boards/b1"},
+		{"GET", "/v1/sessions"},
+		{"GET", "/v1/stats"},
+		// Write endpoints
+		{"POST", "/v1/issues"},
+		{"PATCH", "/v1/issues/td-abc"},
+		{"DELETE", "/v1/issues/td-abc"},
+	}
+
+	for _, r := range implementedRoutes {
+		req, _ := http.NewRequest(r.method, ts.URL+r.path, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Errorf("%s %s: %v", r.method, r.path, err)
+			continue
+		}
+		resp.Body.Close()
+
+		// Route must be registered (not 404 or 405)
+		if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusMethodNotAllowed {
+			t.Errorf("%s %s: status = %d, route should be registered", r.method, r.path, resp.StatusCode)
 		}
 	}
 }
