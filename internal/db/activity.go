@@ -439,6 +439,48 @@ func (db *DB) GetCommentByID(id string) (*models.Comment, error) {
 	return &c, nil
 }
 
+// DeleteCommentLogged hard-deletes a comment and logs the action atomically.
+func (db *DB) DeleteCommentLogged(commentID, sessionID string) error {
+	return db.withWriteLock(func() error {
+		// Capture the comment before deletion
+		var c models.Comment
+		err := db.conn.QueryRow(`
+			SELECT CAST(id AS TEXT), issue_id, session_id, text, created_at
+			FROM comments WHERE id = ?
+		`, commentID).Scan(&c.ID, &c.IssueID, &c.SessionID, &c.Text, &c.CreatedAt)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("comment not found: %s", commentID)
+		}
+		if err != nil {
+			return err
+		}
+
+		// Delete the comment
+		_, err = db.conn.Exec(`DELETE FROM comments WHERE id = ?`, commentID)
+		if err != nil {
+			return err
+		}
+
+		// Log the action
+		actionID, err := generateActionID()
+		if err != nil {
+			return fmt.Errorf("generate action ID: %w", err)
+		}
+		previousData, _ := json.Marshal(map[string]interface{}{
+			"id": c.ID, "issue_id": c.IssueID, "session_id": c.SessionID,
+			"text": c.Text, "created_at": c.CreatedAt,
+		})
+		actionTS := actionLogTimestampNow()
+		_, err = db.conn.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, previous_data, new_data, timestamp, undone) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+			actionID, sessionID, "delete", "comments", commentID, string(previousData), "", actionTS)
+		if err != nil {
+			return fmt.Errorf("log action: %w", err)
+		}
+
+		return nil
+	})
+}
+
 // ============================================================================
 // Action Log Functions (Undo Support)
 // ============================================================================
