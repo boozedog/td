@@ -29,7 +29,7 @@ bearer token authentication and CORS for browser-based clients.
 If --port is 0 (the default), a random available port is assigned.
 The actual port is written to .todos/serve-port for discovery.`,
 	GroupID: "system",
-	RunE:   runServe,
+	RunE:    runServe,
 }
 
 func init() {
@@ -65,16 +65,6 @@ func runServe(cmd *cobra.Command, args []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	serve.StartSessionHeartbeat(ctx, database, session.ID)
-
-	// Check for existing port file
-	if existing, err := serve.ReadPortFile(dir); err == nil {
-		if serve.IsPortFileStale(existing) {
-			slog.Info("removing stale port file", "port", existing.Port, "pid", existing.PID)
-			_ = serve.DeletePortFile(dir)
-		} else {
-			return fmt.Errorf("td serve already running on port %d (pid %d)", existing.Port, existing.PID)
-		}
-	}
 
 	// Read flags
 	port, _ := cmd.Flags().GetInt("port")
@@ -133,6 +123,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	fmt.Fprintf(os.Stderr, "  port file:  %s\n", portFilePath)
 
 	// Start HTTP server in background
+	srv.StartBackground(ctx)
+	defer srv.StopBackground()
+
 	httpServer := &http.Server{
 		Handler:      srv.Handler(),
 		ReadTimeout:  15 * time.Second,

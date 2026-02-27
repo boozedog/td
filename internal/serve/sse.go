@@ -230,6 +230,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	// Register this client with the hub
 	hub := s.sseHub
+	if hub == nil {
+		WriteError(w, ErrInternal, "event stream unavailable", http.StatusInternalServerError)
+		return
+	}
 	ch := hub.register()
 	defer hub.unregister(ch)
 

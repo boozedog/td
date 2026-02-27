@@ -2,8 +2,12 @@ package serve
 
 import (
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -315,5 +319,55 @@ func TestWriteReadDeleteRoundtrip(t *testing.T) {
 	_, err = ReadPortFile(baseDir)
 	if err == nil {
 		t.Error("expected error after delete")
+	}
+}
+
+func TestWritePortFile_RejectsActiveExistingProcess(t *testing.T) {
+	baseDir := t.TempDir()
+	todosDir := filepath.Join(baseDir, ".todos")
+	if err := os.MkdirAll(todosDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	health := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer health.Close()
+
+	u, err := url.Parse(health.URL)
+	if err != nil {
+		t.Fatalf("parse health URL: %v", err)
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatalf("parse health port: %v", err)
+	}
+
+	existing := &PortInfo{
+		Port:       port,
+		PID:        os.Getpid(),
+		StartedAt:  time.Now().UTC(),
+		InstanceID: "srv_existing",
+	}
+	if err := WritePortFile(baseDir, existing); err != nil {
+		t.Fatalf("initial WritePortFile failed: %v", err)
+	}
+
+	next := &PortInfo{
+		Port:       port + 1,
+		PID:        os.Getpid(),
+		StartedAt:  time.Now().UTC(),
+		InstanceID: "srv_new",
+	}
+	err = WritePortFile(baseDir, next)
+	if err == nil {
+		t.Fatal("expected WritePortFile to reject active existing process")
+	}
+	if !strings.Contains(err.Error(), "already running") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

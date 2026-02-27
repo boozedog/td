@@ -47,6 +47,11 @@ type FieldError struct {
 	Message  string      `json:"message"`
 }
 
+// ValidationDetails wraps field-level validation errors in error.details.
+type ValidationDetails struct {
+	Fields []FieldError `json:"fields"`
+}
+
 // Standard error codes mapped to HTTP status codes.
 const (
 	ErrValidation   = "validation_error" // 400
@@ -90,7 +95,7 @@ func WriteValidation(w http.ResponseWriter, fields []FieldError) {
 		Error: &ErrorPayload{
 			Code:    ErrValidation,
 			Message: "Validation failed",
-			Details: fields,
+			Details: ValidationDetails{Fields: fields},
 		},
 	}); err != nil {
 		slog.Error("write validation response", "err", err)
@@ -461,13 +466,13 @@ func ActivityItemsToDTOs(items []monitor.ActivityItem) []ActivityItemDTO {
 
 // MonitorDTO is the API representation of the full monitor state.
 type MonitorDTO struct {
-	FocusedIssue   *IssueDTO         `json:"focused_issue"`
-	InProgress     []IssueDTO        `json:"in_progress"`
-	Activity       []ActivityItemDTO `json:"activity"`
-	TaskList       TaskListDTO       `json:"task_list"`
+	FocusedIssue   *IssueDTO          `json:"focused_issue"`
+	InProgress     []IssueDTO         `json:"in_progress"`
+	Activity       []ActivityItemDTO  `json:"activity"`
+	TaskList       TaskListDTO        `json:"task_list"`
 	RecentHandoffs []RecentHandoffDTO `json:"recent_handoffs"`
-	ActiveSessions []string          `json:"active_sessions"`
-	Timestamp      string            `json:"timestamp"`
+	ActiveSessions []string           `json:"active_sessions"`
+	Timestamp      string             `json:"timestamp"`
 }
 
 // TaskListDTO is the API representation of categorized task lists.

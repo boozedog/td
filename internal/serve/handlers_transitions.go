@@ -66,12 +66,13 @@ func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec t
 		}
 		return
 	}
+	canonicalIssueID := issue.ID
 
 	// Validate current status against allowed "from" statuses using state machine
 	sm := workflow.DefaultMachine()
 	if !sm.IsValidTransition(issue.Status, spec.toStatus) {
 		WriteError(w, ErrConflict,
-			fmt.Sprintf("cannot transition %s from %s to %s", issueID, issue.Status, spec.toStatus),
+			fmt.Sprintf("cannot transition %s from %s to %s", canonicalIssueID, issue.Status, spec.toStatus),
 			http.StatusConflict)
 		return
 	}
@@ -80,7 +81,7 @@ func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec t
 	// restrictive than the state machine for certain endpoints like approve/reject)
 	if !statusIn(issue.Status, spec.validFrom) {
 		WriteError(w, ErrConflict,
-			fmt.Sprintf("cannot transition %s from %s to %s", issueID, issue.Status, spec.toStatus),
+			fmt.Sprintf("cannot transition %s from %s to %s", canonicalIssueID, issue.Status, spec.toStatus),
 			http.StatusConflict)
 		return
 	}
@@ -120,12 +121,12 @@ func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec t
 		logType = spec.logType
 	}
 	if logErr := s.db.AddLog(&models.Log{
-		IssueID:   issueID,
+		IssueID:   canonicalIssueID,
 		SessionID: s.sessionID,
 		Message:   logMsg,
 		Type:      logType,
 	}); logErr != nil {
-		slog.Warn("failed to add transition log", "err", logErr, "id", issueID)
+		slog.Warn("failed to add transition log", "err", logErr, "id", canonicalIssueID)
 	}
 
 	// Run cascades
@@ -141,7 +142,7 @@ func (s *Server) handleTransition(w http.ResponseWriter, r *http.Request, spec t
 	}
 
 	// Re-read the issue to get the final state (UpdatedAt, etc.)
-	updated, err := s.db.GetIssue(issueID)
+	updated, err := s.db.GetIssue(canonicalIssueID)
 	if err != nil {
 		// Fallback to the in-memory version
 		updated = issue

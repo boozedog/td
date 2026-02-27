@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -299,6 +300,63 @@ func TestIntegration_Monitor_IncludeClosed(t *testing.T) {
 	closed, _ = taskList["closed"].([]interface{})
 	if len(closed) < 1 {
 		t.Errorf("with include_closed: closed has %d items, want >= 1", len(closed))
+	}
+}
+
+func monitorIssueIDs(t *testing.T, mon map[string]interface{}) map[string]bool {
+	t.Helper()
+
+	taskList, _ := mon["task_list"].(map[string]interface{})
+	ids := make(map[string]bool)
+	for _, key := range []string{"reviewable", "needs_rework", "in_progress", "ready", "pending_review", "blocked", "closed"} {
+		rows, _ := taskList[key].([]interface{})
+		for _, row := range rows {
+			issue, _ := row.(map[string]interface{})
+			id, _ := issue["id"].(string)
+			if id != "" {
+				ids[id] = true
+			}
+		}
+	}
+	return ids
+}
+
+func TestIntegration_Monitor_SearchMode_TextForcesLiteralSearch(t *testing.T) {
+	baseURL, _, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	literalID := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title": "literal type=feature token",
+		"type":  "task",
+	})
+	featureID := iCreateIssueWithFields(t, baseURL, map[string]interface{}{
+		"title": "Feature issue baseline",
+		"type":  "feature",
+	})
+
+	resp := iDoJSON(t, "GET", baseURL+"/v1/monitor?search=type%3Dfeature&search_mode=text", nil)
+	ok, data, errP := iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatalf("monitor text search failed: status=%d, err=%v", resp.StatusCode, errP)
+	}
+	mon, _ := data["monitor"].(map[string]interface{})
+	textIDs := monitorIssueIDs(t, mon)
+	if !textIDs[literalID] {
+		t.Fatalf("text mode should include literal title match %s", literalID)
+	}
+
+	resp = iDoJSON(t, "GET", baseURL+"/v1/monitor?search=type%3Dfeature&search_mode=auto", nil)
+	ok, data, errP = iParseEnvelope(t, resp)
+	if !ok {
+		t.Fatalf("monitor auto search failed: status=%d, err=%v", resp.StatusCode, errP)
+	}
+	mon, _ = data["monitor"].(map[string]interface{})
+	autoIDs := monitorIssueIDs(t, mon)
+	if autoIDs[literalID] {
+		t.Fatalf("auto mode should not include literal-only match %s when query is valid TDQ", literalID)
+	}
+	if !autoIDs[featureID] {
+		t.Fatalf("auto mode should include TDQ type match %s", featureID)
 	}
 }
 
@@ -2112,44 +2170,33 @@ func TestIntegration_Stats_WithIssues(t *testing.T) {
 // ============================================================================
 
 func TestIntegration_SSE_Connect(t *testing.T) {
-	// Test the SSE hub directly since the loggingMiddleware's statusRecorder
-	// does not implement http.Flusher, causing the SSE handler to return 500
-	// when accessed through the middleware stack. This tests the hub's core
-	// behavior: register, receive events, unregister.
-	tmpDir := t.TempDir()
-	database, err := db.Initialize(tmpDir)
+	baseURL, _, cleanup := setupIntegrationServer(t)
+	defer cleanup()
+
+	req, err := http.NewRequest(http.MethodGet, baseURL+"/v1/events", nil)
 	if err != nil {
-		t.Fatalf("db.Initialize: %v", err)
+		t.Fatalf("new request: %v", err)
 	}
-	defer database.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /v1/events: %v", err)
+	}
+	defer resp.Body.Close()
 
-	hub := NewSSEHub(database, 100*time.Millisecond)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	hub.Start(ctx)
-	defer hub.Stop()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d, want 200", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Type"); !strings.Contains(got, "text/event-stream") {
+		t.Fatalf("content-type=%q, want text/event-stream", got)
+	}
 
-	// Register a client
-	ch := hub.register()
-	defer hub.unregister(ch)
-
-	// Broadcast a refresh event
-	hub.Broadcast("token-1")
-
-	// Read from the channel
-	select {
-	case event := <-ch:
-		if event.Event != "refresh" {
-			t.Errorf("event type = %q, want refresh", event.Event)
-		}
-		if event.ID != "token-1" {
-			t.Errorf("event ID = %q, want token-1", event.ID)
-		}
-		if !strings.Contains(event.Data, "token-1") {
-			t.Errorf("event data should contain token-1, got %q", event.Data)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for broadcast event")
+	reader := bufio.NewReader(resp.Body)
+	firstLine, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("read first SSE line: %v", err)
+	}
+	if !strings.HasPrefix(firstLine, "id: ") {
+		t.Fatalf("unexpected first SSE line: %q", firstLine)
 	}
 }
 
