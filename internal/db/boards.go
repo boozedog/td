@@ -669,7 +669,12 @@ func (db *DB) ApplyBoardPositions(boardID string, issues []models.Issue) ([]mode
 	// Build a map of issue ID to position
 	positionMap := make(map[string]int)
 	for _, p := range positions {
-		positionMap[p.IssueID] = p.Position
+		normalizedID := NormalizeIssueID(p.IssueID)
+		// Preserve earliest (lowest) position when duplicate legacy/canonical rows
+		// normalize to the same issue ID.
+		if existing, ok := positionMap[normalizedID]; !ok || p.Position < existing {
+			positionMap[normalizedID] = p.Position
+		}
 	}
 
 	// Build result with positioned and unpositioned issues

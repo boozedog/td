@@ -242,7 +242,7 @@ func (s *Server) handleDeleteIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify issue exists
-	_, err := s.db.GetIssue(issueID)
+	issue, err := s.db.GetIssue(issueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", issueID), http.StatusNotFound)
@@ -254,8 +254,8 @@ func (s *Server) handleDeleteIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Soft delete with action log
-	if err := s.db.DeleteIssueLogged(issueID, s.sessionID); err != nil {
-		slog.Error("delete issue", "err", err, "id", issueID)
+	if err := s.db.DeleteIssueLogged(issue.ID, s.sessionID); err != nil {
+		slog.Error("delete issue", "err", err, "id", issue.ID)
 		WriteError(w, ErrInternal, "failed to delete issue", http.StatusInternalServerError)
 		return
 	}
@@ -604,7 +604,7 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify issue exists
-	_, err := s.db.GetIssue(issueID)
+	issue, err := s.db.GetIssue(issueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", issueID), http.StatusNotFound)
@@ -616,13 +616,13 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 	}
 
 	comment := &models.Comment{
-		IssueID:   issueID,
+		IssueID:   issue.ID,
 		SessionID: s.sessionID,
 		Text:      body.Text,
 	}
 
 	if err := s.db.AddComment(comment); err != nil {
-		slog.Error("add comment", "err", err, "issue_id", issueID)
+		slog.Error("add comment", "err", err, "issue_id", issue.ID)
 		WriteError(w, ErrInternal, "failed to add comment", http.StatusInternalServerError)
 		return
 	}
@@ -639,7 +639,7 @@ func (s *Server) handleAddComment(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteComment deletes a comment from an issue.
 func (s *Server) handleDeleteComment(w http.ResponseWriter, r *http.Request) {
-	issueID := r.PathValue("id")
+	issueID := db.NormalizeIssueID(r.PathValue("id"))
 	commentID := r.PathValue("comment_id")
 
 	if issueID == "" {
@@ -690,8 +690,8 @@ type DependencyCreateBody struct {
 
 // handleAddDependency adds a dependency between two issues.
 func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
-	issueID := r.PathValue("id")
-	if issueID == "" {
+	requestedIssueID := r.PathValue("id")
+	if requestedIssueID == "" {
 		WriteError(w, ErrValidation, "issue id is required", http.StatusBadRequest)
 		return
 	}
@@ -711,6 +711,17 @@ func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	issue, err := s.db.GetIssue(requestedIssueID)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", requestedIssueID), http.StatusNotFound)
+		} else {
+			slog.Error("get issue for dependency", "err", err, "id", requestedIssueID)
+			WriteError(w, ErrInternal, "failed to fetch issue", http.StatusInternalServerError)
+		}
+		return
+	}
+	issueID := issue.ID
 	dependsOnID := db.NormalizeIssueID(body.DependsOn)
 
 	// Validate both issues exist, check for cycles and duplicates
@@ -759,7 +770,7 @@ func (s *Server) handleAddDependency(w http.ResponseWriter, r *http.Request) {
 
 // handleDeleteDependency removes a dependency by its dep_id.
 func (s *Server) handleDeleteDependency(w http.ResponseWriter, r *http.Request) {
-	issueID := r.PathValue("id")
+	issueID := db.NormalizeIssueID(r.PathValue("id"))
 	depID := r.PathValue("dep_id")
 
 	if issueID == "" {
@@ -832,7 +843,7 @@ func (s *Server) handleSetFocus(w http.ResponseWriter, r *http.Request) {
 
 	// Set focus — verify issue exists first
 	issueID := *body.IssueID
-	_, err := s.db.GetIssue(issueID)
+	issue, err := s.db.GetIssue(issueID)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			WriteError(w, ErrNotFound, fmt.Sprintf("issue not found: %s", issueID), http.StatusNotFound)
@@ -843,14 +854,14 @@ func (s *Server) handleSetFocus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := config.SetFocus(s.baseDir, issueID); err != nil {
-		slog.Error("set focus", "err", err, "issue_id", issueID)
+	if err := config.SetFocus(s.baseDir, issue.ID); err != nil {
+		slog.Error("set focus", "err", err, "issue_id", issue.ID)
 		WriteError(w, ErrInternal, "failed to set focus", http.StatusInternalServerError)
 		return
 	}
 
 	// Do NOT trigger sync/NotifyChange for focus changes
-	WriteSuccess(w, map[string]interface{}{"focused_issue_id": issueID}, http.StatusOK)
+	WriteSuccess(w, map[string]interface{}{"focused_issue_id": issue.ID}, http.StatusOK)
 }
 
 // ============================================================================

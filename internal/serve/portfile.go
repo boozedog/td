@@ -65,6 +65,13 @@ func WritePortFile(baseDir string, info *PortInfo) error {
 	}
 	defer releaseFileLock(lockFile)
 
+	// Re-check under lock to avoid a startup race between parallel processes.
+	if existing, err := ReadPortFile(baseDir); err == nil {
+		if !IsPortFileStale(existing) {
+			return fmt.Errorf("td serve already running on port %d (pid %d)", existing.Port, existing.PID)
+		}
+	}
+
 	data, err := json.MarshalIndent(info, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal port info: %w", err)

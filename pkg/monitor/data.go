@@ -25,8 +25,15 @@ type StatsDataMsg struct {
 	Error error
 }
 
-// FetchData retrieves all data needed for the monitor display
+// FetchData retrieves all data needed for the monitor display.
+// This maintains the legacy behavior (search_mode=auto).
 func FetchData(database *db.DB, sessionID string, startedAt time.Time, searchQuery string, includeClosed bool, sortMode SortMode) RefreshDataMsg {
+	return FetchDataWithSearchMode(database, sessionID, startedAt, searchQuery, "auto", includeClosed, sortMode)
+}
+
+// FetchDataWithSearchMode retrieves all data needed for the monitor display
+// using explicit search mode semantics: auto|text|tdq.
+func FetchDataWithSearchMode(database *db.DB, sessionID string, startedAt time.Time, searchQuery, searchMode string, includeClosed bool, sortMode SortMode) RefreshDataMsg {
 	msg := RefreshDataMsg{
 		Timestamp: time.Now(),
 	}
@@ -57,7 +64,7 @@ func FetchData(database *db.DB, sessionID string, startedAt time.Time, searchQue
 	msg.Activity = fetchActivity(database, 50)
 
 	// Get task list (uses current session for reviewable calculation)
-	msg.TaskList = fetchTaskList(database, currentSessionID, searchQuery, includeClosed, sortMode)
+	msg.TaskList = fetchTaskList(database, currentSessionID, searchQuery, searchMode, includeClosed, sortMode)
 
 	// Get recent handoffs since monitor started
 	msg.RecentHandoffs = fetchRecentHandoffs(database, startedAt)
@@ -179,7 +186,7 @@ func isTDQQuery(q string) bool {
 }
 
 // fetchTaskList retrieves categorized issues for the task list panel
-func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includeClosed bool, sortMode SortMode) TaskListData {
+func fetchTaskList(database *db.DB, sessionID string, searchQuery, searchMode string, includeClosed bool, sortMode SortMode) TaskListData {
 	var data TaskListData
 
 	// Get default sort from SortMode (used for non-TDQ queries)
@@ -219,8 +226,22 @@ func fetchTaskList(database *db.DB, sessionID string, searchQuery string, includ
 		return false
 	}
 
-	// Check if this is a TDQ query
-	useTDQ := searchQuery != "" && isTDQQuery(searchQuery)
+	// Resolve search mode semantics:
+	// - tdq: always attempt TDQ execution (when query is non-empty)
+	// - text: never attempt TDQ execution
+	// - auto/empty/unknown: TDQ auto-detection with fallback to text search
+	mode := strings.ToLower(strings.TrimSpace(searchMode))
+	useTDQ := false
+	if searchQuery != "" {
+		switch mode {
+		case "tdq":
+			useTDQ = true
+		case "text":
+			useTDQ = false
+		default:
+			useTDQ = isTDQQuery(searchQuery)
+		}
+	}
 
 	if useTDQ {
 		// Use TDQ to filter issues across all categories

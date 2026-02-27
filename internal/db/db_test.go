@@ -1576,6 +1576,50 @@ func TestApplyBoardPositions_Ordering(t *testing.T) {
 	}
 }
 
+func TestApplyBoardPositions_LegacyNonCanonicalPositionIDs(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	board, _ := db.CreateBoard("Legacy Position IDs", "")
+	issue1 := &models.Issue{Title: "Issue 1", Type: models.TypeTask, Priority: models.PriorityP2}
+	issue2 := &models.Issue{Title: "Issue 2", Type: models.TypeTask, Priority: models.PriorityP2}
+	db.CreateIssue(issue1)
+	db.CreateIssue(issue2)
+
+	legacyIssue2ID := issue2.ID
+	if len(issue2.ID) > 3 && issue2.ID[:3] == "td-" {
+		legacyIssue2ID = issue2.ID[3:]
+	}
+
+	legacyPosID := BoardIssuePosID(board.ID, legacyIssue2ID)
+	if _, err := db.conn.Exec(`
+		INSERT INTO board_issue_positions (id, board_id, issue_id, position, added_at)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+	`, legacyPosID, board.ID, legacyIssue2ID, 1); err != nil {
+		t.Fatalf("insert legacy board position failed: %v", err)
+	}
+
+	issues := []models.Issue{*issue1, *issue2}
+	result, err := db.ApplyBoardPositions(board.ID, issues)
+	if err != nil {
+		t.Fatalf("ApplyBoardPositions failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 issues, got %d", len(result))
+	}
+
+	if result[0].Issue.ID != issue2.ID {
+		t.Fatalf("result[0].Issue.ID = %s, want %s", result[0].Issue.ID, issue2.ID)
+	}
+	if !result[0].HasPosition || result[0].Position != 1 {
+		t.Fatalf("legacy-positioned issue should have position 1, got has_position=%v position=%d", result[0].HasPosition, result[0].Position)
+	}
+}
+
 // TestSwapIssuePositions_UnpositionedError verifies error handling for unpositioned issues
 func TestSwapIssuePositions_UnpositionedError(t *testing.T) {
 	dir := t.TempDir()

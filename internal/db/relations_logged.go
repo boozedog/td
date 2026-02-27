@@ -118,13 +118,22 @@ func (db *DB) UnlinkFileLogged(issueID, filePath, sessionID string) error {
 }
 
 // RemoveDependencyLogged removes a dependency and logs the action atomically within a single withWriteLock call.
+// If the dependency does not exist locally, this is a no-op (no action_log entry is created).
 func (db *DB) RemoveDependencyLogged(issueID, dependsOnID, sessionID string) error {
 	return db.withWriteLock(func() error {
-		// Capture row data before deletion
 		depID := DependencyID(issueID, dependsOnID, "depends_on")
-		previousData := marshalDependency(depID, issueID, dependsOnID, "depends_on")
 
-		_, err := db.conn.Exec(`DELETE FROM issue_dependencies WHERE issue_id = ? AND depends_on_id = ?`, issueID, dependsOnID)
+		// Check if the dependency exists before deleting
+		var relationType string
+		err := db.conn.QueryRow(`SELECT relation_type FROM issue_dependencies WHERE issue_id = ? AND depends_on_id = ?`, issueID, dependsOnID).Scan(&relationType)
+		if err != nil {
+			// Row doesn't exist, nothing to remove
+			return nil
+		}
+
+		previousData := marshalDependency(depID, issueID, dependsOnID, relationType)
+
+		_, err = db.conn.Exec(`DELETE FROM issue_dependencies WHERE issue_id = ? AND depends_on_id = ?`, issueID, dependsOnID)
 		if err != nil {
 			return err
 		}

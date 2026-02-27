@@ -103,20 +103,20 @@ func TestWriteValidation(t *testing.T) {
 		t.Errorf("error.code = %q, want %q", env.Error.Code, ErrValidation)
 	}
 
-	// Details should be the field errors array
+	// Details should be wrapped as {"fields":[...]}
 	detailsJSON, err := json.Marshal(env.Error.Details)
 	if err != nil {
 		t.Fatalf("marshal details: %v", err)
 	}
-	var parsedFields []FieldError
-	if err := json.Unmarshal(detailsJSON, &parsedFields); err != nil {
+	var parsed ValidationDetails
+	if err := json.Unmarshal(detailsJSON, &parsed); err != nil {
 		t.Fatalf("unmarshal details: %v", err)
 	}
-	if len(parsedFields) != 2 {
-		t.Errorf("len(details) = %d, want 2", len(parsedFields))
+	if len(parsed.Fields) != 2 {
+		t.Errorf("len(details.fields) = %d, want 2", len(parsed.Fields))
 	}
-	if parsedFields[0].Field != "title" {
-		t.Errorf("details[0].field = %q, want title", parsedFields[0].Field)
+	if parsed.Fields[0].Field != "title" {
+		t.Errorf("details.fields[0].field = %q, want title", parsed.Fields[0].Field)
 	}
 }
 

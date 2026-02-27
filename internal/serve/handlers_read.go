@@ -48,19 +48,7 @@ func (s *Server) handleMonitor(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// For search_mode=text, treat as plain text (no TDQ attempt)
-	// For search_mode=auto (or empty), FetchData will try TDQ then fall back
-	actualSearch := search
-	if searchMode == "text" {
-		// Wrap in quotes if it looks like TDQ to force text-mode behavior
-		// FetchData's isTDQQuery check will see plain text
-		// Actually, monitor.FetchData handles this internally.
-		// For text mode, we pass the search as-is and it will be used
-		// as text search by fetchTaskList.
-		_ = actualSearch // just use search as-is
-	}
-
-	msg := monitor.FetchData(s.db, s.sessionID, time.Now().Add(-24*time.Hour), search, includeClosed, sortMode)
+	msg := monitor.FetchDataWithSearchMode(s.db, s.sessionID, time.Now().Add(-24*time.Hour), search, searchMode, includeClosed, sortMode)
 	dto := MonitorDataToDTO(&msg)
 
 	changeToken, _ := s.db.GetChangeToken()

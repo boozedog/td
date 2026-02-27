@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"log/slog"
@@ -126,6 +127,20 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.http.Shutdown(ctx)
 }
 
+// StartBackground starts long-lived background processes (SSE polling loop).
+func (s *Server) StartBackground(ctx context.Context) {
+	if s.sseHub != nil {
+		s.sseHub.Start(ctx)
+	}
+}
+
+// StopBackground stops long-lived background processes.
+func (s *Server) StopBackground() {
+	if s.sseHub != nil {
+		s.sseHub.Stop()
+	}
+}
+
 // ============================================================================
 // Route Registration
 // ============================================================================
@@ -204,6 +219,28 @@ type statusRecorder struct {
 func (sr *statusRecorder) WriteHeader(code int) {
 	sr.code = code
 	sr.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap exposes the underlying writer so wrappers like ResponseController can
+// reach interfaces implemented by the original ResponseWriter.
+func (sr *statusRecorder) Unwrap() http.ResponseWriter {
+	return sr.ResponseWriter
+}
+
+// Flush forwards streaming flushes (required for SSE).
+func (sr *statusRecorder) Flush() {
+	if f, ok := sr.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack forwards connection hijacking when supported by the underlying writer.
+func (sr *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hj, ok := sr.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("hijacking not supported")
+	}
+	return hj.Hijack()
 }
 
 // recoveryMiddleware catches panics, logs the stack trace, and returns a 500
