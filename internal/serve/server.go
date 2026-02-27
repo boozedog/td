@@ -29,7 +29,7 @@ type Server struct {
 	baseDir   string
 	config    ServeConfig
 	mux       *http.ServeMux
-	sseHub    interface{} // placeholder, nil until SSE task
+	sseHub    *SSEHub
 	http      *http.Server
 }
 
@@ -37,12 +37,22 @@ type Server struct {
 // middleware chain. Handlers are placeholder 501s until subsequent tasks
 // implement them.
 func NewServer(database *db.DB, baseDir, sessionID string, config ServeConfig) *Server {
+	pollInterval := config.PollInterval
+	if pollInterval == 0 {
+		pollInterval = 2 * time.Second
+	}
+
 	s := &Server{
 		db:        database,
 		sessionID: sessionID,
 		baseDir:   baseDir,
 		config:    config,
 		mux:       http.NewServeMux(),
+	}
+
+	// Initialize SSE hub (requires database for change_token polling)
+	if database != nil {
+		s.sseHub = NewSSEHub(database, pollInterval)
 	}
 
 	s.registerRoutes()
@@ -73,6 +83,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return fmt.Errorf("listen %s: %w", addr, err)
 	}
 
+	// Start SSE hub polling
+	if s.sseHub != nil {
+		s.sseHub.Start(ctx)
+	}
+
 	s.http = &http.Server{
 		Handler:      s.Handler(),
 		ReadTimeout:  15 * time.Second,
@@ -90,6 +105,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		// Stop SSE hub first (closes client connections)
+		if s.sseHub != nil {
+			s.sseHub.Stop()
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return s.http.Shutdown(shutdownCtx)
@@ -128,34 +147,34 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("DELETE /v1/issues/{id}", s.handleDeleteIssue)
 
 	// Issue workflow transitions
-	s.mux.HandleFunc("POST /v1/issues/{id}/start", s.placeholder)
-	s.mux.HandleFunc("POST /v1/issues/{id}/review", s.placeholder)
-	s.mux.HandleFunc("POST /v1/issues/{id}/approve", s.placeholder)
-	s.mux.HandleFunc("POST /v1/issues/{id}/reject", s.placeholder)
-	s.mux.HandleFunc("POST /v1/issues/{id}/block", s.placeholder)
-	s.mux.HandleFunc("POST /v1/issues/{id}/unblock", s.placeholder)
-	s.mux.HandleFunc("POST /v1/issues/{id}/close", s.placeholder)
-	s.mux.HandleFunc("POST /v1/issues/{id}/reopen", s.placeholder)
+	s.mux.HandleFunc("POST /v1/issues/{id}/start", s.handleStart)
+	s.mux.HandleFunc("POST /v1/issues/{id}/review", s.handleReview)
+	s.mux.HandleFunc("POST /v1/issues/{id}/approve", s.handleApprove)
+	s.mux.HandleFunc("POST /v1/issues/{id}/reject", s.handleReject)
+	s.mux.HandleFunc("POST /v1/issues/{id}/block", s.handleBlock)
+	s.mux.HandleFunc("POST /v1/issues/{id}/unblock", s.handleUnblock)
+	s.mux.HandleFunc("POST /v1/issues/{id}/close", s.handleClose)
+	s.mux.HandleFunc("POST /v1/issues/{id}/reopen", s.handleReopen)
 
 	// Comments
-	s.mux.HandleFunc("POST /v1/issues/{id}/comments", s.placeholder)
-	s.mux.HandleFunc("DELETE /v1/issues/{id}/comments/{comment_id}", s.placeholder)
+	s.mux.HandleFunc("POST /v1/issues/{id}/comments", s.handleAddComment)
+	s.mux.HandleFunc("DELETE /v1/issues/{id}/comments/{comment_id}", s.handleDeleteComment)
 
 	// Dependencies
-	s.mux.HandleFunc("POST /v1/issues/{id}/dependencies", s.placeholder)
-	s.mux.HandleFunc("DELETE /v1/issues/{id}/dependencies/{dep_id}", s.placeholder)
+	s.mux.HandleFunc("POST /v1/issues/{id}/dependencies", s.handleAddDependency)
+	s.mux.HandleFunc("DELETE /v1/issues/{id}/dependencies/{dep_id}", s.handleDeleteDependency)
 
 	// Focus
-	s.mux.HandleFunc("PUT /v1/focus", s.placeholder)
+	s.mux.HandleFunc("PUT /v1/focus", s.handleSetFocus)
 
-	// Boards (read + write placeholders)
+	// Boards (read + write)
 	s.mux.HandleFunc("GET /v1/boards", s.handleListBoards)
 	s.mux.HandleFunc("GET /v1/boards/{id}", s.handleGetBoard)
-	s.mux.HandleFunc("POST /v1/boards", s.placeholder)
-	s.mux.HandleFunc("PATCH /v1/boards/{id}", s.placeholder)
-	s.mux.HandleFunc("DELETE /v1/boards/{id}", s.placeholder)
-	s.mux.HandleFunc("POST /v1/boards/{id}/issues", s.placeholder)
-	s.mux.HandleFunc("DELETE /v1/boards/{id}/issues/{issue_id}", s.placeholder)
+	s.mux.HandleFunc("POST /v1/boards", s.handleCreateBoard)
+	s.mux.HandleFunc("PATCH /v1/boards/{id}", s.handleUpdateBoard)
+	s.mux.HandleFunc("DELETE /v1/boards/{id}", s.handleDeleteBoard)
+	s.mux.HandleFunc("POST /v1/boards/{id}/issues", s.handleSetBoardPosition)
+	s.mux.HandleFunc("DELETE /v1/boards/{id}/issues/{issue_id}", s.handleRemoveBoardPosition)
 
 	// Sessions (read)
 	s.mux.HandleFunc("GET /v1/sessions", s.handleListSessions)
@@ -164,7 +183,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /v1/stats", s.handleStats)
 
 	// SSE events
-	s.mux.HandleFunc("GET /v1/events", s.placeholder)
+	s.mux.HandleFunc("GET /v1/events", s.handleEvents)
 }
 
 // placeholder returns 501 Not Implemented for all unimplemented routes.

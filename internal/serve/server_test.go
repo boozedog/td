@@ -48,17 +48,17 @@ func TestAuthMiddleware_NoTokenConfigured(t *testing.T) {
 	defer ts.Close()
 
 	// Without a token configured, requests should pass through auth
-	// and reach the handler. With nil DB, the handler will panic (500)
-	// or return an error, but it should NOT be 401.
-	resp, err := http.Get(ts.URL + "/v1/events") // use /v1/events which is still a placeholder
+	// and reach the handler. Use a placeholder route (focus) to verify.
+	resp, err := http.Get(ts.URL + "/v1/issues/td-abc/start") // use a placeholder route
 	if err != nil {
-		t.Fatalf("GET /v1/events: %v", err)
+		t.Fatalf("GET: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// Should reach the placeholder handler (501), not be rejected by auth
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Errorf("status = %d, want %d (should pass through auth)", resp.StatusCode, http.StatusNotImplemented)
+	// Should reach the handler, not be rejected by auth.
+	// With nil DB, placeholder returns 501; implemented routes may panic (500).
+	if resp.StatusCode == http.StatusUnauthorized {
+		t.Errorf("status = %d, should pass through auth without token configured", resp.StatusCode)
 	}
 }
 
@@ -113,18 +113,19 @@ func TestAuthMiddleware_TokenConfigured_CorrectToken(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	req, _ := http.NewRequest("GET", ts.URL+"/v1/events", nil) // use /v1/events which is still a placeholder
+	req, _ := http.NewRequest("PUT", ts.URL+"/v1/focus", nil)
 	req.Header.Set("Authorization", "Bearer secret-token")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("GET /v1/events: %v", err)
+		t.Fatalf("PUT /v1/focus: %v", err)
 	}
 	defer resp.Body.Close()
 
-	// Should reach placeholder (501), not be rejected
-	if resp.StatusCode != http.StatusNotImplemented {
-		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusNotImplemented)
+	// Should pass through auth (not 401) and reach the handler.
+	// With nil DB the handler may return 400/500, but must NOT be 401.
+	if resp.StatusCode == http.StatusUnauthorized {
+		t.Errorf("status = %d, should pass through auth with correct token", resp.StatusCode)
 	}
 }
 
@@ -360,7 +361,7 @@ func TestNewServer_DefaultConfig(t *testing.T) {
 		t.Error("mux should not be nil")
 	}
 	if srv.sseHub != nil {
-		t.Error("sseHub should be nil (placeholder)")
+		t.Error("sseHub should be nil when DB is nil")
 	}
 }
 
@@ -369,55 +370,14 @@ func TestAllRoutesRegistered(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 
-	// Routes that are still placeholders (501 expected)
-	placeholderRoutes := []struct {
-		method string
-		path   string
-	}{
-		{"POST", "/v1/issues/td-abc/start"},
-		{"POST", "/v1/issues/td-abc/review"},
-		{"POST", "/v1/issues/td-abc/approve"},
-		{"POST", "/v1/issues/td-abc/reject"},
-		{"POST", "/v1/issues/td-abc/block"},
-		{"POST", "/v1/issues/td-abc/unblock"},
-		{"POST", "/v1/issues/td-abc/close"},
-		{"POST", "/v1/issues/td-abc/reopen"},
-		{"POST", "/v1/issues/td-abc/comments"},
-		{"DELETE", "/v1/issues/td-abc/comments/c1"},
-		{"POST", "/v1/issues/td-abc/dependencies"},
-		{"DELETE", "/v1/issues/td-abc/dependencies/d1"},
-		{"PUT", "/v1/focus"},
-		{"POST", "/v1/boards"},
-		{"PATCH", "/v1/boards/b1"},
-		{"DELETE", "/v1/boards/b1"},
-		{"POST", "/v1/boards/b1/issues"},
-		{"DELETE", "/v1/boards/b1/issues/td-abc"},
-		{"GET", "/v1/events"},
-	}
-
-	for _, r := range placeholderRoutes {
-		req, _ := http.NewRequest(r.method, ts.URL+r.path, nil)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Errorf("%s %s: %v", r.method, r.path, err)
-			continue
-		}
-		resp.Body.Close()
-
-		// All placeholder routes should return 501
-		if resp.StatusCode != http.StatusNotImplemented {
-			t.Errorf("%s %s: status = %d, want %d", r.method, r.path, resp.StatusCode, http.StatusNotImplemented)
-		}
-	}
-
-	// Implemented routes — verify they don't return 404 (route exists)
-	// These handlers need a real DB, so they won't return 501 or succeed with nil DB,
-	// but they must not return 404/405 (which would mean the route is unregistered).
+	// All routes should be registered (no 404/405).
+	// With nil DB, real handlers may return 400/500 — that's fine;
+	// we just verify they are NOT 404 or 405 (unregistered).
 	implementedRoutes := []struct {
 		method string
 		path   string
 	}{
-		// Read endpoints (may panic with nil DB, caught by recovery = 500)
+		// Read endpoints
 		{"GET", "/health"},
 		{"GET", "/v1/monitor"},
 		{"GET", "/v1/issues"},
@@ -426,10 +386,35 @@ func TestAllRoutesRegistered(t *testing.T) {
 		{"GET", "/v1/boards/b1"},
 		{"GET", "/v1/sessions"},
 		{"GET", "/v1/stats"},
-		// Write endpoints
+		// Issue write endpoints
 		{"POST", "/v1/issues"},
 		{"PATCH", "/v1/issues/td-abc"},
 		{"DELETE", "/v1/issues/td-abc"},
+		// Workflow transitions
+		{"POST", "/v1/issues/td-abc/start"},
+		{"POST", "/v1/issues/td-abc/review"},
+		{"POST", "/v1/issues/td-abc/approve"},
+		{"POST", "/v1/issues/td-abc/reject"},
+		{"POST", "/v1/issues/td-abc/block"},
+		{"POST", "/v1/issues/td-abc/unblock"},
+		{"POST", "/v1/issues/td-abc/close"},
+		{"POST", "/v1/issues/td-abc/reopen"},
+		// Comments
+		{"POST", "/v1/issues/td-abc/comments"},
+		{"DELETE", "/v1/issues/td-abc/comments/c1"},
+		// Dependencies
+		{"POST", "/v1/issues/td-abc/dependencies"},
+		{"DELETE", "/v1/issues/td-abc/dependencies/d1"},
+		// Focus
+		{"PUT", "/v1/focus"},
+		// Board write endpoints
+		{"POST", "/v1/boards"},
+		{"PATCH", "/v1/boards/b1"},
+		{"DELETE", "/v1/boards/b1"},
+		{"POST", "/v1/boards/b1/issues"},
+		{"DELETE", "/v1/boards/b1/issues/td-abc"},
+		// SSE events
+		{"GET", "/v1/events"},
 	}
 
 	for _, r := range implementedRoutes {
