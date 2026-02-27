@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/session"
 	"github.com/marcus/td/pkg/monitor"
@@ -302,6 +303,7 @@ func HandoffToDTO(handoff *models.Handoff) HandoffDTO {
 
 // DependencyDTO is the API representation of an issue dependency.
 type DependencyDTO struct {
+	DepID        string `json:"dep_id"`
 	IssueID      string `json:"issue_id"`
 	DependsOnID  string `json:"depends_on_id"`
 	RelationType string `json:"relation_type"`
@@ -310,6 +312,7 @@ type DependencyDTO struct {
 // DependencyToDTO converts a models.IssueDependency to a DependencyDTO.
 func DependencyToDTO(dep *models.IssueDependency) DependencyDTO {
 	return DependencyDTO{
+		DepID:        db.DependencyID(dep.IssueID, dep.DependsOnID, dep.RelationType),
 		IssueID:      dep.IssueID,
 		DependsOnID:  dep.DependsOnID,
 		RelationType: dep.RelationType,

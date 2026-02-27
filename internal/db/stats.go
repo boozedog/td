@@ -271,3 +271,15 @@ func (db *DB) GetExtendedStats() (*models.ExtendedStats, error) {
 
 	return stats, nil
 }
+
+// GetChangeToken returns the MAX(rowid) from action_log as a string.
+// This serves as a lightweight change-detection token for the HTTP API:
+// clients compare consecutive tokens to know whether any mutation has occurred.
+func (db *DB) GetChangeToken() (string, error) {
+	var token string
+	err := db.conn.QueryRow(`SELECT CAST(COALESCE(MAX(rowid), 0) AS TEXT) FROM action_log`).Scan(&token)
+	if err != nil {
+		return "0", err
+	}
+	return token, nil
+}
