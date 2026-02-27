@@ -142,9 +142,14 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		// Normalize entity and action types to canonical forms
+		// Normalize entity and action types to canonical forms.
+		// Skip action type normalization if already canonical to avoid
+		// double-normalization (e.g. "delete" → "soft_delete").
 		canonicalEntity, _ := tdevents.NormalizeEntityType(ev.EntityType)
-		canonicalAction := tdevents.NormalizeActionType(ev.ActionType)
+		canonicalAction := ev.ActionType
+		if !tdevents.IsValidActionType(ev.ActionType) {
+			canonicalAction = string(tdevents.NormalizeActionType(ev.ActionType))
+		}
 
 		events[i] = tdsync.Event{
 			ClientActionID:  ev.ClientActionID,
