@@ -100,7 +100,7 @@ func init() {
 	taskCmd.AddCommand(taskListCmd)
 
 	// Copy relevant flags from createCmd to taskCreateCmd
-	taskCreateCmd.Flags().String("title", "", "Issue title")
+	taskCreateCmd.Flags().String("title", "", "Issue title (max 100 characters)")
 	taskCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	taskCreateCmd.Flags().StringP("description", "d", "", "Description text")
 	taskCreateCmd.Flags().String("labels", "", "Comma-separated labels")

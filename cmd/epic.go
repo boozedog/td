@@ -100,7 +100,7 @@ func init() {
 	epicCmd.AddCommand(epicListCmd)
 
 	// Copy relevant flags from createCmd to epicCreateCmd
-	epicCreateCmd.Flags().String("title", "", "Issue title")
+	epicCreateCmd.Flags().String("title", "", "Issue title (max 100 characters)")
 	epicCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	epicCreateCmd.Flags().StringP("description", "d", "", "Description text")
 	epicCreateCmd.Flags().String("labels", "", "Comma-separated labels")

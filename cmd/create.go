@@ -235,7 +235,7 @@ var createCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(createCmd)
 
-	createCmd.Flags().String("title", "", "Issue title")
+	createCmd.Flags().String("title", "", "Issue title (max 100 characters)")
 	createCmd.Flags().StringP("type", "t", "", "Issue type (bug, feature, task, epic, chore)")
 	createCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	createCmd.Flags().Int("points", 0, "Story points (Fibonacci: 1,2,3,5,8,13,21)")
