@@ -24,6 +24,10 @@ Use td usage -q after first read.
 var KnownAgentFiles = []string{
 	"AGENTS.md",
 	"CLAUDE.md",
+	"CLAUDE.local.md",
+	"GEMINI.md",
+	"GEMINI.local.md",
+	"CODEX.md",
 	"COPILOT.md",
 	"CURSOR.md",
 	".github/copilot-instructions.md",
@@ -44,26 +48,25 @@ func DetectAgentFile(baseDir string) string {
 // PreferredAgentFile returns the best agent file to use for installation.
 // Priority:
 // 1. If AGENTS.md exists, use it (td supports many agents)
-// 2. If only CLAUDE.md exists, use it
-// 3. If both or neither exist, prefer AGENTS.md
+// 2. Use the first existing known agent file
+// 3. If none exist, prefer AGENTS.md for new installations
 func PreferredAgentFile(baseDir string) string {
 	agentsPath := filepath.Join(baseDir, "AGENTS.md")
-	claudePath := filepath.Join(baseDir, "CLAUDE.md")
-
-	agentsExists := fileExists(agentsPath)
-	claudeExists := fileExists(claudePath)
 
 	// If AGENTS.md exists, always prefer it
-	if agentsExists {
+	if fileExists(agentsPath) {
 		return agentsPath
 	}
 
-	// If only CLAUDE.md exists, use it
-	if claudeExists {
-		return claudePath
+	// Use the first existing known agent file
+	for _, name := range KnownAgentFiles[1:] { // skip AGENTS.md, already checked
+		path := filepath.Join(baseDir, name)
+		if fileExists(path) {
+			return path
+		}
 	}
 
-	// Neither exists - prefer AGENTS.md for new installations
+	// None exist - prefer AGENTS.md for new installations
 	return agentsPath
 }
 
@@ -74,6 +77,18 @@ func HasTDInstructions(path string) bool {
 		return false
 	}
 	return strings.Contains(string(content), "td usage")
+}
+
+// AnyFileHasTDInstructions checks all known agent files in baseDir for td instructions.
+// Returns true if any file already contains the instructions (dedup check).
+func AnyFileHasTDInstructions(baseDir string) bool {
+	for _, name := range KnownAgentFiles {
+		path := filepath.Join(baseDir, name)
+		if HasTDInstructions(path) {
+			return true
+		}
+	}
+	return false
 }
 
 // InstallInstructions adds td instructions to an agent file.

@@ -417,8 +417,9 @@ var readyCmd = &cobra.Command{
 	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := runListShortcut(db.ListIssuesOptions{
-			Status: []models.Status{models.StatusOpen},
-			SortBy: "priority",
+			Status:             []models.Status{models.StatusOpen},
+			SortBy:             "priority",
+			ExcludeHasOpenDeps: true,
 		})
 		if err != nil {
 			return err
@@ -441,9 +442,10 @@ var nextCmd = &cobra.Command{
 	GroupID: "shortcuts",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := runListShortcut(db.ListIssuesOptions{
-			Status: []models.Status{models.StatusOpen},
-			SortBy: "priority",
-			Limit:  1,
+			Status:             []models.Status{models.StatusOpen},
+			SortBy:             "priority",
+			Limit:              1,
+			ExcludeHasOpenDeps: true,
 		})
 		if err != nil {
 			return err

@@ -91,28 +91,12 @@ var usageCmd = &cobra.Command{
 		})
 
 		// Get ready issues (open, not blocked by dependencies)
-		openIssues, _ := database.ListIssues(db.ListIssuesOptions{
-			Status: []models.Status{models.StatusOpen},
-			SortBy: "priority",
+		ready, _ := database.ListIssues(db.ListIssuesOptions{
+			Status:             []models.Status{models.StatusOpen},
+			SortBy:             "priority",
+			Limit:              3,
+			ExcludeHasOpenDeps: true,
 		})
-		var ready []models.Issue
-		for _, issue := range openIssues {
-			deps, _ := database.GetDependencies(issue.ID)
-			isBlocked := false
-			for _, depID := range deps {
-				depIssue, err := database.GetIssue(depID)
-				if err == nil && depIssue.Status != models.StatusClosed {
-					isBlocked = true
-					break
-				}
-			}
-			if !isBlocked {
-				ready = append(ready, issue)
-				if len(ready) >= 3 {
-					break
-				}
-			}
-		}
 
 		if jsonOutput {
 			result := map[string]interface{}{

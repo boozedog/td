@@ -2202,10 +2202,7 @@ func (m Model) doInstallInstructions() tea.Cmd {
 func (m Model) checkFirstRun() tea.Cmd {
 	return func() tea.Msg {
 		agentPath := agent.DetectAgentFile(m.BaseDir)
-		hasTD := false
-		if agentPath != "" {
-			hasTD = agent.HasTDInstructions(agentPath)
-		}
+		hasTD := agent.AnyFileHasTDInstructions(m.BaseDir)
 
 		return FirstRunCheckMsg{
 			IsFirstRun:      !hasTD, // Show modal if no instructions found
