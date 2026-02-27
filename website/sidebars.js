@@ -26,6 +26,15 @@ const sidebars = {
     },
     {
       type: 'category',
+      label: 'HTTP API',
+      items: [
+        'http-api/overview',
+        'http-api/api-reference',
+        'http-api/authentication',
+      ],
+    },
+    {
+      type: 'category',
       label: 'Reference',
       items: [
         'command-reference',
