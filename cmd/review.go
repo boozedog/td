@@ -354,13 +354,13 @@ Supports bulk operations:
 			}
 
 			if eligibility.RequiresReason && reason == "" {
-				if !all {
-					msg := fmt.Sprintf("creator approval exception requires --reason for %s", issueID)
-					if jsonOutput {
-						output.JSONError(output.ErrCodeInvalidInput, msg)
-					} else {
-						output.Error("%s", msg)
-					}
+				msg := fmt.Sprintf("creator approval exception requires --reason for %s", issueID)
+				if jsonOutput {
+					output.JSONError(output.ErrCodeInvalidInput, msg)
+				} else if !all {
+					output.Error("%s", msg)
+				} else {
+					output.Warning("skipping %s: creator approval exception requires --reason", issueID)
 				}
 				skipped++
 				continue

@@ -23,6 +23,7 @@ func TestEvaluateApproveEligibility(t *testing.T) {
 		wasImplementationInvolved bool
 		balanced                  bool
 		minor                     bool
+		noImplementer             bool
 		wantAllowed               bool
 		wantCreatorException      bool
 		wantRequiresReason        bool
@@ -86,12 +87,24 @@ func TestEvaluateApproveEligibility(t *testing.T) {
 			minor:                     true,
 			wantAllowed:               true,
 		},
+		{
+			name:                      "balanced blocks creator when no implementer set",
+			sessionID:                 "ses_creator",
+			wasInvolved:               true,
+			wasImplementationInvolved: false,
+			balanced:                  true,
+			noImplementer:             true,
+			wantAllowed:               false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			i := *issue
 			i.Minor = tt.minor
+			if tt.noImplementer {
+				i.ImplementerSession = ""
+			}
 			got := evaluateApproveEligibility(&i, tt.sessionID, tt.wasInvolved, tt.wasImplementationInvolved, tt.balanced)
 			if got.Allowed != tt.wantAllowed {
 				t.Fatalf("Allowed=%v, want %v", got.Allowed, tt.wantAllowed)

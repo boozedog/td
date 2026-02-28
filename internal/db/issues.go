@@ -340,6 +340,54 @@ func (db *DB) RestoreIssue(id string) error {
 	})
 }
 
+// ReviewableByFilter returns the SQL fragment and args for the ReviewableBy filter.
+// It is exported so that other packages (e.g. internal/api) can reuse the same policy logic.
+func ReviewableByFilter(sessionID string, balanced bool) (string, []interface{}) {
+	if balanced {
+		sql := ` AND status = ? AND implementer_session != '' AND (
+			minor = 1 OR (
+				implementer_session != ?
+				AND (
+					(
+						(creator_session = '' OR creator_session != ?)
+						AND NOT EXISTS (
+							SELECT 1 FROM issue_session_history
+							WHERE issue_id = issues.id AND session_id = ?
+						)
+					)
+					OR
+					(
+						creator_session = ?
+						AND implementer_session != ?
+						AND NOT EXISTS (
+							SELECT 1 FROM issue_session_history
+							WHERE issue_id = issues.id
+							  AND session_id = ?
+							  AND action IN ('started', 'unstarted')
+						)
+					)
+				)
+			)
+		)`
+		return sql, []interface{}{
+			models.StatusInReview,
+			sessionID, sessionID, sessionID,
+			sessionID, sessionID, sessionID,
+		}
+	}
+	sql := ` AND status = ? AND implementer_session != '' AND (
+		minor = 1 OR (
+			implementer_session != ?
+			AND (creator_session = '' OR creator_session != ?)
+			AND NOT EXISTS (
+				SELECT 1 FROM issue_session_history
+				WHERE issue_id = issues.id AND session_id = ?
+			)
+		)
+	)`
+	return sql, []interface{}{models.StatusInReview, sessionID, sessionID, sessionID}
+}
+
 // ListIssues returns issues matching the filter
 func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	query := `SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
@@ -435,55 +483,9 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	// - Balanced mode: strict mode OR creator-only exception
 	//   (creator can review if someone else implemented and creator never started/unstarted it)
 	if opts.ReviewableBy != "" {
-		if opts.BalancedReviewPolicy {
-			query += ` AND status = ? AND implementer_session != '' AND (
-				minor = 1 OR (
-					implementer_session != ?
-					AND (
-						(
-							(creator_session = '' OR creator_session != ?)
-							AND NOT EXISTS (
-								SELECT 1 FROM issue_session_history
-								WHERE issue_id = issues.id AND session_id = ?
-							)
-						)
-						OR
-						(
-							creator_session = ?
-							AND implementer_session != ?
-							AND NOT EXISTS (
-								SELECT 1 FROM issue_session_history
-								WHERE issue_id = issues.id
-								  AND session_id = ?
-								  AND action IN ('started', 'unstarted')
-							)
-						)
-					)
-				)
-			)`
-			args = append(
-				args,
-				models.StatusInReview,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-				opts.ReviewableBy,
-			)
-		} else {
-			query += ` AND status = ? AND implementer_session != '' AND (
-				minor = 1 OR (
-					implementer_session != ?
-					AND (creator_session = '' OR creator_session != ?)
-					AND NOT EXISTS (
-						SELECT 1 FROM issue_session_history
-						WHERE issue_id = issues.id AND session_id = ?
-					)
-				)
-			)`
-			args = append(args, models.StatusInReview, opts.ReviewableBy, opts.ReviewableBy, opts.ReviewableBy)
-		}
+		fragment, fargs := ReviewableByFilter(opts.ReviewableBy, opts.BalancedReviewPolicy)
+		query += fragment
+		args = append(args, fargs...)
 	}
 
 	// Parent filter
