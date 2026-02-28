@@ -2,16 +2,21 @@
 
 All notable changes to td are documented in this file.
 
-## [Unreleased]
+## [v0.40.0] - 2026-02-27
 
 ### Features
+- Add search/filter to help modal (press `/` to filter) (#25)
+- Add scroll support to form modal
 - Add `balanced_review_policy` feature flag (default on)
   - Allows creator-only approvals when a different session implemented the issue
   - Requires `--reason` for creator-exception approvals and logs them to security audit
   - Keeps implementer/self-approval blocked for non-minor issues
 
 ### Improvements
-- Align `reviewable`/`in-review`/`status` reviewability hints with actual policy checks
+- Align `reviewable`/`in-review`/`status` reviewability hints with actual policy check
+
+### Documentation
+- Document balanced review policy in core workflow and references
 
 ## [v0.39.0] - 2026-02-26
 
