@@ -269,14 +269,13 @@ Supports bulk operations:
 
 		jsonOutput, _ := cmd.Flags().GetBool("json")
 		all, _ := cmd.Flags().GetBool("all")
+		balancedPolicy := balancedReviewPolicyEnabled(baseDir)
 
 		// Build list of issue IDs to approve
 		var issueIDs []string
 		if all {
-			// Get all reviewable issues (in_review and not implemented by current session)
-			issues, err := database.ListIssues(db.ListIssuesOptions{
-				ReviewableBy: sess.ID,
-			})
+			// Get all issues reviewable by current policy.
+			issues, err := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
 			if err != nil {
 				output.Error("failed to list reviewable issues: %v", err)
 				return err
@@ -321,26 +320,46 @@ Supports bulk operations:
 				continue
 			}
 
-			// Check that reviewer was not involved with this issue (unless minor task)
-			// Handle DB errors conservatively - assume involvement on error
+			reason := approvalReason(cmd)
+
+			// Check session involvement (conservative on DB errors).
 			wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
 			if err != nil {
 				output.Warning("failed to check session history for %s: %v", issueID, err)
 				wasInvolved = true // Conservative: assume involvement on error
 			}
 
-			// Also check if session is creator or implementer (defensive fallback)
-			isCreator := issue.CreatorSession != "" && issue.CreatorSession == sess.ID
-			isImplementer := issue.ImplementerSession != "" && issue.ImplementerSession == sess.ID
-			wasEverInvolved := wasInvolved || isCreator || isImplementer
+			wasImplementationInvolved := false
+			if balancedPolicy && !issue.Minor {
+				implInvolved, implErr := database.WasSessionImplementationInvolved(issueID, sess.ID)
+				if implErr != nil {
+					output.Warning("failed to check implementation history for %s: %v", issueID, implErr)
+					wasImplementationInvolved = true // Conservative: assume implementation involvement
+				} else {
+					wasImplementationInvolved = implInvolved
+				}
+			}
 
-			if wasEverInvolved && !issue.Minor {
+			eligibility := evaluateApproveEligibility(issue, sess.ID, wasInvolved, wasImplementationInvolved, balancedPolicy)
+			if !eligibility.Allowed {
 				if !all { // Only show error for explicit requests
-					errMsg := fmt.Sprintf("cannot approve: you were involved with %s (created, started, or previously worked on)", issueID)
 					if jsonOutput {
-						output.JSONError(output.ErrCodeCannotSelfApprove, errMsg)
+						output.JSONError(output.ErrCodeCannotSelfApprove, eligibility.RejectionMessage)
 					} else {
-						output.Error("%s", errMsg)
+						output.Error("%s", eligibility.RejectionMessage)
+					}
+				}
+				skipped++
+				continue
+			}
+
+			if eligibility.RequiresReason && reason == "" {
+				if !all {
+					msg := fmt.Sprintf("creator approval exception requires --reason for %s", issueID)
+					if jsonOutput {
+						output.JSONError(output.ErrCodeInvalidInput, msg)
+					} else {
+						output.Error("%s", msg)
 					}
 				}
 				skipped++
@@ -365,17 +384,31 @@ Supports bulk operations:
 			}
 
 			// Log (supports --reason, --message, --comment)
-			reason := approvalReason(cmd)
 			logMsg := "Approved"
+			logType := models.LogTypeProgress
 			if reason != "" {
 				logMsg = reason
+			}
+			if eligibility.CreatorException {
+				agentInfo := sess.AgentType
+				if agentInfo == "" {
+					agentInfo = "Unknown Agent"
+				}
+				logMsg = fmt.Sprintf("[%s] Approved (CREATOR EXCEPTION: %s)", agentInfo, reason)
+				logType = models.LogTypeSecurity
+				db.LogSecurityEvent(baseDir, db.SecurityEvent{
+					IssueID:   issueID,
+					SessionID: sess.ID,
+					AgentType: sess.AgentType,
+					Reason:    "creator_approval_exception: " + reason,
+				})
 			}
 
 			if err := database.AddLog(&models.Log{
 				IssueID:   issueID,
 				SessionID: sess.ID,
 				Message:   logMsg,
-				Type:      models.LogTypeProgress,
+				Type:      logType,
 			}); err != nil {
 				output.Warning("add log failed: %v", err)
 			}
@@ -383,7 +416,11 @@ Supports bulk operations:
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
 
-			fmt.Printf("APPROVED %s (reviewer: %s)\n", issueID, sess.ID)
+			if eligibility.CreatorException {
+				fmt.Printf("APPROVED %s (reviewer: %s, creator exception)\n", issueID, sess.ID)
+			} else {
+				fmt.Printf("APPROVED %s (reviewer: %s)\n", issueID, sess.ID)
+			}
 
 			// Cascade up: if all siblings are closed, update parent epic
 			if count, ids := database.CascadeUpParentStatus(issueID, models.StatusClosed, sess.ID); count > 0 {

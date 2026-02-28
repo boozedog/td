@@ -9,7 +9,8 @@ import (
 
 const securityEventsFile = ".todos/security_events.jsonl"
 
-// SecurityEvent represents a security-relevant action (like a self-close exception)
+// SecurityEvent represents a security-relevant workflow exception
+// (for example, self-close or creator-approval exceptions).
 type SecurityEvent struct {
 	Timestamp time.Time `json:"ts"`
 	IssueID   string    `json:"issue_id"`

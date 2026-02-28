@@ -7,7 +7,7 @@ import (
 var statsSecurityCmd = &cobra.Command{
 	Use:   "security",
 	Short: "View security exception log (alias for 'td security')",
-	Long:  `Shows audit log of issues closed using --self-close-exception.`,
+	Long:  `Shows audit log of creator-approval and self-close workflow exceptions.`,
 	RunE:  securityCmd.RunE,
 }
 

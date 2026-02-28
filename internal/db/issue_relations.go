@@ -593,6 +593,20 @@ func (db *DB) WasSessionInvolved(issueID, sessionID string) (bool, error) {
 	return count > 0, err
 }
 
+// WasSessionImplementationInvolved checks if a session ever touched implementation
+// flow for an issue (start/unstart). This is used for balanced review policy:
+// creator-only approvals are allowed only when creator never implemented.
+func (db *DB) WasSessionImplementationInvolved(issueID, sessionID string) (bool, error) {
+	issueID = NormalizeIssueID(issueID)
+	var count int
+	err := db.conn.QueryRow(`
+		SELECT COUNT(*) FROM issue_session_history
+		WHERE issue_id = ? AND session_id = ?
+		  AND action IN (?, ?)
+	`, issueID, sessionID, models.ActionSessionStarted, models.ActionSessionUnstarted).Scan(&count)
+	return count > 0, err
+}
+
 // GetSessionHistory returns all session interactions for an issue
 func (db *DB) GetSessionHistory(issueID string) ([]models.IssueSessionHistory, error) {
 	issueID = NormalizeIssueID(issueID)

@@ -193,7 +193,9 @@ var listCmd = &cobra.Command{
 				output.Error("%v", err)
 				return err
 			}
-			opts.ReviewableBy = sess.ID
+			reviewOpts := reviewableByOptions(getBaseDir(), sess.ID)
+			opts.ReviewableBy = reviewOpts.ReviewableBy
+			opts.BalancedReviewPolicy = reviewOpts.BalancedReviewPolicy
 		}
 
 		// Mine filter (issues where current session is implementer)
@@ -330,7 +332,7 @@ var reviewableCmd = &cobra.Command{
 			return err
 		}
 
-		result, err := runListShortcut(db.ListIssuesOptions{ReviewableBy: sess.ID})
+		result, err := runListShortcut(reviewableByOptions(getBaseDir(), sess.ID))
 		if err != nil {
 			return err
 		}
@@ -396,9 +398,15 @@ var inReviewCmd = &cobra.Command{
 			return err
 		}
 
+		reviewable, _ := database.ListIssues(reviewableByOptions(getBaseDir(), sess.ID))
+		reviewableIDs := make(map[string]bool, len(reviewable))
+		for _, r := range reviewable {
+			reviewableIDs[r.ID] = true
+		}
+
 		for _, issue := range result.issues {
 			reviewable := ""
-			if issue.ImplementerSession != sess.ID {
+			if reviewableIDs[issue.ID] {
 				reviewable = " [reviewable]"
 			}
 			fmt.Printf("%s  (impl: %s)%s\n", output.FormatIssueShort(&issue), issue.ImplementerSession, reviewable)

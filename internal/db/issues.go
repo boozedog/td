@@ -11,36 +11,37 @@ import (
 
 // ListIssuesOptions contains filter options for listing issues
 type ListIssuesOptions struct {
-	Status         []models.Status
-	Type           []models.Type
-	Priority       string
-	Labels         []string
-	IncludeDeleted bool
-	OnlyDeleted    bool
-	Search         string
-	Implementer    string
-	Reviewer       string
-	ReviewableBy   string // Issues that this session can review
-	ParentID       string
-	EpicID         string // Filter by epic (parent_id matches epic, recursively)
-	PointsMin      int
-	PointsMax      int
-	CreatedAfter   time.Time
-	CreatedBefore  time.Time
-	UpdatedAfter   time.Time
-	UpdatedBefore  time.Time
-	ClosedAfter    time.Time
-	ClosedBefore   time.Time
-	SortBy          string
-	SortDesc        bool
-	Limit           int
-	IDs             []string
-	ExcludeDeferred    bool // Hide issues where defer_until > today
-	DeferredOnly       bool // Show ONLY deferred issues (defer_until > today)
-	OverdueOnly        bool // Show ONLY overdue issues (due_date < today, not closed)
-	SurfacingOnly      bool // Show ONLY surfacing issues (defer_until <= today, defer_count > 0)
-	DueSoonDays        int  // Show issues due within N days (0 = disabled)
-	ExcludeHasOpenDeps bool // Hide issues that have unresolved (non-closed) dependencies
+	Status               []models.Status
+	Type                 []models.Type
+	Priority             string
+	Labels               []string
+	IncludeDeleted       bool
+	OnlyDeleted          bool
+	Search               string
+	Implementer          string
+	Reviewer             string
+	ReviewableBy         string // Issues that this session can review
+	BalancedReviewPolicy bool   // Allow creator-only approvals/reviews when externally implemented
+	ParentID             string
+	EpicID               string // Filter by epic (parent_id matches epic, recursively)
+	PointsMin            int
+	PointsMax            int
+	CreatedAfter         time.Time
+	CreatedBefore        time.Time
+	UpdatedAfter         time.Time
+	UpdatedBefore        time.Time
+	ClosedAfter          time.Time
+	ClosedBefore         time.Time
+	SortBy               string
+	SortDesc             bool
+	Limit                int
+	IDs                  []string
+	ExcludeDeferred      bool // Hide issues where defer_until > today
+	DeferredOnly         bool // Show ONLY deferred issues (defer_until > today)
+	OverdueOnly          bool // Show ONLY overdue issues (due_date < today, not closed)
+	SurfacingOnly        bool // Show ONLY surfacing issues (defer_until <= today, defer_count > 0)
+	DueSoonDays          int  // Show issues due within N days (0 = disabled)
+	ExcludeHasOpenDeps   bool // Hide issues that have unresolved (non-closed) dependencies
 }
 
 // CreateIssue creates a new issue WITHOUT logging to action_log.
@@ -430,19 +431,59 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 	// Reviewable by (issues that can be reviewed by this session)
 	// Must be in_review with implementer, and either:
 	// - Minor task (always self-reviewable), OR
-	// - Session is not implementer, not creator, and not in session history
+	// - Strict mode: session is not implementer, not creator, and not in session history
+	// - Balanced mode: strict mode OR creator-only exception
+	//   (creator can review if someone else implemented and creator never started/unstarted it)
 	if opts.ReviewableBy != "" {
-		query += ` AND status = ? AND implementer_session != '' AND (
-			minor = 1 OR (
-				implementer_session != ?
-				AND (creator_session = '' OR creator_session != ?)
-				AND NOT EXISTS (
-					SELECT 1 FROM issue_session_history
-					WHERE issue_id = issues.id AND session_id = ?
+		if opts.BalancedReviewPolicy {
+			query += ` AND status = ? AND implementer_session != '' AND (
+				minor = 1 OR (
+					implementer_session != ?
+					AND (
+						(
+							(creator_session = '' OR creator_session != ?)
+							AND NOT EXISTS (
+								SELECT 1 FROM issue_session_history
+								WHERE issue_id = issues.id AND session_id = ?
+							)
+						)
+						OR
+						(
+							creator_session = ?
+							AND implementer_session != ?
+							AND NOT EXISTS (
+								SELECT 1 FROM issue_session_history
+								WHERE issue_id = issues.id
+								  AND session_id = ?
+								  AND action IN ('started', 'unstarted')
+							)
+						)
+					)
 				)
+			)`
+			args = append(
+				args,
+				models.StatusInReview,
+				opts.ReviewableBy,
+				opts.ReviewableBy,
+				opts.ReviewableBy,
+				opts.ReviewableBy,
+				opts.ReviewableBy,
+				opts.ReviewableBy,
 			)
-		)`
-		args = append(args, models.StatusInReview, opts.ReviewableBy, opts.ReviewableBy, opts.ReviewableBy)
+		} else {
+			query += ` AND status = ? AND implementer_session != '' AND (
+				minor = 1 OR (
+					implementer_session != ?
+					AND (creator_session = '' OR creator_session != ?)
+					AND NOT EXISTS (
+						SELECT 1 FROM issue_session_history
+						WHERE issue_id = issues.id AND session_id = ?
+					)
+				)
+			)`
+			args = append(args, models.StatusInReview, opts.ReviewableBy, opts.ReviewableBy, opts.ReviewableBy)
+		}
 	}
 
 	// Parent filter

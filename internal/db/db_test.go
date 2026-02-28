@@ -930,6 +930,18 @@ func TestReviewableByFilter(t *testing.T) {
 	}
 	createIssue(issue5)
 
+	// Issue 6: Creator-only candidate but creator also touched implementation history
+	issue6 := &models.Issue{
+		Title:              "Creator touched implementation history",
+		Status:             models.StatusInReview,
+		ImplementerSession: sessionB,
+		CreatorSession:     sessionA,
+	}
+	createIssue(issue6)
+	if err := db.RecordSessionAction(issue6.ID, sessionA, models.ActionSessionStarted); err != nil {
+		t.Fatalf("RecordSessionAction failed: %v", err)
+	}
+
 	// Test: Session A can only review issue4 (minor) and issue5 (clean)
 	t.Run("session A reviewable", func(t *testing.T) {
 		reviewable, err := db.ListIssues(ListIssuesOptions{ReviewableBy: sessionA})
@@ -960,9 +972,51 @@ func TestReviewableByFilter(t *testing.T) {
 		if ids[issue3.ID] {
 			t.Errorf("Session A should NOT be able to review %s (in session history)", issue3.ID)
 		}
+		if ids[issue6.ID] {
+			t.Errorf("Session A should NOT be able to review %s (creator touched implementation history)", issue6.ID)
+		}
 
 		if len(reviewable) != 2 {
 			t.Errorf("Expected 2 reviewable issues for A, got %d", len(reviewable))
+		}
+	})
+
+	t.Run("session A reviewable balanced policy", func(t *testing.T) {
+		reviewable, err := db.ListIssues(ListIssuesOptions{
+			ReviewableBy:         sessionA,
+			BalancedReviewPolicy: true,
+		})
+		if err != nil {
+			t.Fatalf("ListIssues failed: %v", err)
+		}
+
+		ids := make(map[string]bool)
+		for _, issue := range reviewable {
+			ids[issue.ID] = true
+		}
+
+		if !ids[issue2.ID] {
+			t.Errorf("Session A should be able to review %s under balanced policy (creator-only exception)", issue2.ID)
+		}
+		if !ids[issue4.ID] {
+			t.Errorf("Session A should be able to review %s under balanced policy", issue4.ID)
+		}
+		if !ids[issue5.ID] {
+			t.Errorf("Session A should be able to review %s under balanced policy", issue5.ID)
+		}
+
+		if ids[issue1.ID] {
+			t.Errorf("Session A should NOT be able to review %s (implementer)", issue1.ID)
+		}
+		if ids[issue3.ID] {
+			t.Errorf("Session A should NOT be able to review %s (history involvement)", issue3.ID)
+		}
+		if ids[issue6.ID] {
+			t.Errorf("Session A should NOT be able to review %s (creator touched implementation history)", issue6.ID)
+		}
+
+		if len(reviewable) != 3 {
+			t.Errorf("Expected 3 reviewable issues for A under balanced policy, got %d", len(reviewable))
 		}
 	})
 

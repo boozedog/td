@@ -17,6 +17,14 @@ type Feature struct {
 }
 
 var (
+	// BalancedReviewPolicy allows creator-only approval for issues implemented by
+	// a different session, while still blocking implementer/self approval.
+	BalancedReviewPolicy = Feature{
+		Name:        "balanced_review_policy",
+		Default:     true,
+		Description: "Allow creator-only approvals for externally implemented issues with audit logging",
+	}
+
 	// SyncCLI gates user-facing sync/auth commands.
 	SyncCLI = Feature{
 		Name:        "sync_cli",
@@ -47,6 +55,7 @@ var (
 )
 
 var allFeatures = []Feature{
+	BalancedReviewPolicy,
 	SyncAutosync,
 	SyncCLI,
 	SyncMonitorPrompt,

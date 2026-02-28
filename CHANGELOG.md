@@ -4,6 +4,15 @@ All notable changes to td are documented in this file.
 
 ## [Unreleased]
 
+### Features
+- Add `balanced_review_policy` feature flag (default on)
+  - Allows creator-only approvals when a different session implemented the issue
+  - Requires `--reason` for creator-exception approvals and logs them to security audit
+  - Keeps implementer/self-approval blocked for non-minor issues
+
+### Improvements
+- Align `reviewable`/`in-review`/`status` reviewability hints with actual policy checks
+
 ## [v0.39.0] - 2026-02-26
 
 ### Features

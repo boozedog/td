@@ -11,8 +11,8 @@ import (
 
 var securityCmd = &cobra.Command{
 	Use:     "security",
-	Short:   "View security exception log (self-close exceptions)",
-	Long:    `Shows audit log of issues closed using --self-close-exception.`, 
+	Short:   "View security exception log (review/close exceptions)",
+	Long:    `Shows audit log of creator-approval and self-close workflow exceptions.`,
 	GroupID: "system",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		baseDir := getBaseDir()

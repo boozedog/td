@@ -159,6 +159,45 @@ func TestWasSessionInvolvedNormalizesID(t *testing.T) {
 	}
 }
 
+// TestWasSessionImplementationInvolved verifies started/unstarted detection only.
+func TestWasSessionImplementationInvolved(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer db.Close()
+
+	issue := &models.Issue{Title: "Test Issue"}
+	if err := db.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	// "created" does not count as implementation involvement.
+	if err := db.RecordSessionAction(issue.ID, "ses_test", models.ActionSessionCreated); err != nil {
+		t.Fatalf("RecordSessionAction failed: %v", err)
+	}
+	involved, err := db.WasSessionImplementationInvolved(issue.ID, "ses_test")
+	if err != nil {
+		t.Fatalf("WasSessionImplementationInvolved failed: %v", err)
+	}
+	if involved {
+		t.Fatal("created action should not count as implementation involvement")
+	}
+
+	// "started" counts.
+	if err := db.RecordSessionAction(issue.ID, "ses_test", models.ActionSessionStarted); err != nil {
+		t.Fatalf("RecordSessionAction failed: %v", err)
+	}
+	involved, err = db.WasSessionImplementationInvolved(issue.ID, "ses_test")
+	if err != nil {
+		t.Fatalf("WasSessionImplementationInvolved failed: %v", err)
+	}
+	if !involved {
+		t.Fatal("started action should count as implementation involvement")
+	}
+}
+
 // TestGetSessionHistory verifies history retrieval and ordering
 func TestGetSessionHistory(t *testing.T) {
 	dir := t.TempDir()

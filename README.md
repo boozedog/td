@@ -365,6 +365,8 @@ td add "Update comment" --minor
 
 Minor tasks bypass session-based review—you can approve your own work. Use sparingly for documentation fixes, typos, and other low-risk changes.
 
+For non-minor tasks, td now supports a balanced review policy (on by default): the creator can approve only if a different session implemented the issue, and the approval must include a reason. Implementers still cannot approve their own implementation.
+
 ## Analytics & Stats
 
 Track usage patterns and system health:
@@ -373,7 +375,7 @@ Track usage patterns and system health:
 # Command usage statistics
 td stats analytics
 
-# Security audit log (self-close exceptions)
+# Security audit log (workflow exceptions: creator-approval + self-close)
 td stats security
 
 # Failed command attempts

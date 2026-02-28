@@ -86,9 +86,7 @@ var usageCmd = &cobra.Command{
 		})
 
 		// Get reviewable issues
-		reviewable, _ := database.ListIssues(db.ListIssuesOptions{
-			ReviewableBy: sess.ID,
-		})
+		reviewable, _ := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
 
 		// Get ready issues (open, not blocked by dependencies)
 		ready, _ := database.ListIssues(db.ListIssuesOptions{

@@ -49,9 +49,7 @@ var infoCmd = &cobra.Command{
 		projectName := filepath.Base(baseDir)
 
 		// Review queue
-		reviewable, _ := database.ListIssues(db.ListIssuesOptions{
-			ReviewableBy: sess.ID,
-		})
+		reviewable, _ := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
 		inReview, _ := database.ListIssues(db.ListIssuesOptions{
 			Status: []models.Status{models.StatusInReview},
 		})

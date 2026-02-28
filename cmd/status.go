@@ -72,15 +72,20 @@ func outputStatusDashboard(database *db.DB, baseDir, sessionID string) error {
 		Status: []models.Status{models.StatusInReview},
 		SortBy: "priority",
 	})
+	reviewableByMe, _ := database.ListIssues(reviewableByOptions(baseDir, sessionID))
+	reviewableByMeMap := make(map[string]bool, len(reviewableByMe))
+	for _, issue := range reviewableByMe {
+		reviewableByMeMap[issue.ID] = true
+	}
 
 	if len(inReview) > 0 {
 		fmt.Printf("IN REVIEW (%d):\n", len(inReview))
 		for _, issue := range inReview {
 			reviewable := ""
-			if issue.ImplementerSession != sessionID {
+			if reviewableByMeMap[issue.ID] {
 				reviewable = " (reviewable by you)"
 			} else {
-				reviewable = " (you implemented)"
+				reviewable = " (not reviewable by you)"
 			}
 			fmt.Printf("  %s \"%s\"%s\n", issue.ID, issue.Title, reviewable)
 		}
@@ -143,9 +148,9 @@ func outputStatusJSON(database *db.DB, baseDir, sessionID string) error {
 		if err == nil {
 			logs, _ := database.GetLogs(issue.ID, 10)
 			result["focused"] = map[string]interface{}{
-				"issue":      issue,
-				"log_count":  len(logs),
-				"last_log":   getLastLogTime(logs),
+				"issue":     issue,
+				"log_count": len(logs),
+				"last_log":  getLastLogTime(logs),
 			}
 		}
 	}
@@ -155,11 +160,16 @@ func outputStatusJSON(database *db.DB, baseDir, sessionID string) error {
 		Status: []models.Status{models.StatusInReview},
 		SortBy: "priority",
 	})
+	reviewableByMeList, _ := database.ListIssues(reviewableByOptions(baseDir, sessionID))
+	reviewableByMeMap := make(map[string]bool, len(reviewableByMeList))
+	for _, issue := range reviewableByMeList {
+		reviewableByMeMap[issue.ID] = true
+	}
 
 	reviewableByMe := []models.Issue{}
 	implementedByMe := []models.Issue{}
 	for _, issue := range inReview {
-		if issue.ImplementerSession != sessionID {
+		if reviewableByMeMap[issue.ID] {
 			reviewableByMe = append(reviewableByMe, issue)
 		} else {
 			implementedByMe = append(implementedByMe, issue)
@@ -167,9 +177,9 @@ func outputStatusJSON(database *db.DB, baseDir, sessionID string) error {
 	}
 
 	result["in_review"] = map[string]interface{}{
-		"reviewable_by_you":   reviewableByMe,
-		"implemented_by_you":  implementedByMe,
-		"total":               len(inReview),
+		"reviewable_by_you":  reviewableByMe,
+		"implemented_by_you": implementedByMe,
+		"total":              len(inReview),
 	}
 
 	// Get blocked issues
@@ -182,8 +192,8 @@ func outputStatusJSON(database *db.DB, baseDir, sessionID string) error {
 	for _, issue := range blocked {
 		deps, _ := database.GetDependencies(issue.ID)
 		blockedWithDeps = append(blockedWithDeps, map[string]interface{}{
-			"issue":       issue,
-			"depends_on":  deps,
+			"issue":      issue,
+			"depends_on": deps,
 		})
 	}
 	result["blocked"] = blockedWithDeps
