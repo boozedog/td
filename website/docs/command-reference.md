@@ -27,7 +27,7 @@ Complete reference for all `td` commands.
 | `td handoff <id> [flags]` | Capture state. Flags: `--done`, `--remaining`, `--decision`, `--uncertain` |
 | `td review <id>` | Submit for review |
 | `td reviewable` | Show reviewable issues |
-| `td approve <id>` | Approve and close |
+| `td approve <id> [--reason "..."]` | Approve and close. Reason required for creator-exception approvals |
 | `td reject <id> --reason "..."` | Reject back to in_progress |
 | `td block <id>` | Mark as blocked |
 | `td unblock <id>` | Unblock to open |
