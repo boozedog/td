@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.41.0] - 2026-03-01
+
+### Bug Fixes
+- Fix premature title truncation in task list panel: overhead calculation in `formatIssueShort` was overestimating by 3 chars due to phantom leading spaces in tag width and a hardcoded type icon width. Task titles now display 3 more characters before truncating, giving more readable output in both `td monitor` and sidecar's embedded td view (sidecar#215)
+
 ## [v0.40.0] - 2026-02-27
 
 ### Features
