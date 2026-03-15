@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/marcus/td/internal/models"
 )
 
 // AutoSyncConfig holds auto-sync settings.
@@ -31,7 +33,8 @@ type SyncConfig struct {
 
 // Config is the global td config stored at ~/.config/td/config.json.
 type Config struct {
-	Sync SyncConfig `json:"sync"`
+	Sync    SyncConfig            `json:"sync"`
+	Webhook *models.WebhookConfig `json:"webhook,omitempty"`
 }
 
 // AuthCredentials stores authentication state at ~/.config/td/auth.json.
