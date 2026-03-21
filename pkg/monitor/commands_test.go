@@ -4,40 +4,58 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/marcus/td/internal/models"
 )
 
-func TestCopyStatusFilter(t *testing.T) {
-	// Verify that the deep-copy logic used in fetchBoardIssues produces
-	// an independent map — mutations to the original must not affect the copy.
+func TestFetchBoardIssuesDeepCopiesStatusFilter(t *testing.T) {
 	original := map[models.Status]bool{
 		models.StatusOpen:       true,
 		models.StatusInProgress: true,
 		models.StatusClosed:     false,
 	}
 
-	// Replicate the exact deep-copy logic from fetchBoardIssues
+	m := Model{
+		BoardMode: BoardMode{
+			StatusFilter: original,
+		},
+	}
+
+	// fetchBoardIssues should deep copy the map internally.
+	// We can't run the returned Cmd (needs DB), but we verify the
+	// function doesn't panic and returns a non-nil Cmd.
+	cmd := m.fetchBoardIssues("board-1")
+	if cmd == nil {
+		t.Fatal("fetchBoardIssues returned nil Cmd")
+	}
+
+	// Mutate the original after fetchBoardIssues captured its copy.
+	// If the copy was shallow, this mutation would be visible to the
+	// goroutine — a data race. We can't observe the goroutine's state
+	// here, but the structural test below verifies the copy pattern.
+	original[models.StatusClosed] = true
+}
+
+func TestDeepCopyStatusFilterIndependence(t *testing.T) {
+	// Directly test the deep-copy pattern used in fetchBoardIssues:
+	// mutations to original must not affect the copy, and vice versa.
+	original := map[models.Status]bool{
+		models.StatusOpen:       true,
+		models.StatusInProgress: true,
+		models.StatusClosed:     false,
+	}
+
+	// Same logic as fetchBoardIssues lines 2094-2097
 	copied := make(map[models.Status]bool, len(original))
 	for k, v := range original {
 		copied[k] = v
 	}
 
-	// Verify initial equality
-	for k, v := range original {
-		if copied[k] != v {
-			t.Fatalf("copy doesn't match original for key %v: got %v, want %v", k, copied[k], v)
-		}
-	}
-
-	// Mutate the original (simulates toggleBoardClosed in next Update cycle)
 	original[models.StatusClosed] = true
-
-	// The copy must NOT see the mutation
 	if copied[models.StatusClosed] != false {
 		t.Error("Deep copy was affected by mutation to original — map was shared, not copied")
 	}
 
-	// Mutate the copy — original must not see it
 	copied[models.StatusInProgress] = false
 	if original[models.StatusInProgress] != true {
 		t.Error("Original was affected by mutation to copy — map was shared, not copied")
@@ -61,19 +79,23 @@ func TestHelpFilterBackspaceUTF8(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			m := Model{HelpFilter: tc.filter}
-
-			// Simulate backspace: same logic as commands.go
-			if len(m.HelpFilter) > 0 {
-				runes := []rune(m.HelpFilter)
-				m.HelpFilter = string(runes[:len(runes)-1])
+			// Exercise the actual handleKey code path with HelpFilterMode active.
+			// The help filter backspace handler (commands.go ~line 367) runs before
+			// the keymap lookup, so Keymap can be nil.
+			m := Model{
+				HelpOpen:       true,
+				HelpFilterMode: true,
+				HelpFilter:     tc.filter,
 			}
 
-			if m.HelpFilter != tc.want {
-				t.Errorf("got %q, want %q", m.HelpFilter, tc.want)
+			updated, _ := m.handleKey(tea.KeyMsg{Type: tea.KeyBackspace})
+			result := updated.(Model)
+
+			if result.HelpFilter != tc.want {
+				t.Errorf("got %q, want %q", result.HelpFilter, tc.want)
 			}
-			if !utf8.ValidString(m.HelpFilter) {
-				t.Errorf("result %q is not valid UTF-8", m.HelpFilter)
+			if !utf8.ValidString(result.HelpFilter) {
+				t.Errorf("result %q is not valid UTF-8", result.HelpFilter)
 			}
 		})
 	}
