@@ -129,6 +129,14 @@ func autoSyncOnce() {
 	}
 
 	if syncconfig.GetAutoSyncPull() {
+		// Reload syncState after push — push updates last_sync_at in the DB
+		// but the in-memory struct is stale. ApplyRemoteEvents uses LastSyncAt
+		// for conflict detection, so a stale value causes false conflicts.
+		syncState, err = database.GetSyncState()
+		if err != nil || syncState == nil {
+			slog.Debug("autosync: reload sync state", "err", err)
+			return
+		}
 		if err := autoSyncPull(database, client, syncState, deviceID); err != nil {
 			slog.Debug("autosync: pull", "err", err)
 		}
