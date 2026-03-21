@@ -341,18 +341,19 @@ func (m Model) executeBoardEditorSave() (Model, tea.Cmd) {
 	}
 
 	isNew := m.BoardEditorMode == "create"
-	board := m.BoardEditorBoard
 
 	return m, func() tea.Msg {
 		if isNew {
 			newBoard, err := m.DB.CreateBoardLogged(name, queryStr, m.SessionID)
 			return BoardEditorSaveResultMsg{Board: newBoard, IsNew: true, Error: err}
 		}
-		// Update existing
-		board.Name = name
-		board.Query = queryStr
-		err := m.DB.UpdateBoardLogged(board, m.SessionID)
-		return BoardEditorSaveResultMsg{Board: board, IsNew: false, Error: err}
+		// Copy the board struct to avoid mutating a shared pointer from
+		// this goroutine while the BubbleTea Update loop may read it.
+		boardCopy := *m.BoardEditorBoard
+		boardCopy.Name = name
+		boardCopy.Query = queryStr
+		err := m.DB.UpdateBoardLogged(&boardCopy, m.SessionID)
+		return BoardEditorSaveResultMsg{Board: &boardCopy, IsNew: false, Error: err}
 	}
 }
 
