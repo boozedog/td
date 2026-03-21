@@ -176,8 +176,12 @@ func TestUndoIssueDelete(t *testing.T) {
 	}
 }
 
-// TestUndoIssueDeleteCreatesActionLog verifies that undoing a delete atomically
-// creates an action_log entry (required for sync to propagate the restore).
+// TestUndoIssueDeleteCreatesActionLog verifies that undoing a delete creates
+// an action_log entry (required for sync to propagate the restore).
+// Note: this test verifies correctness but cannot verify atomicity — the old
+// non-atomic code (RestoreIssue + LogAction) also passes this test.
+// Atomicity is a structural guarantee from RestoreIssueLogged using a single
+// withWriteLock call; crash-safety cannot be tested in a unit test.
 func TestUndoIssueDeleteCreatesActionLog(t *testing.T) {
 	dir := t.TempDir()
 	database, err := db.Initialize(dir)
