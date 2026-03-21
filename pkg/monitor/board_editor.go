@@ -232,7 +232,11 @@ func (m *Model) renderBoardEditorQueryPreview(contentWidth int) string {
 	}
 
 	// Show results
-	sb.WriteString(fmt.Sprintf("Matches: %d issue(s)", preview.Count))
+	if preview.Count < 0 {
+		sb.WriteString("Matches: 5+ issue(s)")
+	} else {
+		sb.WriteString(fmt.Sprintf("Matches: %d issue(s)", preview.Count))
+	}
 	if len(preview.Titles) > 0 {
 		for _, t := range preview.Titles {
 			title := t
@@ -242,7 +246,9 @@ func (m *Model) renderBoardEditorQueryPreview(contentWidth int) string {
 			}
 			sb.WriteString("\n  " + subtleStyle.Render("• "+title))
 		}
-		if preview.Count > len(preview.Titles) {
+		if preview.Count < 0 {
+			sb.WriteString("\n  " + subtleStyle.Render("... and more"))
+		} else if preview.Count > len(preview.Titles) {
 			sb.WriteString(fmt.Sprintf("\n  "+subtleStyle.Render("... and %d more"), preview.Count-len(preview.Titles)))
 		}
 	}
@@ -399,9 +405,15 @@ func (m Model) boardEditorQueryPreview(queryStr string) tea.Cmd {
 			titles = append(titles, issue.Title)
 		}
 
+		count := len(issues)
+		hasMore := count > 5
+		if hasMore {
+			count = -1 // signal "more than 5" to the renderer
+		}
+
 		return BoardEditorQueryPreviewMsg{
 			Query:  queryStr,
-			Count:  len(issues),
+			Count:  count,
 			Titles: titles,
 		}
 	}
