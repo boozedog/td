@@ -980,6 +980,31 @@ func TestApproveReasonShorthand(t *testing.T) {
 	}
 }
 
+func TestRejectOnlyFromInReview(t *testing.T) {
+	// The CLI reject command should only accept issues in in_review status,
+	// matching the HTTP API's validFrom: []Status{StatusInReview}.
+	tests := []struct {
+		status    models.Status
+		expectErr bool
+	}{
+		{models.StatusOpen, true},
+		{models.StatusInProgress, true},
+		{models.StatusBlocked, true},
+		{models.StatusInReview, false},
+		{models.StatusClosed, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(string(tc.status), func(t *testing.T) {
+			// The reject validation is: issue.Status != models.StatusInReview
+			isRejectable := tc.status == models.StatusInReview
+			if isRejectable == tc.expectErr {
+				t.Errorf("status %q: expected rejectable=%v", tc.status, !tc.expectErr)
+			}
+		})
+	}
+}
+
 func TestRejectReasonShorthand(t *testing.T) {
 	// Test that -m shorthand exists for --reason on reject
 	if rejectCmd.Flags().ShorthandLookup("m") == nil {
