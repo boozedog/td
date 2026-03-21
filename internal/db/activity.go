@@ -92,6 +92,9 @@ func (db *DB) GetLogs(issueID string, limit int) ([]models.Log, error) {
 		logs[i], logs[j] = logs[j], logs[i]
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return logs, nil
 }
 
@@ -116,6 +119,9 @@ func (db *DB) GetLogsByWorkSession(wsID string) ([]models.Log, error) {
 		logs = append(logs, log)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return logs, nil
 }
 
@@ -146,6 +152,9 @@ func (db *DB) GetRecentLogsAll(limit int) ([]models.Log, error) {
 		logs = append(logs, log)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return logs, nil
 }
 
@@ -189,6 +198,9 @@ func (db *DB) GetActiveSessions(since time.Time) ([]string, error) {
 		}
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return sessions, nil
 }
 
@@ -328,6 +340,9 @@ func (db *DB) GetRecentHandoffs(limit int, since time.Time) ([]models.Handoff, e
 		handoffs = append(handoffs, h)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return handoffs, nil
 }
 
@@ -392,6 +407,9 @@ func (db *DB) GetComments(issueID string) ([]models.Comment, error) {
 		}
 		comments = append(comments, c)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return comments, nil
 }
 
@@ -419,6 +437,9 @@ func (db *DB) GetRecentCommentsAll(limit int) ([]models.Comment, error) {
 			return nil, err
 		}
 		comments = append(comments, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return comments, nil
 }
@@ -578,6 +599,9 @@ func (db *DB) GetRecentActions(sessionID string, limit int) ([]models.ActionLog,
 		actions = append(actions, action)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return actions, nil
 }
 
@@ -615,6 +639,9 @@ func (db *DB) GetRecentActionsAll(limit int) ([]models.ActionLog, error) {
 		actions = append(actions, action)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return actions, nil
 }
 
@@ -672,6 +699,9 @@ func (db *DB) GetRejectedInProgressIssueIDs() (map[string]bool, error) {
 		result[id] = true
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

@@ -496,13 +496,12 @@ Supports bulk operations:
 				continue
 			}
 
-			// Validate transition with state machine
-			sm := workflow.DefaultMachine()
-			if !sm.IsValidTransition(issue.Status, models.StatusOpen) {
+			// Reject is only valid from in_review (matches HTTP API behavior)
+			if issue.Status != models.StatusInReview {
 				if jsonOutput {
-					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot reject %s: invalid transition from %s", issueID, issue.Status))
+					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot reject %s: must be in_review (currently %s)", issueID, issue.Status))
 				} else {
-					output.Warning("cannot reject %s: invalid transition from %s", issueID, issue.Status)
+					output.Warning("cannot reject %s: must be in_review (currently %s)", issueID, issue.Status)
 				}
 				skipped++
 				continue

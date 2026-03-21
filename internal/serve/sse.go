@@ -496,7 +496,9 @@ func serveAutoSyncPull(database *db.DB, client *syncclient.Client, state *db.Syn
 			return fmt.Errorf("begin tx: %w", err)
 		}
 
-		if _, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, nil, state.LastSyncAt); err != nil {
+		// Accept all entity types in SSE path (no feature gating for live sync)
+		allowAll := func(string) bool { return true }
+		if _, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, allowAll, state.LastSyncAt); err != nil {
 			tx.Rollback()
 			return fmt.Errorf("apply events: %w", err)
 		}

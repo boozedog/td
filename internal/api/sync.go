@@ -392,8 +392,12 @@ func (s *Server) handleSyncSnapshot(w http.ResponseWriter, r *http.Request) {
 	} else {
 		tmpCachePath := cachePath + fmt.Sprintf(".tmp.%d", os.Getpid())
 		if err := copyFile(tmpPath, tmpCachePath); err == nil {
+			// copyFile may have used os.Rename (fast path), which moves
+			// tmpPath away. Update servePath immediately so we can still
+			// serve the data even if the next rename fails.
+			servePath = tmpCachePath
 			if err := os.Rename(tmpCachePath, cachePath); err != nil {
-				os.Remove(tmpCachePath)
+				// Don't remove tmpCachePath — it may be the only copy.
 				slog.Warn("snapshot cache rename failed", "err", err)
 			} else {
 				cleanSnapshotCache(cacheDir, lastSeq)

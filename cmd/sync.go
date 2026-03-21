@@ -31,6 +31,7 @@ var baseSyncableEntities = map[string]bool{
 	"board_issue_positions": true,
 	"issue_dependencies":    true,
 	"issue_files":           true,
+	"work_session_issues":   true,
 }
 
 const syncNotesEntity = "notes"
@@ -277,8 +278,10 @@ func copyFile(src, dst string) error {
 	}
 	defer out.Close()
 
-	_, err = io.Copy(out, in)
-	return err
+	if _, err = io.Copy(out, in); err != nil {
+		return err
+	}
+	return out.Sync()
 }
 
 const pushBatchSize = 500

@@ -900,7 +900,13 @@ func (db *DB) migrateFilePathsToRelative() error {
 		return err
 	}
 
-	rows, err := db.conn.Query(`SELECT id, issue_id, file_path FROM issue_files`)
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`SELECT id, issue_id, file_path FROM issue_files`)
 	if err != nil {
 		return fmt.Errorf("read issue_files: %w", err)
 	}
@@ -935,18 +941,18 @@ func (db *DB) migrateFilePathsToRelative() error {
 
 		// Check if a row with the new relative path already exists (avoid UNIQUE conflict)
 		var existingCount int
-		db.conn.QueryRow(`SELECT COUNT(*) FROM issue_files WHERE issue_id = ? AND file_path = ?`,
+		tx.QueryRow(`SELECT COUNT(*) FROM issue_files WHERE issue_id = ? AND file_path = ?`,
 			r.issueID, relPath).Scan(&existingCount)
 		if existingCount > 0 {
 			// Duplicate — delete the old absolute-path row
-			if _, err := db.conn.Exec(`DELETE FROM issue_files WHERE id = ?`, r.id); err != nil {
+			if _, err := tx.Exec(`DELETE FROM issue_files WHERE id = ?`, r.id); err != nil {
 				return fmt.Errorf("delete dup file row: %w", err)
 			}
 			continue
 		}
 
 		// Update path and recompute deterministic ID
-		if _, err := db.conn.Exec(
+		if _, err := tx.Exec(
 			`UPDATE issue_files SET file_path = ?, id = ? WHERE id = ?`,
 			relPath, newID, r.id,
 		); err != nil {
@@ -954,7 +960,7 @@ func (db *DB) migrateFilePathsToRelative() error {
 		}
 	}
 
-	return nil
+	return tx.Commit()
 }
 
 // migrateLegacyActionLogCompositeIDs normalizes unsynced action_log entries for
