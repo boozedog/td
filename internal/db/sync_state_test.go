@@ -7,6 +7,7 @@ import (
 
 func TestParseTimestamp(t *testing.T) {
 	now := time.Now().UTC()
+	local := time.Now()
 	tests := []struct {
 		name  string
 		input string
@@ -14,7 +15,10 @@ func TestParseTimestamp(t *testing.T) {
 		{"SQLite default", "2026-03-21 09:00:00"},
 		{"RFC3339", "2026-03-21T09:00:00Z"},
 		{"RFC3339Nano", now.Format(time.RFC3339Nano)},
-		{"Go time.String()", now.String()},
+		{"Go time.String() UTC", now.String()},
+		{"Go time.String() local", local.Round(0).String()},                   // non-UTC, no monotonic
+		{"Go time.String() with monotonic", local.String()},                    // includes m=+... suffix
+		{"non-UTC with offset", "2026-03-21 19:00:00.123456 +1000 AEST"},      // non-UTC timezone
 		{"RFC3339 with offset", "2026-03-21T09:00:00+00:00"},
 	}
 
