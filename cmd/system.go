@@ -557,87 +557,107 @@ var importCmd = &cobra.Command{
 
 // importJSON imports issues from JSON format
 func importJSON(database *db.DB, data []byte, dryRun, force bool, sessionID string) (int, error) {
-	var importData []map[string]interface{}
+	var importData []map[string]json.RawMessage
 	if err := json.Unmarshal(data, &importData); err != nil {
 		return 0, fmt.Errorf("failed to parse JSON: %v", err)
 	}
 
 	imported := 0
 	for _, item := range importData {
-		issueData, ok := item["issue"].(map[string]interface{})
+		issueRaw, ok := item["issue"]
 		if !ok {
 			continue
 		}
 
-		title, _ := issueData["title"].(string)
-		if title == "" {
+		var issue models.Issue
+		if err := json.Unmarshal(issueRaw, &issue); err != nil {
+			output.Warning("failed to parse issue: %v", err)
+			continue
+		}
+
+		if issue.Title == "" {
 			continue
 		}
 
 		// Check if issue with same ID exists
-		existingID, _ := issueData["id"].(string)
 		var existing *models.Issue
-		if existingID != "" {
-			existing, _ = database.GetIssue(existingID)
+		if issue.ID != "" {
+			existing, _ = database.GetIssue(issue.ID)
 		}
 
 		if existing != nil && !force {
-			output.Warning("skipping '%s' - already exists (use --force to overwrite)", existingID)
+			output.Warning("skipping '%s' - already exists (use --force to overwrite)", issue.ID)
 			continue
 		}
 
 		if dryRun {
 			if existing != nil {
-				fmt.Printf("[dry-run] Would overwrite: %s\n", existingID)
+				fmt.Printf("[dry-run] Would overwrite: %s\n", issue.ID)
 			} else {
-				fmt.Printf("[dry-run] Would import: %s\n", title)
+				fmt.Printf("[dry-run] Would import: %s\n", issue.Title)
 			}
 			imported++
 			continue
 		}
 
-		issue := &models.Issue{
-			Title: title,
+		if err := database.UpsertIssueRaw(&issue); err != nil {
+			output.Warning("failed to import '%s': %v", issue.Title, err)
+			continue
 		}
 
-		if desc, ok := issueData["description"].(string); ok {
-			issue.Description = desc
+		if existing != nil {
+			fmt.Printf("OVERWRITTEN %s: %s\n", issue.ID, issue.Title)
+		} else {
+			fmt.Printf("IMPORTED %s: %s\n", issue.ID, issue.Title)
 		}
-		if t, ok := issueData["type"].(string); ok {
-			issue.Type = models.Type(t)
-		}
-		if p, ok := issueData["priority"].(string); ok {
-			issue.Priority = models.Priority(p)
-		}
-		if pts, ok := issueData["points"].(float64); ok {
-			issue.Points = int(pts)
-		}
-		if labels, ok := issueData["labels"].([]interface{}); ok {
-			for _, l := range labels {
-				if label, ok := l.(string); ok {
-					issue.Labels = append(issue.Labels, label)
+
+		// Import logs
+		if logsRaw, ok := item["logs"]; ok {
+			var logs []models.Log
+			if err := json.Unmarshal(logsRaw, &logs); err == nil {
+				for i := range logs {
+					if err := database.AddLog(&logs[i]); err != nil {
+						output.Warning("failed to import log for '%s': %v", issue.ID, err)
+					}
 				}
 			}
 		}
 
-		if existing != nil && force {
-			// Update existing issue
-			issue.ID = existingID
-			issue.CreatedAt = existing.CreatedAt
-			if err := database.UpdateIssueLogged(issue, sessionID, models.ActionUpdate); err != nil {
-				output.Warning("failed to overwrite '%s': %v", existingID, err)
-				continue
+		// Import handoff
+		if handoffRaw, ok := item["handoff"]; ok && string(handoffRaw) != "null" {
+			var handoff models.Handoff
+			if err := json.Unmarshal(handoffRaw, &handoff); err == nil && handoff.IssueID != "" {
+				if err := database.AddHandoff(&handoff); err != nil {
+					output.Warning("failed to import handoff for '%s': %v", issue.ID, err)
+				}
 			}
-			fmt.Printf("OVERWRITTEN %s: %s\n", existingID, title)
-			imported++
-		} else {
-			if err := database.CreateIssueLogged(issue, sessionID); err != nil {
-				output.Warning("failed to import '%s': %v", title, err)
-				continue
-			}
-			fmt.Printf("IMPORTED %s: %s\n", issue.ID, title)
-			imported++
 		}
+
+		// Import dependencies (exported as []string of depends_on IDs)
+		if depsRaw, ok := item["dependencies"]; ok {
+			var deps []string
+			if err := json.Unmarshal(depsRaw, &deps); err == nil {
+				for _, depID := range deps {
+					if err := database.AddDependency(issue.ID, depID, "depends_on"); err != nil {
+						output.Warning("failed to import dependency for '%s': %v", issue.ID, err)
+					}
+				}
+			}
+		}
+
+		// Import files
+		if filesRaw, ok := item["files"]; ok {
+			var files []models.IssueFile
+			if err := json.Unmarshal(filesRaw, &files); err == nil {
+				for _, f := range files {
+					if err := database.LinkFile(f.IssueID, f.FilePath, f.Role, f.LinkedSHA); err != nil {
+						output.Warning("failed to import file link for '%s': %v", issue.ID, err)
+					}
+				}
+			}
+		}
+
+		imported++
 	}
 
 	return imported, nil
@@ -755,7 +775,7 @@ func importMarkdown(database *db.DB, data string, dryRun, force bool, sessionID 
 
 		// Parse metadata lines
 		if matches := statusRegex.FindStringSubmatch(line); matches != nil {
-			// Status is set on creation, ignore
+			currentIssue.Status = models.Status(strings.TrimSpace(matches[1]))
 			inDescription = false
 			continue
 		}

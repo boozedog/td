@@ -2,6 +2,11 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.42.1] - 2026-03-20
+
+### Bug Fixes
+- fix: `td import` now restores all issue fields and associated data (logs, handoffs, dependencies, files) — lossless round-trip (#64)
+
 ## [v0.42.0] - 2026-03-09
 
 ### Bug Fixes
