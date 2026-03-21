@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"testing"
+	"unicode/utf8"
 
 	"github.com/marcus/td/internal/models"
 )
@@ -52,5 +53,40 @@ func TestFetchBoardIssuesDeepCopiesStatusFilter(t *testing.T) {
 	// on m2, but m2's map now shows true. The closure captured an independent copy.
 	if !m2.BoardMode.StatusFilter[models.StatusClosed] {
 		t.Error("Expected m2.StatusFilter[Closed] to be true after mutation")
+	}
+}
+
+func TestHelpFilterBackspaceUTF8(t *testing.T) {
+	tests := []struct {
+		name   string
+		filter string
+		want   string
+	}{
+		{"ASCII single char", "a", ""},
+		{"ASCII multi char", "abc", "ab"},
+		{"2-byte rune (é)", "filé", "fil"},
+		{"3-byte rune (€)", "cost€", "cost"},
+		{"4-byte rune (emoji)", "test\U0001F600", "test"},
+		{"only multi-byte", "é", ""},
+		{"two multi-byte", "éé", "é"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := Model{HelpFilter: tc.filter}
+
+			// Simulate backspace: same logic as commands.go
+			if len(m.HelpFilter) > 0 {
+				runes := []rune(m.HelpFilter)
+				m.HelpFilter = string(runes[:len(runes)-1])
+			}
+
+			if m.HelpFilter != tc.want {
+				t.Errorf("got %q, want %q", m.HelpFilter, tc.want)
+			}
+			if !utf8.ValidString(m.HelpFilter) {
+				t.Errorf("result %q is not valid UTF-8", m.HelpFilter)
+			}
+		})
 	}
 }

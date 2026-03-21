@@ -366,7 +366,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyBackspace:
 			if len(m.HelpFilter) > 0 {
-				m.HelpFilter = m.HelpFilter[:len(m.HelpFilter)-1]
+				runes := []rune(m.HelpFilter)
+				m.HelpFilter = string(runes[:len(runes)-1])
 				m.HelpScroll = 0
 			}
 			return m, nil
