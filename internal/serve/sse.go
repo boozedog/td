@@ -476,7 +476,10 @@ func serveAutoSyncPull(database *db.DB, client *syncclient.Client, state *db.Syn
 
 		events := make([]tdsync.Event, len(pullResp.Events))
 		for i, pe := range pullResp.Events {
-			clientTS, _ := time.Parse(time.RFC3339, pe.ClientTimestamp)
+			clientTS, err := time.Parse(time.RFC3339Nano, pe.ClientTimestamp)
+			if err != nil {
+				clientTS, _ = time.Parse(time.RFC3339, pe.ClientTimestamp)
+			}
 			events[i] = tdsync.Event{
 				ServerSeq:       pe.ServerSeq,
 				DeviceID:        pe.DeviceID,

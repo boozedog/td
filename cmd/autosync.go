@@ -191,7 +191,10 @@ func autoSyncPull(database *db.DB, client *syncclient.Client, state *db.SyncStat
 
 		events := make([]tdsync.Event, len(pullResp.Events))
 		for i, pe := range pullResp.Events {
-			clientTS, _ := time.Parse(time.RFC3339, pe.ClientTimestamp)
+			clientTS, err := time.Parse(time.RFC3339Nano, pe.ClientTimestamp)
+			if err != nil {
+				clientTS, _ = time.Parse(time.RFC3339, pe.ClientTimestamp)
+			}
 			events[i] = tdsync.Event{
 				ServerSeq:       pe.ServerSeq,
 				DeviceID:        pe.DeviceID,
@@ -205,47 +208,8 @@ func autoSyncPull(database *db.DB, client *syncclient.Client, state *db.SyncStat
 			}
 		}
 
-		conn := database.Conn()
-		tx, err := conn.Begin()
-		if err != nil {
-			return fmt.Errorf("begin tx: %w", err)
-		}
-
-		result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator, state.LastSyncAt)
-		if err != nil {
-			tx.Rollback()
-			return fmt.Errorf("apply events: %w", err)
-		}
-
-		if err := storeConflicts(tx, result.Conflicts); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("store conflicts: %w", err)
-		}
-
-		if _, err := tx.Exec(`UPDATE sync_state SET last_pulled_server_seq = ?, last_sync_at = CURRENT_TIMESTAMP`, pullResp.LastServerSeq); err != nil {
-			tx.Rollback()
-			return fmt.Errorf("update sync state: %w", err)
-		}
-
-		// Record sync history
-		var historyEntries []db.SyncHistoryEntry
-		for _, ev := range events {
-			historyEntries = append(historyEntries, db.SyncHistoryEntry{
-				Direction:  "pull",
-				ActionType: ev.ActionType,
-				EntityType: ev.EntityType,
-				EntityID:   ev.EntityID,
-				ServerSeq:  ev.ServerSeq,
-				DeviceID:   ev.DeviceID,
-				Timestamp:  time.Now(),
-			})
-		}
-		if err := db.RecordSyncHistoryTx(tx, historyEntries); err != nil {
-			slog.Debug("autosync: record pull history", "err", err)
-		}
-
-		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("commit: %w", err)
+		if err := autoSyncApplyPullBatch(database, events, deviceID, pullResp.LastServerSeq, state.LastSyncAt); err != nil {
+			return err
 		}
 
 		lastSeq = pullResp.LastServerSeq
@@ -256,6 +220,50 @@ func autoSyncPull(database *db.DB, client *syncclient.Client, state *db.SyncStat
 		}
 	}
 	return nil
+}
+
+// autoSyncApplyPullBatch applies a batch of pulled events inside a single transaction.
+// Extracted from the autoSyncPull loop so that defer tx.Rollback() fires per-batch,
+// not accumulated across all loop iterations.
+func autoSyncApplyPullBatch(database *db.DB, events []tdsync.Event, deviceID string, lastServerSeq int64, lastSyncAt *time.Time) error {
+	conn := database.Conn()
+	tx, err := conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator, lastSyncAt)
+	if err != nil {
+		return fmt.Errorf("apply events: %w", err)
+	}
+
+	if err := storeConflicts(tx, result.Conflicts); err != nil {
+		return fmt.Errorf("store conflicts: %w", err)
+	}
+
+	if _, err := tx.Exec(`UPDATE sync_state SET last_pulled_server_seq = ?, last_sync_at = CURRENT_TIMESTAMP`, lastServerSeq); err != nil {
+		return fmt.Errorf("update sync state: %w", err)
+	}
+
+	// Record sync history
+	var historyEntries []db.SyncHistoryEntry
+	for _, ev := range events {
+		historyEntries = append(historyEntries, db.SyncHistoryEntry{
+			Direction:  "pull",
+			ActionType: ev.ActionType,
+			EntityType: ev.EntityType,
+			EntityID:   ev.EntityID,
+			ServerSeq:  ev.ServerSeq,
+			DeviceID:   ev.DeviceID,
+			Timestamp:  time.Now(),
+		})
+	}
+	if err := db.RecordSyncHistoryTx(tx, historyEntries); err != nil {
+		slog.Debug("autosync: record pull history", "err", err)
+	}
+
+	return tx.Commit()
 }
 
 // autoSyncPush pushes pending events silently. Returns nil if nothing to push.

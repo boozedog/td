@@ -9,18 +9,20 @@ import (
 	"time"
 
 	"github.com/marcus/td/internal/serverdb"
+	"golang.org/x/sync/singleflight"
 )
 
 // Server is the HTTP API server for td-sync.
 type Server struct {
-	config      Config
-	http        *http.Server
-	store       *serverdb.ServerDB
-	dbPool      *ProjectDBPool
-	metrics     *Metrics
-	rateLimiter *RateLimiter
-	cancel      context.CancelFunc
-	startTime   time.Time
+	config        Config
+	http          *http.Server
+	store         *serverdb.ServerDB
+	dbPool        *ProjectDBPool
+	metrics       *Metrics
+	rateLimiter   *RateLimiter
+	snapshotGroup singleflight.Group
+	cancel        context.CancelFunc
+	startTime     time.Time
 }
 
 // NewServer creates a new Server with the given config and store.

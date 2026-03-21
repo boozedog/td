@@ -83,6 +83,21 @@ func (p *ProjectDBPool) Create(projectID string) (*sql.DB, error) {
 	return db, nil
 }
 
+// Delete closes the connection for a project (if open), removes it from the pool,
+// and removes the project database directory from disk.
+func (p *ProjectDBPool) Delete(projectID string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if db, ok := p.dbs[projectID]; ok {
+		db.Close()
+		delete(p.dbs, projectID)
+	}
+
+	dir := filepath.Join(p.dataDir, projectID)
+	return os.RemoveAll(dir)
+}
+
 // CloseAll closes all open project database connections.
 func (p *ProjectDBPool) CloseAll() {
 	p.mu.Lock()

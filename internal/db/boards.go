@@ -222,15 +222,24 @@ func (db *DB) DeleteBoard(id string) error {
 			return fmt.Errorf("cannot delete builtin board")
 		}
 
-		// Soft-delete positions first
-		_, err = db.conn.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, time.Now().UTC(), id)
+		// Use a transaction to atomically soft-delete positions and delete board
+		tx, err := db.conn.Begin()
 		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		// Soft-delete positions first
+		if _, err := tx.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, time.Now().UTC(), id); err != nil {
 			return err
 		}
 
 		// Delete board
-		_, err = db.conn.Exec(`DELETE FROM boards WHERE id = ?`, id)
-		return err
+		if _, err := tx.Exec(`DELETE FROM boards WHERE id = ?`, id); err != nil {
+			return err
+		}
+
+		return tx.Commit()
 	})
 }
 

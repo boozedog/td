@@ -44,6 +44,70 @@ func TestCreateUserDuplicate(t *testing.T) {
 	}
 }
 
+func TestCreateUserFirstIsAdmin(t *testing.T) {
+	db := newTestDB(t)
+	first, err := db.CreateUser("first@test.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.IsAdmin {
+		t.Error("first user should be admin")
+	}
+
+	second, err := db.CreateUser("second@test.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.IsAdmin {
+		t.Error("second user should not be admin")
+	}
+
+	third, err := db.CreateUser("third@test.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.IsAdmin {
+		t.Error("third user should not be admin")
+	}
+}
+
+func TestCreateUserConcurrentOnlyOneAdmin(t *testing.T) {
+	db := newTestDB(t)
+	const n = 10
+	results := make(chan *User, n)
+	errs := make(chan error, n)
+
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			u, err := db.CreateUser(strings.Replace("user_N@test.com", "N", strings.Repeat("x", i+1), 1))
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- u
+			errs <- nil
+		}(i)
+	}
+
+	var admins int
+	for i := 0; i < n; i++ {
+		err := <-errs
+		if err != nil {
+			// Some may fail due to duplicate detection or locking — that's OK
+			continue
+		}
+	}
+	close(results)
+	for u := range results {
+		if u.IsAdmin {
+			admins++
+		}
+	}
+	if admins != 1 {
+		t.Errorf("expected exactly 1 admin, got %d", admins)
+	}
+}
+
 func TestCreateUserEmptyEmail(t *testing.T) {
 	db := newTestDB(t)
 	_, err := db.CreateUser("")
