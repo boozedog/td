@@ -31,6 +31,7 @@ var baseSyncableEntities = map[string]bool{
 	"board_issue_positions": true,
 	"issue_dependencies":    true,
 	"issue_files":           true,
+	"work_session_issues":   true,
 }
 
 const syncNotesEntity = "notes"

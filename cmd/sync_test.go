@@ -29,6 +29,21 @@ func TestCopyFileProducesIdenticalCopy(t *testing.T) {
 	}
 }
 
+func TestSyncEntityValidatorAcceptsAllEntities(t *testing.T) {
+	// Every entity type that the sync engine can produce must be accepted
+	entities := []string{
+		"issues", "logs", "comments", "handoffs", "boards",
+		"work_sessions", "board_issue_positions",
+		"issue_dependencies", "issue_files",
+		"work_session_issues", // must not be missing
+	}
+	for _, entity := range entities {
+		if !syncEntityValidator(entity) {
+			t.Errorf("syncEntityValidator rejected %q — entity will never sync", entity)
+		}
+	}
+}
+
 func TestCopyFileNonexistentSourceReturnsNil(t *testing.T) {
 	dir := t.TempDir()
 	err := copyFile(filepath.Join(dir, "nonexistent"), filepath.Join(dir, "dest"))
