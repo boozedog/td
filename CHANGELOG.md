@@ -2,6 +2,24 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.42.2] - 2026-03-21
+
+### Bug Fixes
+- **SSE nil-validator panic** — `ApplyRemoteEvents` was called with `nil` validator, causing guaranteed panic on any non-empty SSE event batch; now passes an allow-all validator (#68)
+- **`work_session_issues` never synced** — missing from `baseSyncableEntities`, silently dropping events on push/pull; added to sync entity map (#68)
+- **Non-atomic undo of delete** — `RestoreIssue` + `LogAction` as separate locked operations had a crash window; replaced with atomic `RestoreIssueLogged` (#68)
+- **Timestamp parse mismatch** — `GetRecentConflicts` used rigid format that failed on Go `time.Time.String()` output, breaking `td sync conflicts`; now uses flexible `parseTimestamp` with monotonic clock stripping (#68)
+- **`rows.Err()` unchecked** — ~30 query functions returned silent partial results on driver errors; all now check and propagate `rows.Err()` (#68)
+- **Non-transactional migration** — `migrateFilePathsToRelative` crash left partial data; now runs inside a transaction with proper rollback (#68)
+- **Snapshot serve race** — only copy of snapshot was deleted on cache rename failure; `servePath` now updated immediately before second rename (#68)
+- **StatusFilter data race** — map reference captured in goroutine shared underlying data; now deep-copied before capture (#68)
+- **Board editor data race** — `BoardEditorBoard` pointer mutated from save goroutine while Update loop may read it; now copies struct before mutation (#68)
+- **Stale syncState** — push updates `last_sync_at` in DB but in-memory struct was stale; pull now reloads syncState after push for correct conflict detection (#68)
+- **CLI reject from wrong states** — rejected issues in `in_progress`/`blocked`/`closed`; now restricted to `in_review` only, matching HTTP API behavior (#68)
+- **HelpFilter backspace UTF-8** — byte slicing split multi-byte runes; now uses `[]rune` conversion (#68)
+- **Board editor preview count** — showed capped "6" instead of "5+"; uses sentinel `-1` to signal overflow (#68)
+- **`copyFile` sync durability** — backup file not flushed to disk; now calls `out.Sync()` after copy (#68)
+
 ## [v0.42.1] - 2026-03-20
 
 ### Bug Fixes
