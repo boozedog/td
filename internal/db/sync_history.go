@@ -22,7 +22,9 @@ func parseTimestamp(s string) (time.Time, error) {
 	for _, layout := range []string{
 		"2006-01-02 15:04:05",
 		time.RFC3339,
+		time.RFC3339Nano,
 		"2006-01-02T15:04:05Z07:00",
+		"2006-01-02 15:04:05.999999999 +0000 UTC", // Go time.Time.String() via modernc/sqlite driver
 	} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t, nil
