@@ -240,6 +240,9 @@ func (db *DB) GetIssuesByIDs(ids []string) ([]models.Issue, error) {
 		issues = append(issues, issue)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return issues, nil
 }
 
@@ -284,6 +287,9 @@ func (db *DB) GetIssueTitles(ids []string) (map[string]string, error) {
 		titles[id] = title
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return titles, nil
 }
 
@@ -652,6 +658,9 @@ func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
 		issues = append(issues, issue)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return issues, nil
 }
 

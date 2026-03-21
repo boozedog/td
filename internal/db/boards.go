@@ -166,6 +166,9 @@ func (db *DB) ListBoards() ([]models.Board, error) {
 		boards = append(boards, board)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return boards, nil
 }
 
@@ -438,6 +441,9 @@ func (db *DB) queryBoardPositionsSorted(boardID string) ([]BoardIssuePosition, e
 		}
 		positions = append(positions, p)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return positions, nil
 }
 
@@ -549,6 +555,9 @@ func (db *DB) GetBoardIssuePositions(boardID string) ([]BoardIssuePosition, erro
 		positions = append(positions, p)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return positions, nil
 }
 

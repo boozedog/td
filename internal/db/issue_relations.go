@@ -45,6 +45,9 @@ func (db *DB) getDescendants(parentID string) ([]string, error) {
 			descendants = append(descendants, childID)
 		}
 		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
 
 		// Add children to queue for recursive processing
 		queue = append(queue, children...)
@@ -124,6 +127,9 @@ func (db *DB) GetDirectChildren(issueID string) ([]*models.Issue, error) {
 		children = append(children, &issue)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return children, nil
 }
 
@@ -380,6 +386,9 @@ func (db *DB) GetDependencies(issueID string) ([]string, error) {
 		}
 		deps = append(deps, dep)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return deps, nil
 }
 
@@ -401,6 +410,9 @@ func (db *DB) GetBlockedBy(issueID string) ([]string, error) {
 		}
 		blocked = append(blocked, id)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return blocked, nil
 }
 
@@ -421,6 +433,9 @@ func (db *DB) GetAllDependencies() (map[string][]string, error) {
 			return nil, err
 		}
 		deps[issueID] = append(deps[issueID], depID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return deps, nil
 }
@@ -465,6 +480,9 @@ func (db *DB) GetIssuesWithOpenDeps() (map[string]bool, error) {
 		}
 		result[issueID] = true
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
@@ -507,6 +525,9 @@ func (db *DB) GetIssueStatuses(ids []string) (map[string]models.Status, error) {
 			return nil, err
 		}
 		statuses[id] = status
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return statuses, nil
 }
@@ -557,6 +578,9 @@ func (db *DB) GetLinkedFiles(issueID string) ([]models.IssueFile, error) {
 			return nil, err
 		}
 		files = append(files, f)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return files, nil
 }
@@ -630,6 +654,9 @@ func (db *DB) GetSessionHistory(issueID string) ([]models.IssueSessionHistory, e
 		history = append(history, h)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return history, nil
 }
 
@@ -650,6 +677,9 @@ func (db *DB) GetIssueSessionLog(sessionID string) ([]string, error) {
 			return nil, err
 		}
 		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return ids, nil
 }
