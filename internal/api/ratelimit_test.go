@@ -230,3 +230,44 @@ func TestWithRateLimitIntegration(t *testing.T) {
 		t.Fatalf("expected 429, got %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestClientIPNoTrustedProxy(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.1:5000"
+	req.Header.Set("X-Forwarded-For", "spoofed.ip.1.2")
+
+	// With no trusted proxies, XFF should be ignored
+	ip := clientIP(req, nil)
+	if ip != "10.0.0.1" {
+		t.Errorf("expected RemoteAddr IP 10.0.0.1, got %s", ip)
+	}
+
+	ip = clientIP(req, []string{})
+	if ip != "10.0.0.1" {
+		t.Errorf("expected RemoteAddr IP 10.0.0.1, got %s", ip)
+	}
+}
+
+func TestClientIPWithTrustedProxy(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "10.0.0.99:5000"
+	req.Header.Set("X-Forwarded-For", "203.0.113.50, 10.0.0.99")
+
+	// When RemoteAddr is in trusted proxies, trust XFF
+	ip := clientIP(req, []string{"10.0.0.99"})
+	if ip != "203.0.113.50" {
+		t.Errorf("expected XFF client IP 203.0.113.50, got %s", ip)
+	}
+}
+
+func TestClientIPSpoofedXFF(t *testing.T) {
+	req := httptest.NewRequest("GET", "/", nil)
+	req.RemoteAddr = "evil.attacker:5000"
+	req.Header.Set("X-Forwarded-For", "1.2.3.4")
+
+	// Attacker is not a trusted proxy, XFF should be ignored
+	ip := clientIP(req, []string{"10.0.0.99"})
+	if ip != "evil.attacker" {
+		t.Errorf("expected RemoteAddr evil.attacker, got %s", ip)
+	}
+}

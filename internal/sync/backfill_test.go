@@ -443,3 +443,58 @@ func TestBackfillOrphanEntities_SkipsAfterPull(t *testing.T) {
 		t.Fatalf("expected 0 action_log rows, got %d", count)
 	}
 }
+
+func TestAnyEventSetsStatusFalsePositive(t *testing.T) {
+	db := setupBackfillDB(t)
+
+	// Test 1: Nested object containing "status":"open" but top-level status is "closed".
+	// The LIKE pattern %"status":"open"% WILL match this row, but the actual
+	// top-level status is "closed". Without statusMatches post-filter, this is a false positive.
+	_, err := db.Exec(`INSERT INTO issues (id, title, status) VALUES ('td-fp1', 'FP Test', 'closed')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nestedData := `{"title":"FP Test","metadata":{"status":"open"},"status":"closed","type":"task"}`
+	_, err = db.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data)
+		VALUES ('al-fp1', 'sess1', 'create', 'issue', 'td-fp1', ?)`, nestedData)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Test 2: Similar-looking status "reopened" should not match "open"
+	_, err = db.Exec(`INSERT INTO issues (id, title, status) VALUES ('td-fp2', 'FP Test 2', 'reopened')`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newData, _ := json.Marshal(map[string]any{
+		"title":  "FP Test 2",
+		"status": "reopened",
+		"type":   "task",
+	})
+	_, err = db.Exec(`INSERT INTO action_log (id, session_id, action_type, entity_type, entity_id, new_data)
+		VALUES ('al-fp2', 'sess1', 'create', 'issue', 'td-fp2', ?)`, string(newData))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// All inserts done before opening the transaction (in-memory SQLite has one connection)
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+
+	// Test 1: The LIKE pre-filter matches (nested "status":"open" is a substring),
+	// but statusMatches should correctly identify the top-level status as "closed"
+	if anyEventSetsStatus(tx, "td-fp1", "open") {
+		t.Error("anyEventSetsStatus returned true for 'open' when top-level status is 'closed' — false positive from nested field")
+	}
+	if !anyEventSetsStatus(tx, "td-fp1", "closed") {
+		t.Error("anyEventSetsStatus returned false for 'closed' when it is the top-level status")
+	}
+
+	// Test 2: "reopened" should not match "open"
+	if anyEventSetsStatus(tx, "td-fp2", "open") {
+		t.Error("anyEventSetsStatus returned true for 'open' when only 'reopened' exists")
+	}
+}

@@ -87,7 +87,7 @@ func (s *Server) handleLoginStart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.logAuthEvent(ar.ID, req.Email, serverdb.AuthEventStarted, map[string]string{
-		"ip":         clientIP(r),
+		"ip":         clientIP(r, s.config.TrustedProxies),
 		"user_agent": r.Header.Get("User-Agent"),
 	})
 
@@ -168,7 +168,7 @@ func (s *Server) handleLoginPoll(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.logAuthEvent(completed.ID, completed.Email, serverdb.AuthEventKeyIssued, map[string]string{
-		"ip":         clientIP(r),
+		"ip":         clientIP(r, s.config.TrustedProxies),
 		"user_agent": r.Header.Get("User-Agent"),
 	})
 
@@ -220,7 +220,7 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("verify failed", "reason", "invalid_or_expired")
 		s.logAuthEvent("", "", serverdb.AuthEventFailed, map[string]string{
 			"failure_reason": "invalid_code",
-			"ip":             clientIP(r),
+			"ip":             clientIP(r, s.config.TrustedProxies),
 			"user_agent":     r.Header.Get("User-Agent"),
 		})
 		verifyTmpl.Execute(w, verifyPageData{Error: "Invalid or expired code."})
@@ -256,7 +256,7 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.logAuthEvent(ar.ID, ar.Email, serverdb.AuthEventCodeVerified, map[string]string{
-		"ip":         clientIP(r),
+		"ip":         clientIP(r, s.config.TrustedProxies),
 		"user_agent": r.Header.Get("User-Agent"),
 	})
 
