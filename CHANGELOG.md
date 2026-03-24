@@ -2,6 +2,31 @@
 
 All notable changes to td are documented in this file.
 
+## [v0.43.0] - 2026-03-24
+
+### Bug Fixes
+- **Atomic lossless import** — `td import --json` now imports all associated data (logs, handoffs, dependencies, files) in a single transaction; backward-compat `UnmarshalJSON` handles old `handoff` singular / `[]string` deps format; `GetHandoffs` and `GetIssueDependencyRelations` added to DB layer (#65)
+- **`UpdateIssue` missing fields** — `creator_session`, `minor`, and `created_branch` were not updated by `UpdateIssue` / `updateIssueAndLog`; patches silently dropped these fields (#70)
+- **Timezone-aware defer/due filtering** — temporal queries used `date('now')` (UTC) instead of `date('now','localtime')`; deferred/overdue/due-soon filters returned wrong results in non-UTC zones (#70)
+- **`RemoveDependencyLogged` wrong depID** — hardcoded `"depends_on"` in `DependencyID` call even for `"blocks"` relations; undo data was corrupted for non-`depends_on` relations (#70)
+- **`DeleteBoardLogged` not atomic** — position updates, action_log inserts, and board delete ran outside a transaction; partial failure left inconsistent state (#70)
+- **RateLimiter goroutine leak** — background cleanup goroutine used `time.Sleep` loop with no cancellation; `Stop()` added, called in `Server.Shutdown()` (#70)
+- **CORS missing methods** — PATCH, PUT, DELETE not in `Access-Control-Allow-Methods`; browser pre-flight checks failed for mutating requests (#70)
+- **Snapshot stat error ignored** — `f.Stat()` error swallowed; now returns 500 with proper error message (#70)
+- **DB connection leak on init failure** — `Open` and `Initialize` did not close `conn` on migration or schema errors (#70)
+- **Form scroll over-run** — `FormScrollOffset` could exceed content height; now clamped to `formScrollToBottom()` on wheel-down (#70)
+- **Modal click detection** — section line bounds (`BlockedBy*`, `Blocks*`) computed during render (wrong: built incrementally); extracted to `computeModalSectionLines()`, called before click handling (#70)
+- **In-progress panel header count** — used `len(m.InProgress)` including focused duplicate; now counts `inProgressVisible` to avoid spurious header when all items are hidden (#70)
+- **RFC3339Nano timestamp parsing** — sync pull events with sub-second precision failed with strict `RFC3339`; now tries `RFC3339Nano` first with `RFC3339` fallback in both `autoSyncPull` and `runPull` (#69)
+- **`sess != nil` guard in delete/restore** — `DeleteIssueLogged` / `RestoreIssueLogged` called with `sess.ID` without nil check; now uses empty string fallback (#69)
+- **`escapeJSON` incomplete escaping** — manual string replacement missed `\r`, `\b`, `\f`, NUL, and other control characters; replaced with `json.Marshal` (#69)
+- **Stdin pipe read without size check** — `stat.Size() > 0` guard on piped stdin in `log` and `handoff` commands silently dropped content from pipes that report 0 size; guard removed (#69)
+- **Trusted proxy XFF spoofing** — `clientIP` trusted `X-Forwarded-For` unconditionally; attackers could spoof client IP for rate limit bypass; now only trusts XFF from configured `TrustedProxies` (#69)
+- **CreateUser admin TOCTOU race** — `SELECT COUNT(*)` + `INSERT` without transaction allowed concurrent requests to both become admin; wrapped in a transaction (#69)
+- **Backfill `anyEventSetsStatus` false positive** — LIKE pre-filter on `"status":"open"` matched nested fields and similar-named statuses (`"reopened"`); added `statusMatches` post-filter; extracted `checkCreateEventStatus` so `rows.Close()` fires before next query (#69)
+- **Autosync pull transaction leak** — `defer tx.Rollback()` accumulated across loop iterations; extracted to `autoSyncApplyPullBatch` so defer fires per batch (#69)
+- **Singleflight snapshot dedup** — concurrent snapshot requests for same project triggered redundant builds; now deduplicated with `singleflight.Group` (#69)
+
 ## [v0.42.2] - 2026-03-21
 
 ### Bug Fixes
