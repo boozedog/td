@@ -625,45 +625,29 @@ Examples:
 				continue
 			}
 
-			// Check if self-closing (comprehensive check using session history)
-			// Handle DB errors conservatively - assume involvement on error
 			wasInvolved, err := database.WasSessionInvolved(issueID, sess.ID)
 			if err != nil {
 				output.Warning("failed to check session history for %s: %v", issueID, err)
 				wasInvolved = true // Conservative: assume involvement on error
 			}
 
-			isCreator := issue.CreatorSession != "" && issue.CreatorSession == sess.ID
-			isImplementer := issue.ImplementerSession != "" && issue.ImplementerSession == sess.ID
-			hasOtherImplementer := issue.ImplementerSession != "" && !isImplementer
-
-			// Was ever involved = in history OR creator OR implementer
-			wasEverInvolved := wasInvolved || isCreator || isImplementer
-
-			// Can close if:
-			// 1. Never involved at all, OR
-			// 2. Only created it AND someone else implemented (not self), OR
-			// 3. Minor task (allows self-close)
-			var canClose bool
-			if !wasEverInvolved {
-				canClose = true
-			} else if isCreator && hasOtherImplementer && !isImplementer {
-				canClose = true
-			} else if issue.Minor {
-				canClose = true
-			} else {
-				canClose = false
+			wasImplementationInvolved, err := database.WasSessionImplementationInvolved(issueID, sess.ID)
+			if err != nil {
+				output.Warning("failed to check implementation history for %s: %v", issueID, err)
+				wasImplementationInvolved = true // Conservative: assume implementation involvement on error
 			}
 
-			if !canClose {
+			hasImplementationHistory, err := database.HasImplementationHistory(issueID)
+			if err != nil {
+				output.Warning("failed to check issue implementation history for %s: %v", issueID, err)
+				hasImplementationHistory = true // Conservative: assume implementation history on error
+			}
+
+			eligibility := evaluateCloseEligibility(issue, sess.ID, wasInvolved, wasImplementationInvolved, hasImplementationHistory)
+
+			if !eligibility.Allowed {
 				if selfCloseException == "" {
-					if isImplementer {
-						output.Error("cannot close own implementation: %s", issueID)
-					} else if isCreator && !hasOtherImplementer {
-						output.Error("cannot close: you created %s and no one else implemented it", issueID)
-					} else {
-						output.Error("cannot close: you previously worked on %s", issueID)
-					}
+					output.Error("%s", eligibility.RejectionMessage)
 					output.Error("  Submit for review: td review %s", issueID)
 					skipped++
 					continue
@@ -688,7 +672,7 @@ Examples:
 			logMsg := "Closed"
 			logType := models.LogTypeProgress
 
-			if !canClose && selfCloseException != "" {
+			if !eligibility.Allowed && selfCloseException != "" {
 				agentInfo := sess.AgentType
 				if agentInfo == "" {
 					agentInfo = "Unknown Agent"
@@ -719,7 +703,7 @@ Examples:
 			// Clear focus if this was the focused issue
 			clearFocusIfNeeded(baseDir, issueID)
 
-			if !canClose && selfCloseException != "" {
+			if !eligibility.Allowed && selfCloseException != "" {
 				fmt.Printf("CLOSED %s (self-close exception)\n", issueID)
 			} else {
 				fmt.Printf("CLOSED %s\n", issueID)
