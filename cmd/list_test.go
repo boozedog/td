@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 )
@@ -511,5 +512,62 @@ func TestStatusAllVariations(t *testing.T) {
 				t.Error("Expected showAll=false for this input")
 			}
 		})
+	}
+}
+
+func TestResolveListIssueFilterID(t *testing.T) {
+	dir := t.TempDir()
+	if err := config.SetFocus(dir, "td-focused"); err != nil {
+		t.Fatalf("SetFocus failed: %v", err)
+	}
+
+	tests := []struct {
+		name     string
+		rawID    string
+		flagName string
+		want     string
+	}{
+		{
+			name:     "full id unchanged",
+			rawID:    "td-abc123",
+			flagName: "epic",
+			want:     "td-abc123",
+		},
+		{
+			name:     "bare id normalized",
+			rawID:    "abc123",
+			flagName: "epic",
+			want:     "td-abc123",
+		},
+		{
+			name:     "dot uses focused issue",
+			rawID:    ".",
+			flagName: "epic",
+			want:     "td-focused",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveListIssueFilterID(dir, tc.rawID, tc.flagName)
+			if err != nil {
+				t.Fatalf("resolveListIssueFilterID returned error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("resolveListIssueFilterID(%q) = %q, want %q", tc.rawID, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestResolveListIssueFilterIDDotRequiresFocus(t *testing.T) {
+	dir := t.TempDir()
+
+	_, err := resolveListIssueFilterID(dir, ".", "epic")
+	if err == nil {
+		t.Fatal("expected error when resolving --epic . without focus")
+	}
+	if !strings.Contains(err.Error(), "--epic . requires a focused issue") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

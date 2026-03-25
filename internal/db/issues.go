@@ -398,6 +398,26 @@ func ReviewableByFilter(sessionID string, balanced bool) (string, []interface{})
 
 // ListIssues returns issues matching the filter
 func (db *DB) ListIssues(opts ListIssuesOptions) ([]models.Issue, error) {
+	if opts.ParentID != "" {
+		opts.ParentID = NormalizeIssueID(strings.TrimSpace(opts.ParentID))
+	}
+	if opts.EpicID != "" {
+		opts.EpicID = NormalizeIssueID(strings.TrimSpace(opts.EpicID))
+	}
+	if len(opts.IDs) > 0 {
+		seen := make(map[string]bool, len(opts.IDs))
+		normalizedIDs := make([]string, 0, len(opts.IDs))
+		for _, id := range opts.IDs {
+			normalizedID := NormalizeIssueID(strings.TrimSpace(id))
+			if normalizedID == "" || seen[normalizedID] {
+				continue
+			}
+			seen[normalizedID] = true
+			normalizedIDs = append(normalizedIDs, normalizedID)
+		}
+		opts.IDs = normalizedIDs
+	}
+
 	query := `SELECT id, title, description, status, type, priority, points, labels, parent_id, acceptance, sprint,
                  implementer_session, creator_session, reviewer_session, created_at, updated_at, closed_at, deleted_at, minor, created_branch,
                  defer_until, due_date, defer_count

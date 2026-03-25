@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
 	"github.com/marcus/td/internal/output"
@@ -178,12 +179,22 @@ var listCmd = &cobra.Command{
 
 		// Parent filter
 		if parentID, _ := cmd.Flags().GetString("parent"); parentID != "" {
-			opts.ParentID = parentID
+			resolvedParentID, err := resolveListIssueFilterID(baseDir, parentID, "parent")
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			opts.ParentID = resolvedParentID
 		}
 
 		// Epic filter
 		if epicID, _ := cmd.Flags().GetString("epic"); epicID != "" {
-			opts.EpicID = epicID
+			resolvedEpicID, err := resolveListIssueFilterID(baseDir, epicID, "epic")
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			opts.EpicID = resolvedEpicID
 		}
 
 		// Reviewable filter
@@ -582,6 +593,26 @@ func parseDateFilter(s string) (after, before time.Time) {
 	}
 
 	return time.Time{}, time.Time{}
+}
+
+func resolveListIssueFilterID(baseDir, rawID, flagName string) (string, error) {
+	trimmedID := strings.TrimSpace(rawID)
+	if trimmedID == "" {
+		return "", nil
+	}
+
+	if trimmedID == "." {
+		focusedID, err := config.GetFocus(baseDir)
+		if err != nil {
+			return "", fmt.Errorf("resolve --%s .: %w", flagName, err)
+		}
+		if strings.TrimSpace(focusedID) == "" {
+			return "", fmt.Errorf("--%s . requires a focused issue", flagName)
+		}
+		return db.NormalizeIssueID(focusedID), nil
+	}
+
+	return db.NormalizeIssueID(trimmedID), nil
 }
 
 func init() {
