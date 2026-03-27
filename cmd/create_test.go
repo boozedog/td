@@ -306,9 +306,15 @@ func TestCreateMultipleDependencies(t *testing.T) {
 	database.CreateIssue(dependent)
 
 	// Add multiple dependencies
-	database.AddDependency(dependent.ID, prereq1.ID, "depends_on")
-	database.AddDependency(dependent.ID, prereq2.ID, "depends_on")
-	database.AddDependency(dependent.ID, prereq3.ID, "depends_on")
+	if err := database.AddDependency(dependent.ID, prereq1.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
+	if err := database.AddDependency(dependent.ID, prereq2.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
+	if err := database.AddDependency(dependent.ID, prereq3.ID, "depends_on"); err != nil {
+		t.Fatalf("AddDependency failed: %v", err)
+	}
 
 	// Verify all dependencies
 	deps, _ := database.GetDependencies(dependent.ID)
@@ -844,13 +850,13 @@ func TestValidateTitleMinLength(t *testing.T) {
 		maxLen    int
 		wantError bool
 	}{
-		{"Short", 15, 100, true},                              // 5 chars < 15
-		{"This is fine!", 15, 100, true},                      // 13 chars < 15
-		{"This is long enough to pass", 15, 100, false},       // 27 chars >= 15
-		{"Exactly fifteen!", 15, 100, false},                  // 16 chars >= 15
-		{"Fix the login bug", 15, 100, false},                 // 17 chars >= 15
-		{"A", 1, 100, false},                                  // Custom min=1
-		{"Unicode: 日本語テスト長さ確認", 15, 100, false},               // Unicode rune count (19 runes >= 15)
+		{"Short", 15, 200, true},                              // 5 chars < 15
+		{"This is fine!", 15, 200, true},                      // 13 chars < 15
+		{"This is long enough to pass", 15, 200, false},       // 27 chars >= 15
+		{"Exactly fifteen!", 15, 200, false},                  // 16 chars >= 15
+		{"Fix the login bug", 15, 200, false},                 // 17 chars >= 15
+		{"A", 1, 200, false},                                  // Custom min=1
+		{"Unicode: 日本語テスト長さ確認", 15, 200, false},               // Unicode rune count (19 runes >= 15)
 	}
 
 	for _, tt := range tests {
@@ -872,10 +878,10 @@ func TestValidateTitleMaxLength(t *testing.T) {
 		maxLen    int
 		wantError bool
 	}{
-		{"This is a normal length title that should pass easily", 15, 100, false},
-		{strings.Repeat("a", 100), 15, 100, false},  // Exactly 100 chars
-		{strings.Repeat("a", 101), 15, 100, true},   // 101 chars > 100
-		{strings.Repeat("a", 200), 15, 100, true},   // Way too long
+		{"This is a normal length title that should pass easily", 15, 200, false},
+		{strings.Repeat("a", 200), 15, 200, false},  // Exactly 200 chars
+		{strings.Repeat("a", 201), 15, 200, true},   // 201 chars > 200
+		{strings.Repeat("a", 300), 15, 200, true},   // Way too long
 		{strings.Repeat("a", 50), 15, 50, false},    // Custom max
 		{strings.Repeat("a", 51), 15, 50, true},     // Custom max exceeded
 	}
@@ -938,8 +944,8 @@ func TestConfigDefaultTitleLengths(t *testing.T) {
 	if config.DefaultTitleMinLength != 15 {
 		t.Errorf("DefaultTitleMinLength should be 15, got %d", config.DefaultTitleMinLength)
 	}
-	if config.DefaultTitleMaxLength != 100 {
-		t.Errorf("DefaultTitleMaxLength should be 100, got %d", config.DefaultTitleMaxLength)
+	if config.DefaultTitleMaxLength != 200 {
+		t.Errorf("DefaultTitleMaxLength should be 200, got %d", config.DefaultTitleMaxLength)
 	}
 }
 
