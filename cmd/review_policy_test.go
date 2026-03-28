@@ -252,3 +252,41 @@ func TestEvaluateCloseEligibility(t *testing.T) {
 		})
 	}
 }
+
+func TestCloseFollowupGuidance(t *testing.T) {
+	tests := []struct {
+		name  string
+		issue *models.Issue
+		want  string
+	}{
+		{
+			name:  "open issue points to review",
+			issue: &models.Issue{ID: "td-open", Status: models.StatusOpen},
+			want:  "  Submit for review: td review td-open",
+		},
+		{
+			name:  "in progress issue points to review",
+			issue: &models.Issue{ID: "td-progress", Status: models.StatusInProgress},
+			want:  "  Submit for review: td review td-progress",
+		},
+		{
+			name:  "in review issue points to approve",
+			issue: &models.Issue{ID: "td-review", Status: models.StatusInReview},
+			want:  "  Already in review: td approve td-review",
+		},
+		{
+			name:  "nil issue falls back to review wording",
+			issue: nil,
+			want:  "  Submit for review: td review ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := closeFollowupGuidance(tt.issue)
+			if got != tt.want {
+				t.Fatalf("closeFollowupGuidance() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

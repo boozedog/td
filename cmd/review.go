@@ -241,6 +241,16 @@ func approvalReason(cmd *cobra.Command) string {
 	return ""
 }
 
+func closeFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Submit for review: td review "
+	}
+	if issue != nil && issue.Status == models.StatusInReview {
+		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
+}
+
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues",
@@ -669,7 +679,7 @@ Examples:
 			if !eligibility.Allowed {
 				if selfCloseException == "" {
 					output.Error("%s", eligibility.RejectionMessage)
-					output.Error("  Submit for review: td review %s", issueID)
+					output.Error("%s", closeFollowupGuidance(issue))
 					skipped++
 					continue
 				}

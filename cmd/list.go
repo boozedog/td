@@ -638,7 +638,9 @@ func resolveListIssueFilterFromSession(database *db.DB) (string, error) {
 	}
 
 	issues, err := database.ListIssues(db.ListIssuesOptions{
-		Status:      []models.Status{models.StatusInProgress},
+		// Review-phase work still needs to resolve the epic root when the
+		// current session has already moved the issue into review.
+		Status:      []models.Status{models.StatusInProgress, models.StatusInReview},
 		Implementer: sess.ID,
 	})
 	if err != nil {
