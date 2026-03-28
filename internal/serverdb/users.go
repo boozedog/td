@@ -36,7 +36,7 @@ func (db *ServerDB) CreateUser(email string) (*User, error) {
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// First user becomes admin
 	var count int

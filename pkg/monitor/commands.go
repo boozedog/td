@@ -46,6 +46,9 @@ func (m Model) currentContext() keymap.Context {
 	if m.FormOpen {
 		return keymap.ContextForm
 	}
+	if m.NotesOpen {
+		return keymap.ContextNotes
+	}
 	if m.HandoffsOpen {
 		return keymap.ContextHandoffs
 	}
@@ -1810,8 +1813,8 @@ func (m Model) moveIssueInBacklog(direction int) (Model, tea.Cmd) {
 			return m, nil
 		}
 		// Log both sides of the swap (positions are exchanged)
-		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentIssue.Issue.ID, tgtPos, m.SessionID)
-		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetIssue.Issue.ID, curPos, m.SessionID)
+		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentIssue.Issue.ID, tgtPos, m.SessionID)
+		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetIssue.Issue.ID, curPos, m.SessionID)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentIssue.Issue.ID
 	}
@@ -1911,8 +1914,8 @@ func (m Model) moveIssueInSwimlane(direction int) (Model, tea.Cmd) {
 			return m, nil
 		}
 		// Log both sides of the swap (positions are exchanged)
-		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentBIV.Issue.ID, tgtPos, m.SessionID)
-		m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetBIV.Issue.ID, curPos, m.SessionID)
+		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, currentBIV.Issue.ID, tgtPos, m.SessionID)
+		_ = m.DB.SetIssuePositionLogged(m.BoardMode.Board.ID, targetBIV.Issue.ID, curPos, m.SessionID)
 		// Track the issue we want selected after refresh
 		m.BoardMode.PendingSelectionID = currentBIV.Issue.ID
 	}

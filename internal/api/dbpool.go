@@ -104,7 +104,7 @@ func (p *ProjectDBPool) CloseAll() {
 	defer p.mu.Unlock()
 
 	for id, db := range p.dbs {
-		db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+		_, _ = db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 		db.Close()
 		delete(p.dbs, id)
 	}
@@ -127,8 +127,8 @@ func openProjectDB(dbPath string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("set busy timeout: %w", err)
 	}
-	db.Exec("PRAGMA synchronous=NORMAL")
-	db.Exec("PRAGMA foreign_keys=ON")
+	_, _ = db.Exec("PRAGMA synchronous=NORMAL")
+	_, _ = db.Exec("PRAGMA foreign_keys=ON")
 
 	if err := tdsync.InitServerEventLog(db); err != nil {
 		db.Close()

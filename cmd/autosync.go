@@ -231,7 +231,7 @@ func autoSyncApplyPullBatch(database *db.DB, events []tdsync.Event, deviceID str
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	result, err := tdsync.ApplyRemoteEvents(tx, events, deviceID, syncEntityValidator, lastSyncAt)
 	if err != nil {
@@ -279,7 +279,7 @@ func autoSyncPush(database *db.DB, client *syncclient.Client, state *db.SyncStat
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	events, err := tdsync.GetPendingEvents(tx, deviceID, sess.ID)
 	if err != nil {

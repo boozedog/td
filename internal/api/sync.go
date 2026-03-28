@@ -176,7 +176,7 @@ func (s *Server) handleSyncPush(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	result, err := tdsync.InsertServerEvents(tx, events)
 	if err != nil {
@@ -259,7 +259,7 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	excludeClient := r.URL.Query().Get("exclude_client")
 	result, err := tdsync.GetEventsSince(tx, afterSeq, limit, excludeClient)
@@ -269,7 +269,7 @@ func (s *Server) handleSyncPull(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tx.Rollback() // read-only, just release
+	_ = tx.Rollback() // read-only, just release
 
 	resp := PullResponse{
 		LastServerSeq: result.LastServerSeq,
@@ -449,7 +449,7 @@ func serveSnapshotFile(w http.ResponseWriter, r *http.Request, path string, seq 
 	w.Header().Set("X-Snapshot-Seq", strconv.FormatInt(seq, 10))
 	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
 	w.WriteHeader(http.StatusOK)
-	io.Copy(w, f)
+	_, _ = io.Copy(w, f)
 }
 
 // cleanSnapshotCache removes cached .db files that don't match the current seq.
@@ -541,7 +541,7 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 		}
 
 		result, err := tdsync.GetEventsSince(tx, afterSeq, batchSize, "")
-		tx.Rollback() // read-only
+		_ = tx.Rollback() // read-only
 
 		if err != nil {
 			return fmt.Errorf("get events after %d: %w", afterSeq, err)
@@ -565,7 +565,7 @@ func buildSnapshot(eventsDB *sql.DB, snapshotPath string, upToSeq int64) error {
 			}
 
 			if _, err := tdsync.ApplyRemoteEvents(snapTx, batch, "", validator, nil); err != nil {
-				snapTx.Rollback()
+				_ = snapTx.Rollback()
 				return fmt.Errorf("apply events: %w", err)
 			}
 

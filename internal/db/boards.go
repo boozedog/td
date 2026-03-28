@@ -227,7 +227,7 @@ func (db *DB) DeleteBoard(id string) error {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Soft-delete positions first
 		if _, err := tx.Exec(`UPDATE board_issue_positions SET deleted_at = ? WHERE board_id = ? AND deleted_at IS NULL`, time.Now().UTC(), id); err != nil {
@@ -346,7 +346,7 @@ func (db *DB) SetIssuePosition(boardID, issueID string, position int) error {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Check if a (possibly soft-deleted) row exists
 		var existing int
@@ -464,7 +464,7 @@ func (db *DB) RespaceBoardPositions(boardID string) ([]RespaceResult, error) {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		rows, err := tx.Query(`
 			SELECT issue_id, position
@@ -594,7 +594,7 @@ func (db *DB) SwapIssuePositions(boardID, id1, id2 string) error {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Get positions
 		var pos1, pos2 int

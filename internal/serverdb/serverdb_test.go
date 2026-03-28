@@ -141,7 +141,7 @@ func TestGetUserByIDNotFound(t *testing.T) {
 
 func TestGetUserByEmail(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateUser("find@test.com")
+	_, _ = db.CreateUser("find@test.com")
 	found, err := db.GetUserByEmail("FIND@test.com")
 	if err != nil {
 		t.Fatal(err)
@@ -153,8 +153,8 @@ func TestGetUserByEmail(t *testing.T) {
 
 func TestListUsers(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateUser("a@test.com")
-	db.CreateUser("b@test.com")
+	_, _ = db.CreateUser("a@test.com")
+	_, _ = db.CreateUser("b@test.com")
 	users, err := db.ListUsers()
 	if err != nil {
 		t.Fatal(err)
@@ -272,8 +272,8 @@ func TestRevokeAPIKeyWrongUser(t *testing.T) {
 func TestListAPIKeys(t *testing.T) {
 	db := newTestDB(t)
 	u, _ := db.CreateUser("list@test.com")
-	db.GenerateAPIKey(u.ID, "key1", "sync", nil)
-	db.GenerateAPIKey(u.ID, "key2", "sync", nil)
+	_, _, _ = db.GenerateAPIKey(u.ID, "key1", "sync", nil)
+	_, _, _ = db.GenerateAPIKey(u.ID, "key2", "sync", nil)
 
 	keys, err := db.ListAPIKeys(u.ID)
 	if err != nil {
@@ -342,8 +342,8 @@ func TestGetProjectNotFound(t *testing.T) {
 func TestListProjectsForUser(t *testing.T) {
 	db := newTestDB(t)
 	u, _ := db.CreateUser("list@test.com")
-	db.CreateProject("p1", "", u.ID)
-	db.CreateProject("p2", "", u.ID)
+	_, _ = db.CreateProject("p1", "", u.ID)
+	_, _ = db.CreateProject("p2", "", u.ID)
 
 	projects, err := db.ListProjectsForUser(u.ID)
 	if err != nil {
@@ -426,7 +426,7 @@ func TestUpdateMemberRole(t *testing.T) {
 	owner, _ := db.CreateUser("o@test.com")
 	reader, _ := db.CreateUser("r@test.com")
 	p, _ := db.CreateProject("proj", "", owner.ID)
-	db.AddMember(p.ID, reader.ID, RoleReader, owner.ID)
+	_, _ = db.AddMember(p.ID, reader.ID, RoleReader, owner.ID)
 
 	if err := db.UpdateMemberRole(p.ID, reader.ID, RoleWriter); err != nil {
 		t.Fatal(err)
@@ -442,7 +442,7 @@ func TestRemoveMember(t *testing.T) {
 	owner, _ := db.CreateUser("o@test.com")
 	writer, _ := db.CreateUser("w@test.com")
 	p, _ := db.CreateProject("proj", "", owner.ID)
-	db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+	_, _ = db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
 
 	if err := db.RemoveMember(p.ID, writer.ID); err != nil {
 		t.Fatal(err)
@@ -517,8 +517,8 @@ func TestRoleBasedAuthorization_WriterCanPush_ReaderCannot(t *testing.T) {
 	reader, _ := db.CreateUser("r@test.com")
 	p, _ := db.CreateProject("proj", "", owner.ID)
 
-	db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
-	db.AddMember(p.ID, reader.ID, RoleReader, owner.ID)
+	_, _ = db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+	_, _ = db.AddMember(p.ID, reader.ID, RoleReader, owner.ID)
 
 	// Writer can push
 	if err := db.CanPushEvents(p.ID, writer.ID); err != nil {
@@ -540,7 +540,7 @@ func TestRoleUpgradeTakesEffect(t *testing.T) {
 	user, _ := db.CreateUser("u@test.com")
 	p, _ := db.CreateProject("proj", "", owner.ID)
 
-	db.AddMember(p.ID, user.ID, RoleReader, owner.ID)
+	_, _ = db.AddMember(p.ID, user.ID, RoleReader, owner.ID)
 
 	// Reader cannot push
 	if err := db.CanPushEvents(p.ID, user.ID); err == nil {
@@ -564,7 +564,7 @@ func TestMemberRemovalRevokesAccess(t *testing.T) {
 	writer, _ := db.CreateUser("w@test.com")
 	p, _ := db.CreateProject("proj", "", owner.ID)
 
-	db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+	_, _ = db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
 
 	// Writer has access
 	if err := db.CanPushEvents(p.ID, writer.ID); err != nil {
@@ -591,7 +591,7 @@ func TestCannotRemoveLastOwner_WithMultipleMembers(t *testing.T) {
 	writer, _ := db.CreateUser("w@test.com")
 	p, _ := db.CreateProject("proj", "", owner.ID)
 
-	db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
+	_, _ = db.AddMember(p.ID, writer.ID, RoleWriter, owner.ID)
 
 	// Cannot remove sole owner even with other members
 	err := db.RemoveMember(p.ID, owner.ID)
@@ -614,7 +614,7 @@ func TestRemoveOwnerWhenMultipleOwners(t *testing.T) {
 	owner2, _ := db.CreateUser("o2@test.com")
 	p, _ := db.CreateProject("proj", "", owner1.ID)
 
-	db.AddMember(p.ID, owner2.ID, RoleOwner, owner1.ID)
+	_, _ = db.AddMember(p.ID, owner2.ID, RoleOwner, owner1.ID)
 
 	// Can remove one owner when another exists
 	if err := db.RemoveMember(p.ID, owner1.ID); err != nil {
@@ -648,7 +648,7 @@ func TestUpsertAndGetSyncCursor(t *testing.T) {
 	}
 
 	// Upsert again
-	db.UpsertSyncCursor(p.ID, "device-1", 100)
+	_ = db.UpsertSyncCursor(p.ID, "device-1", 100)
 	c, _ = db.GetSyncCursor(p.ID, "device-1")
 	if c.LastEventID != 100 {
 		t.Fatalf("expected 100, got %d", c.LastEventID)
@@ -778,7 +778,7 @@ func TestFirstUserIsAdmin(t *testing.T) {
 
 func TestSetUserAdmin(t *testing.T) {
 	db := newTestDB(t)
-	db.CreateUser("admin@test.com")
+	_, _ = db.CreateUser("admin@test.com")
 	u2, _ := db.CreateUser("normal@test.com")
 
 	// u2 is not admin
@@ -840,19 +840,19 @@ func TestCountAdmins(t *testing.T) {
 		t.Fatalf("expected 0 admins, got %d", count)
 	}
 
-	db.CreateUser("a@test.com") // first user = admin
+	_, _ = db.CreateUser("a@test.com") // first user = admin
 	count, _ = db.CountAdmins()
 	if count != 1 {
 		t.Fatalf("expected 1 admin, got %d", count)
 	}
 
-	db.CreateUser("b@test.com") // second user = not admin
+	_, _ = db.CreateUser("b@test.com") // second user = not admin
 	count, _ = db.CountAdmins()
 	if count != 1 {
 		t.Fatalf("expected still 1 admin, got %d", count)
 	}
 
-	db.SetUserAdmin("b@test.com", true)
+	_ = db.SetUserAdmin("b@test.com", true)
 	count, _ = db.CountAdmins()
 	if count != 2 {
 		t.Fatalf("expected 2 admins, got %d", count)

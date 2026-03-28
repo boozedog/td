@@ -531,6 +531,7 @@ var importCmd = &cobra.Command{
 		}
 
 		var imported int
+		var importErr error
 
 		if format == "md" {
 			sess, err := session.GetOrCreate(database)
@@ -538,14 +539,14 @@ var importCmd = &cobra.Command{
 				output.Error("%v", err)
 				return err
 			}
-			imported, err = importMarkdown(database, string(data), dryRun, force, sess.ID)
+			imported, importErr = importMarkdown(database, string(data), dryRun, force, sess.ID)
 		} else {
-			imported, err = importJSON(database, data, dryRun, force)
+			imported, importErr = importJSON(database, data, dryRun, force)
 		}
 
-		if err != nil {
-			output.Error("%v", err)
-			return err
+		if importErr != nil {
+			output.Error("%v", importErr)
+			return importErr
 		}
 
 		fmt.Printf("\nImported %d issues\n", imported)

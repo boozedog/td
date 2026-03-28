@@ -123,7 +123,7 @@ func (db *DB) ImportItemRaw(issue *models.Issue, logs []models.Log, handoffs []m
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		if replace {
 			for _, table := range []string{"logs", "handoffs", "issue_files", "issue_dependencies"} {

@@ -229,7 +229,7 @@ func TestInsertLogRaw(t *testing.T) {
 
 	// Verify no action_log entry
 	var count int
-	database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
+	_ = database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
 	if count != 0 {
 		t.Errorf("action_log should be empty, got %d entries", count)
 	}
@@ -294,7 +294,7 @@ func TestInsertHandoffRaw(t *testing.T) {
 
 	// Verify no action_log entry
 	var count int
-	database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
+	_ = database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
 	if count != 0 {
 		t.Errorf("action_log should be empty, got %d entries", count)
 	}
@@ -358,7 +358,7 @@ func TestInsertIssueFileRaw(t *testing.T) {
 
 	// Verify no action_log entry
 	var count int
-	database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
+	_ = database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
 	if count != 0 {
 		t.Errorf("action_log should be empty, got %d entries", count)
 	}
@@ -519,7 +519,7 @@ func TestReplaceIssueRaw(t *testing.T) {
 
 	// Verify no action_log entry
 	var actionCount int
-	database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&actionCount)
+	_ = database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&actionCount)
 	if actionCount != 0 {
 		t.Errorf("action_log should be empty, got %d entries", actionCount)
 	}
@@ -644,7 +644,7 @@ func TestImportItemRaw_Atomic(t *testing.T) {
 
 	// Verify no action_log entry
 	var count int
-	database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
+	_ = database.conn.QueryRow(`SELECT COUNT(*) FROM action_log`).Scan(&count)
 	if count != 0 {
 		t.Errorf("action_log should be empty, got %d", count)
 	}
@@ -694,7 +694,7 @@ func TestImportItemRaw_ReplaceIsAtomic(t *testing.T) {
 	}
 	// "blocks" relation should be stored
 	var relType string
-	database.conn.QueryRow(`SELECT relation_type FROM issue_dependencies WHERE issue_id = ?`, "td-replace2").Scan(&relType)
+	_ = database.conn.QueryRow(`SELECT relation_type FROM issue_dependencies WHERE issue_id = ?`, "td-replace2").Scan(&relType)
 	if relType != "blocks" {
 		t.Errorf("RelationType: got %s, want blocks", relType)
 	}

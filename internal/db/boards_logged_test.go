@@ -338,9 +338,11 @@ func TestDeleteBoardAtomicWithPositions(t *testing.T) {
 
 	// Verify position exists
 	var posCount int
-	database.conn.QueryRow(
+	if err := database.conn.QueryRow(
 		`SELECT COUNT(*) FROM board_issue_positions WHERE board_id = ? AND deleted_at IS NULL`, board.ID,
-	).Scan(&posCount)
+	).Scan(&posCount); err != nil {
+		t.Fatalf("QueryRow failed: %v", err)
+	}
 	if posCount != 1 {
 		t.Fatalf("expected 1 position before delete, got %d", posCount)
 	}
@@ -357,9 +359,11 @@ func TestDeleteBoardAtomicWithPositions(t *testing.T) {
 	}
 
 	// Verify positions are soft-deleted
-	database.conn.QueryRow(
+	if err := database.conn.QueryRow(
 		`SELECT COUNT(*) FROM board_issue_positions WHERE board_id = ? AND deleted_at IS NULL`, board.ID,
-	).Scan(&posCount)
+	).Scan(&posCount); err != nil {
+		t.Fatalf("QueryRow failed: %v", err)
+	}
 	if posCount != 0 {
 		t.Errorf("expected 0 active positions after delete, got %d", posCount)
 	}

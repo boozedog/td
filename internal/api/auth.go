@@ -185,7 +185,7 @@ func (s *Server) handleLoginPoll(w http.ResponseWriter, r *http.Request) {
 // handleVerifyPage handles GET /auth/verify.
 func (s *Server) handleVerifyPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	verifyTmpl.Execute(w, verifyPageData{})
+	_ = verifyTmpl.Execute(w, verifyPageData{})
 }
 
 // handleVerifySubmit handles POST /auth/verify.
@@ -193,7 +193,7 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
 	if err := r.ParseForm(); err != nil {
-		verifyTmpl.Execute(w, verifyPageData{Error: "Invalid form data."})
+		_ = verifyTmpl.Execute(w, verifyPageData{Error: "Invalid form data."})
 		return
 	}
 
@@ -201,19 +201,19 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 	userCode = strings.ToUpper(strings.TrimSpace(strings.ReplaceAll(userCode, "-", "")))
 
 	if userCode == "" {
-		verifyTmpl.Execute(w, verifyPageData{Error: "Please enter a code."})
+		_ = verifyTmpl.Execute(w, verifyPageData{Error: "Please enter a code."})
 		return
 	}
 
 	if len(userCode) != 6 || !isValidUserCode(userCode) {
-		verifyTmpl.Execute(w, verifyPageData{Error: "Invalid or expired code."})
+		_ = verifyTmpl.Execute(w, verifyPageData{Error: "Invalid or expired code."})
 		return
 	}
 
 	ar, err := s.store.GetAuthRequestByUserCode(userCode)
 	if err != nil {
 		logFor(r.Context()).Error("get auth request by user code", "err", err)
-		verifyTmpl.Execute(w, verifyPageData{Error: "Something went wrong. Please try again."})
+		_ = verifyTmpl.Execute(w, verifyPageData{Error: "Something went wrong. Please try again."})
 		return
 	}
 	if ar == nil {
@@ -223,7 +223,7 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 			"ip":             clientIP(r, s.config.TrustedProxies),
 			"user_agent":     r.Header.Get("User-Agent"),
 		})
-		verifyTmpl.Execute(w, verifyPageData{Error: "Invalid or expired code."})
+		_ = verifyTmpl.Execute(w, verifyPageData{Error: "Invalid or expired code."})
 		return
 	}
 
@@ -231,27 +231,27 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 	user, err := s.store.GetUserByEmail(ar.Email)
 	if err != nil {
 		logFor(r.Context()).Error("get user by email", "err", err)
-		verifyTmpl.Execute(w, verifyPageData{Error: "Something went wrong. Please try again."})
+		_ = verifyTmpl.Execute(w, verifyPageData{Error: "Something went wrong. Please try again."})
 		return
 	}
 
 	if user == nil {
 		if !s.config.AllowSignup {
 			slog.Warn("signup denied", "email", ar.Email)
-			verifyTmpl.Execute(w, verifyPageData{Error: "Signups are disabled."})
+			_ = verifyTmpl.Execute(w, verifyPageData{Error: "Signups are disabled."})
 			return
 		}
 		user, err = s.store.CreateUser(ar.Email)
 		if err != nil {
 			logFor(r.Context()).Error("create user during verify", "err", err)
-			verifyTmpl.Execute(w, verifyPageData{Error: "Failed to create account. Please try again."})
+			_ = verifyTmpl.Execute(w, verifyPageData{Error: "Failed to create account. Please try again."})
 			return
 		}
 	}
 
 	if err := s.store.VerifyAuthRequest(userCode, user.ID); err != nil {
 		logFor(r.Context()).Error("verify auth request", "err", err)
-		verifyTmpl.Execute(w, verifyPageData{Error: "Failed to authorize device. Code may have expired."})
+		_ = verifyTmpl.Execute(w, verifyPageData{Error: "Failed to authorize device. Code may have expired."})
 		return
 	}
 
@@ -261,7 +261,7 @@ func (s *Server) handleVerifySubmit(w http.ResponseWriter, r *http.Request) {
 	})
 
 	logFor(r.Context()).Info("device verified", "email", ar.Email)
-	verifyTmpl.Execute(w, verifyPageData{Success: true})
+	_ = verifyTmpl.Execute(w, verifyPageData{Success: true})
 }
 
 // logAuthEvent logs an auth event, silently ignoring errors.

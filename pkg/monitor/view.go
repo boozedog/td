@@ -828,17 +828,6 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 	// because swimlane headers/separators consume display space.
 	totalDisplayLines := m.swimlaneLinesFromOffset(0, totalRows)
 	needsScroll := totalDisplayLines > maxLines
-	showUpIndicator := needsScroll && offset > 0
-
-	// Calculate effective maxLines with indicators
-	effectiveMaxLines := maxLines
-	if showUpIndicator {
-		effectiveMaxLines--
-	}
-	// Reserve space for down indicator if display lines from offset exceed visible area
-	if needsScroll && m.swimlaneLinesFromOffset(offset, totalRows) > effectiveMaxLines {
-		effectiveMaxLines--
-	}
 
 	// Clamp offset using swimlaneMaxScroll (accounts for headers/separators)
 	if needsScroll {
@@ -852,8 +841,8 @@ func (m Model) renderBoardSwimlanesView(height int) string {
 	}
 
 	// Recalculate indicators after clamping
-	showUpIndicator = needsScroll && offset > 0
-	effectiveMaxLines = maxLines
+	showUpIndicator := needsScroll && offset > 0
+	effectiveMaxLines := maxLines
 	if showUpIndicator {
 		effectiveMaxLines--
 	}
@@ -1170,9 +1159,7 @@ func (m Model) renderModal() string {
 		if rendered == "" {
 			rendered = issue.Description // fallback if not rendered yet
 		}
-		for _, line := range strings.Split(rendered, "\n") {
-			lines = append(lines, line)
-		}
+		lines = append(lines, strings.Split(rendered, "\n")...)
 		lines = append(lines, "")
 	}
 
@@ -1183,9 +1170,7 @@ func (m Model) renderModal() string {
 		if rendered == "" {
 			rendered = issue.Acceptance // fallback if not rendered yet
 		}
-		for _, line := range strings.Split(rendered, "\n") {
-			lines = append(lines, line)
-		}
+		lines = append(lines, strings.Split(rendered, "\n")...)
 		lines = append(lines, "")
 	}
 
@@ -1920,11 +1905,6 @@ func (m Model) formatPriorityBreakdown(stats *models.ExtendedStats) string {
 	return statsTableLabel.Render("  ") + strings.Join(parts, "  ")
 }
 
-// wrapModal wraps content in a modal box with border (deprecated, use wrapModalWithDepth)
-func (m Model) wrapModal(content string, width, height int) string {
-	return m.wrapModalWithDepth(content, width, height)
-}
-
 // wrapModalWithDepth wraps content in a modal box with depth-aware styling
 func (m Model) wrapModalWithDepth(content string, width, height int) string {
 	depth := m.ModalDepth()
@@ -2083,33 +2063,6 @@ func (m Model) renderDeleteConfirmationLegacy() string {
 }
 
 // Legacy renderCloseConfirmation removed - close confirmation now uses declarative modal
-
-// wrapText wraps text to fit within maxWidth
-func wrapText(text string, maxWidth int) []string {
-	if maxWidth <= 0 {
-		return []string{text}
-	}
-
-	var lines []string
-	words := strings.Fields(text)
-	var currentLine string
-
-	for _, word := range words {
-		if currentLine == "" {
-			currentLine = word
-		} else if len(currentLine)+1+len(word) <= maxWidth {
-			currentLine += " " + word
-		} else {
-			lines = append(lines, currentLine)
-			currentLine = word
-		}
-	}
-	if currentLine != "" {
-		lines = append(lines, currentLine)
-	}
-
-	return lines
-}
 
 func renderLogLines(log models.Log, contentWidth int) []string {
 	prefix := timestampStyle.Render(log.Timestamp.Format("01-02 15:04")) + " " +

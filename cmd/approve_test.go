@@ -88,7 +88,7 @@ func TestApprovalReasonWithNoteFlags(t *testing.T) {
 	}
 
 	// Reset and test --notes
-	cmd.Flags().Set("note", "")
+	_ = cmd.Flags().Set("note", "")
 	if err := cmd.Flags().Set("notes", "my notes"); err != nil {
 		t.Fatalf("set notes: %v", err)
 	}
@@ -97,9 +97,9 @@ func TestApprovalReasonWithNoteFlags(t *testing.T) {
 	}
 
 	// --comment has lower priority than --note
-	cmd.Flags().Set("notes", "")
-	cmd.Flags().Set("comment", "c")
-	cmd.Flags().Set("note", "n")
+	_ = cmd.Flags().Set("notes", "")
+	_ = cmd.Flags().Set("comment", "c")
+	_ = cmd.Flags().Set("note", "n")
 	if got := approvalReason(cmd); got != "n" {
 		t.Fatalf("note vs comment: got %q, want %q", got, "n")
 	}

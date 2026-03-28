@@ -186,7 +186,7 @@ func TestWithRateLimitIntegration(t *testing.T) {
 		t.Fatalf("create project: expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 	var project ProjectResponse
-	json.NewDecoder(w.Body).Decode(&project)
+	_ = json.NewDecoder(w.Body).Decode(&project)
 
 	// Push requests up to the limit should succeed
 	for i := 0; i < rateLimitPush; i++ {

@@ -133,7 +133,7 @@ func (db *DB) SetIssuePositionLogged(boardID, issueID string, position int, sess
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Check if a (possibly soft-deleted) row exists
 		var existing int
@@ -236,7 +236,7 @@ func (db *DB) DeleteBoardLogged(boardID, sessionID string) error {
 		if err != nil {
 			return err
 		}
-		defer tx.Rollback()
+		defer func() { _ = tx.Rollback() }()
 
 		// Query active positions before soft-deleting them
 		now := time.Now()

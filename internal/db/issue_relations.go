@@ -249,7 +249,7 @@ func (db *DB) cascadeUpParentStatusLocked(issueID string, targetStatus models.St
 
 	// Add log entry
 	logMsg := fmt.Sprintf("Auto-cascaded to %s (all children complete)", targetStatus)
-	db.addLogEntry(parent.ID, sessionID, logMsg, models.LogTypeProgress)
+	_ = db.addLogEntry(parent.ID, sessionID, logMsg, models.LogTypeProgress)
 
 	cascadedIDs = append(cascadedIDs, parent.ID)
 	cascadedCount++
@@ -332,7 +332,7 @@ func (db *DB) cascadeUnblockDependentsLocked(closedIssueID, sessionID string) (i
 			continue
 		}
 
-		db.addLogEntry(depID, sessionID, fmt.Sprintf("Auto-unblocked (dependency %s closed)", closedIssueID), models.LogTypeProgress)
+		_ = db.addLogEntry(depID, sessionID, fmt.Sprintf("Auto-unblocked (dependency %s closed)", closedIssueID), models.LogTypeProgress)
 
 		unblockedIDs = append(unblockedIDs, depID)
 	}

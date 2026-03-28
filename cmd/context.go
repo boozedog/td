@@ -23,7 +23,7 @@ var resumeCmd = &cobra.Command{
 		showCmd.Run(cmd, args)
 
 		// Set focus
-		config.SetFocus(baseDir, args[0])
+		_ = config.SetFocus(baseDir, args[0])
 		fmt.Printf("FOCUSED %s\n", args[0])
 
 		return nil

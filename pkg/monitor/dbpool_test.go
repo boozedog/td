@@ -134,6 +134,6 @@ func TestSharedDB_DifferentPaths(t *testing.T) {
 	}
 
 	// Clean up
-	releaseSharedDB(tmpDir1)
-	releaseSharedDB(tmpDir2)
+	_ = releaseSharedDB(tmpDir1)
+	_ = releaseSharedDB(tmpDir2)
 }

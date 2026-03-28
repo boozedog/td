@@ -161,7 +161,6 @@ Supports bulk operations:
 					continue
 				}
 				output.Warning("auto-created minimal handoff for %s - consider using 'td handoff' for better documentation", issueID)
-				handoff = autoHandoff
 			}
 
 			// Handle --minor flag

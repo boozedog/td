@@ -212,8 +212,8 @@ func TestExpandFlagValuesMultipleFiles(t *testing.T) {
 
 	file1 := filepath.Join(dir, "file1.txt")
 	file2 := filepath.Join(dir, "file2.txt")
-	os.WriteFile(file1, []byte("from_file1"), 0644)
-	os.WriteFile(file2, []byte("from_file2"), 0644)
+	_ = os.WriteFile(file1, []byte("from_file1"), 0644)
+	_ = os.WriteFile(file2, []byte("from_file2"), 0644)
 
 	values := []string{"@" + file1, "@" + file2}
 	result, _ := ExpandFlagValues(values, false)
@@ -260,7 +260,7 @@ func TestExpandFlagValuesNilSlice(t *testing.T) {
 	if stdinUsed {
 		t.Error("stdinUsed should be false")
 	}
-	if result != nil && len(result) != 0 {
+	if len(result) != 0 {
 		t.Errorf("Expected nil or empty result, got %v", result)
 	}
 }

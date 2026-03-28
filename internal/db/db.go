@@ -59,7 +59,7 @@ func openConn(dbPath string) (*sql.DB, error) {
 	}
 
 	// Slightly faster writes, still safe with WAL
-	conn.Exec("PRAGMA synchronous=NORMAL")
+	_, _ = conn.Exec("PRAGMA synchronous=NORMAL")
 
 	return conn, nil
 }
@@ -130,7 +130,7 @@ func Initialize(baseDir string) (*DB, error) {
 // files from corrupting the database when another process opens it later.
 func (db *DB) Close() error {
 	// Best-effort checkpoint — ignore errors (DB might already be in a bad state)
-	db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	_, _ = db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	return db.conn.Close()
 }
 
@@ -153,6 +153,6 @@ func (db *DB) withWriteLock(fn func() error) error {
 	if err := locker.acquire(defaultTimeout); err != nil {
 		return err
 	}
-	defer locker.release()
+	defer func() { _ = locker.release() }()
 	return fn()
 }

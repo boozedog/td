@@ -1323,10 +1323,10 @@ func renderIssueActionDiff(b *strings.Builder, item *ActivityItem) {
 
 	var prev, next map[string]interface{}
 	if item.PreviousData != "" {
-		json.Unmarshal([]byte(item.PreviousData), &prev)
+		_ = json.Unmarshal([]byte(item.PreviousData), &prev)
 	}
 	if item.NewData != "" {
-		json.Unmarshal([]byte(item.NewData), &next)
+		_ = json.Unmarshal([]byte(item.NewData), &next)
 	}
 
 	// Show changed fields
@@ -1359,7 +1359,7 @@ func renderDependencyDetail(b *strings.Builder, item *ActivityItem) {
 		src = item.PreviousData
 	}
 	if src != "" {
-		json.Unmarshal([]byte(src), &data)
+		_ = json.Unmarshal([]byte(src), &data)
 	}
 	if data != nil {
 		if issueID, ok := data["issue_id"].(string); ok {
@@ -1379,7 +1379,7 @@ func renderFileDetail(b *strings.Builder, item *ActivityItem) {
 		src = item.PreviousData
 	}
 	if src != "" {
-		json.Unmarshal([]byte(src), &data)
+		_ = json.Unmarshal([]byte(src), &data)
 	}
 	if data != nil {
 		if path, ok := data["file_path"].(string); ok {
@@ -1395,7 +1395,7 @@ func renderFileDetail(b *strings.Builder, item *ActivityItem) {
 func renderBoardDetail(b *strings.Builder, item *ActivityItem) {
 	var data map[string]interface{}
 	if item.NewData != "" {
-		json.Unmarshal([]byte(item.NewData), &data)
+		_ = json.Unmarshal([]byte(item.NewData), &data)
 	}
 	if data != nil {
 		if name, ok := data["name"].(string); ok {
@@ -1411,7 +1411,7 @@ func renderBoardDetail(b *strings.Builder, item *ActivityItem) {
 func renderHandoffDetail(b *strings.Builder, item *ActivityItem) {
 	var data map[string]interface{}
 	if item.NewData != "" {
-		json.Unmarshal([]byte(item.NewData), &data)
+		_ = json.Unmarshal([]byte(item.NewData), &data)
 	}
 	if data == nil {
 		return
@@ -1438,7 +1438,7 @@ func renderHandoffSection(b *strings.Builder, data map[string]interface{}, key, 
 	var items []string
 	switch v := raw.(type) {
 	case string:
-		json.Unmarshal([]byte(v), &items)
+		_ = json.Unmarshal([]byte(v), &items)
 	case []interface{}:
 		for _, i := range v {
 			if s, ok := i.(string); ok {
@@ -1465,7 +1465,7 @@ func renderNoteDetail(b *strings.Builder, item *ActivityItem) {
 		src = item.PreviousData
 	}
 	if src != "" {
-		json.Unmarshal([]byte(src), &data)
+		_ = json.Unmarshal([]byte(src), &data)
 	}
 	if data != nil {
 		if title, ok := data["title"].(string); ok {

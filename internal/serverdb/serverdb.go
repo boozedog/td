@@ -40,8 +40,8 @@ func Open(dbPath string) (*ServerDB, error) {
 		conn.Close()
 		return nil, fmt.Errorf("set busy timeout: %w", err)
 	}
-	conn.Exec("PRAGMA synchronous=NORMAL")
-	conn.Exec("PRAGMA foreign_keys=ON")
+	_, _ = conn.Exec("PRAGMA synchronous=NORMAL")
+	_, _ = conn.Exec("PRAGMA foreign_keys=ON")
 
 	// Run schema
 	if _, err := conn.Exec(serverSchema); err != nil {
@@ -66,7 +66,7 @@ func (db *ServerDB) Ping() error {
 
 // Close checkpoints the WAL and closes the database connection.
 func (db *ServerDB) Close() error {
-	db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	_, _ = db.conn.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
 	return db.conn.Close()
 }
 
@@ -113,7 +113,7 @@ func (db *ServerDB) getSchemaVersion() int {
 		return 0
 	}
 	var v int
-	fmt.Sscanf(version, "%d", &v)
+	_, _ = fmt.Sscanf(version, "%d", &v)
 	return v
 }
 
