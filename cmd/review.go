@@ -285,6 +285,28 @@ Supports bulk operations:
 			}
 		} else {
 			issueIDs = args
+			if len(issueIDs) == 0 {
+				issues, err := database.ListIssues(reviewableByOptions(baseDir, sess.ID))
+				if err != nil {
+					output.Error("failed to list reviewable issues: %v", err)
+					return err
+				}
+				switch len(issues) {
+				case 0:
+					output.Error("no issues to approve. Provide issue IDs or use --all")
+					return fmt.Errorf("no issues specified")
+				case 1:
+					issueIDs = []string{issues[0].ID}
+				default:
+					output.Error("no issue ID specified. Multiple issues awaiting your review:")
+					for _, issue := range issues {
+						fmt.Printf("  %s: %s\n", issue.ID, issue.Title)
+					}
+					fmt.Printf("\nUsage: td approve <issue-id>\n")
+					fmt.Printf("Or use: td approve --all\n")
+					return fmt.Errorf("issue ID required")
+				}
+			}
 		}
 
 		if len(issueIDs) == 0 {
