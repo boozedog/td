@@ -621,9 +621,9 @@ func resolveListIssueFilterID(database *db.DB, baseDir, rawID, flagName string) 
 			}
 
 			if resolveErr != nil {
-				return "", fmt.Errorf("--%s . requires a focused issue or active work session: %w", flagName, resolveErr)
+				return "", fmt.Errorf("--%s . requires a focused issue, recent session activity, or an active work session: %w", flagName, resolveErr)
 			}
-			return "", fmt.Errorf("--%s . requires a focused issue or active work session", flagName)
+			return "", fmt.Errorf("--%s . requires a focused issue, recent session activity, or an active work session", flagName)
 		}
 		return db.NormalizeIssueID(focusedID), nil
 	}
@@ -646,8 +646,18 @@ func resolveListIssueFilterFromSession(database *db.DB) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if resolved, err := resolveCommonIssueRootAncestorID(database, issueIDsFromIssues(issues)); err != nil || resolved != "" {
+		return resolved, err
+	}
 
-	return resolveCommonIssueRootAncestorID(database, issueIDsFromIssues(issues))
+	// Fall back to the session's logged issue history so the dot path keeps
+	// working after review transitions have cleared the focused work item.
+	sessionLogIDs, err := database.GetIssueSessionLog(sess.ID)
+	if err != nil {
+		return "", err
+	}
+
+	return resolveCommonIssueRootAncestorID(database, sessionLogIDs)
 }
 
 func resolveListIssueFilterFromWorkSession(database *db.DB, baseDir string) (string, error) {

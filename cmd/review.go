@@ -42,6 +42,12 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 	}
 	_, err := sm.Validate(ctx)
 	if err != nil {
+		if issue.Status == models.StatusInReview {
+			return SubmitReviewResult{
+				Success: false,
+				Message: fmt.Sprintf("cannot review %s: already in review", issue.ID) + "\n" + reviewFollowupGuidance(issue),
+			}
+		}
 		return SubmitReviewResult{
 			Success: false,
 			Message: fmt.Sprintf("cannot review %s: %v", issue.ID, err),
@@ -251,6 +257,30 @@ func closeFollowupGuidance(issue *models.Issue) string {
 	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
 }
 
+// reviewFollowupGuidance returns the next workflow command after a failed
+// review submission attempt.
+func reviewFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Submit for review: td review "
+	}
+	if issue.Status == models.StatusInReview {
+		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
+}
+
+// approveFollowupGuidance returns the next workflow command after a failed
+// approval attempt.
+func approveFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Submit for review first: td review "
+	}
+	if issue.Status == models.StatusInReview {
+		return fmt.Sprintf("  Approve it: td approve %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
+}
+
 var approveCmd = &cobra.Command{
 	Use:   "approve [issue-id...]",
 	Short: "Approve and close one or more issues",
@@ -346,6 +376,7 @@ Supports bulk operations:
 						output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot approve %s: invalid transition from %s", issueID, issue.Status))
 					} else {
 						output.Warning("cannot approve %s: invalid transition from %s", issueID, issue.Status)
+						fmt.Println(approveFollowupGuidance(issue))
 					}
 				}
 				skipped++
