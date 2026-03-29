@@ -144,6 +144,9 @@ func TestUpdateLabelsRepeatedFlag(t *testing.T) {
 	if flag.Value.Type() != "stringArray" {
 		t.Errorf("Expected --labels to be stringArray, got %s", flag.Value.Type())
 	}
+	if flag.Shorthand != "l" {
+		t.Errorf("Expected --labels shorthand to be 'l', got %q", flag.Shorthand)
+	}
 }
 
 // TestUpdateDependsOnRepeatedFlag tests that update command depends-on flag accepts StringArray
@@ -177,6 +180,9 @@ func TestTaskCreateLabelsRepeatedFlag(t *testing.T) {
 	if flag.Value.Type() != "stringArray" {
 		t.Errorf("Expected --labels to be stringArray, got %s", flag.Value.Type())
 	}
+	if flag.Shorthand != "l" {
+		t.Errorf("Expected --labels shorthand to be 'l', got %q", flag.Shorthand)
+	}
 }
 
 // TestEpicCreateLabelsRepeatedFlag tests that epic create command labels flag accepts StringArray
@@ -187,6 +193,9 @@ func TestEpicCreateLabelsRepeatedFlag(t *testing.T) {
 	}
 	if flag.Value.Type() != "stringArray" {
 		t.Errorf("Expected --labels to be stringArray, got %s", flag.Value.Type())
+	}
+	if flag.Shorthand != "l" {
+		t.Errorf("Expected --labels shorthand to be 'l', got %q", flag.Shorthand)
 	}
 }
 

@@ -103,7 +103,7 @@ func init() {
 	epicCreateCmd.Flags().String("title", "", "Issue title (max 200 characters)")
 	epicCreateCmd.Flags().StringP("priority", "p", "", "Priority (P0, P1, P2, P3, P4)")
 	epicCreateCmd.Flags().StringP("description", "d", "", "Description text")
-	epicCreateCmd.Flags().StringArray("labels", nil, "Labels (repeatable, comma-separated)")
+	epicCreateCmd.Flags().StringArrayP("labels", "l", nil, "Labels (repeatable, comma-separated)")
 	epicCreateCmd.Flags().String("parent", "", "Parent issue ID")
 	epicCreateCmd.Flags().String("epic", "", "Parent issue ID (alias for --parent)")
 	epicCreateCmd.Flags().StringArray("depends-on", nil, "Issues this depends on (repeatable, comma-separated)")

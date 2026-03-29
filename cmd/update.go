@@ -243,7 +243,7 @@ func init() {
 	updateCmd.Flags().String("type", "", "New type")
 	updateCmd.Flags().String("priority", "", "New priority")
 	updateCmd.Flags().Int("points", 0, "New story points")
-	updateCmd.Flags().StringArray("labels", nil, "Replace labels (repeatable, comma-separated)")
+	updateCmd.Flags().StringArrayP("labels", "l", nil, "Replace labels (repeatable, comma-separated)")
 	updateCmd.Flags().String("sprint", "", "New sprint name (empty string to clear)")
 	updateCmd.Flags().String("parent", "", "New parent issue ID")
 	updateCmd.Flags().StringArray("depends-on", nil, "Replace dependencies (repeatable, comma-separated)")
