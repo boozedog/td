@@ -20,6 +20,9 @@ var createCmd = &cobra.Command{
 	Aliases: []string{"add", "new"},
 	Short:   "Create a new issue",
 	Long:    `Create a new issue with optional flags for type, priority, labels, and more.`,
+	Example: "  td create \"Add user auth\" --type feature --priority P1\n" +
+		"  td create \"Rich markdown issue\" --description-file description.md --acceptance-file acceptance.md\n" +
+		"  cat acceptance.md | td create \"Import from stdin\" --acceptance-file -",
 	GroupID: "core",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		// Route "td new task Title" → td create --type task "Title"
@@ -129,26 +132,36 @@ var createCmd = &cobra.Command{
 			issue.Labels = mergeMultiValueFlag(labelsArr)
 		}
 
-		// Description (support --description, --desc, and --body)
-		issue.Description, _ = cmd.Flags().GetString("description")
-		if issue.Description == "" {
-			if desc, _ := cmd.Flags().GetString("desc"); desc != "" {
-				issue.Description = desc
-			}
-		}
-		if issue.Description == "" {
-			if body, _ := cmd.Flags().GetString("body"); body != "" {
-				issue.Description = body
-			}
-		}
-		if issue.Description == "" {
-			if notes, _ := cmd.Flags().GetString("notes"); notes != "" {
-				issue.Description = notes
-			}
-		}
+		stdinUsed := false
 
-		// Acceptance
-		issue.Acceptance, _ = cmd.Flags().GetString("acceptance")
+		description, descriptionProvided, nextStdinUsed, err := resolveRichTextField(
+			cmd,
+			[]string{"description", "desc", "body", "notes"},
+			"description-file",
+			stdinUsed,
+		)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		if descriptionProvided {
+			issue.Description = description
+		}
+		stdinUsed = nextStdinUsed
+
+		acceptance, acceptanceProvided, _, err := resolveRichTextField(
+			cmd,
+			[]string{"acceptance"},
+			"acceptance-file",
+			stdinUsed,
+		)
+		if err != nil {
+			output.Error("%v", err)
+			return err
+		}
+		if acceptanceProvided {
+			issue.Acceptance = acceptance
+		}
 
 		// Parent (supports --parent and --epic)
 		issue.ParentID, _ = cmd.Flags().GetString("parent")
@@ -243,7 +256,9 @@ func init() {
 	createCmd.Flags().String("desc", "", "Alias for --description")
 	createCmd.Flags().String("body", "", "Alias for --description")
 	createCmd.Flags().String("notes", "", "Alias for --description")
+	createCmd.Flags().String("description-file", "", "Read description from file or - for stdin (preserves formatting)")
 	createCmd.Flags().String("acceptance", "", "Acceptance criteria")
+	createCmd.Flags().String("acceptance-file", "", "Read acceptance criteria from file or - for stdin (preserves formatting)")
 	createCmd.Flags().String("parent", "", "Parent issue ID")
 	createCmd.Flags().String("epic", "", "Parent issue ID (alias for --parent)")
 	createCmd.Flags().StringArray("depends-on", nil, "Issues this depends on (repeatable, comma-separated)")

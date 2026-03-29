@@ -16,6 +16,9 @@ var updateCmd = &cobra.Command{
 	Use:     "update [issue-id...]",
 	Aliases: []string{"edit"},
 	Short:   "Update one or more fields on existing issues",
+	Example: "  td update td-a1b2 --priority P1 --description \"Short inline note\"\n" +
+		"  td update td-a1b2 --description-file description.md\n" +
+		"  cat acceptance.md | td update td-a1b2 --append --acceptance-file -",
 	GroupID: "core",
 	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -49,24 +52,38 @@ var updateCmd = &cobra.Command{
 			}
 
 			appendMode, _ := cmd.Flags().GetBool("append")
+			stdinUsed := false
 
-			// Check description and its aliases (--desc, --body, -d)
-			desc, _ := cmd.Flags().GetString("description")
-			if desc == "" {
-				desc, _ = cmd.Flags().GetString("desc")
+			description, descriptionProvided, nextStdinUsed, err := resolveRichTextField(
+				cmd,
+				[]string{"description", "desc", "body"},
+				"description-file",
+				stdinUsed,
+			)
+			if err != nil {
+				output.Error("%v", err)
+				return err
 			}
-			if desc == "" {
-				desc, _ = cmd.Flags().GetString("body")
-			}
-			if desc != "" {
+			if descriptionProvided {
 				if appendMode && issue.Description != "" {
-					issue.Description = issue.Description + "\n\n" + desc
+					issue.Description = issue.Description + "\n\n" + description
 				} else {
-					issue.Description = desc
+					issue.Description = description
 				}
 			}
+			stdinUsed = nextStdinUsed
 
-			if acceptance, _ := cmd.Flags().GetString("acceptance"); acceptance != "" {
+			acceptance, acceptanceProvided, _, err := resolveRichTextField(
+				cmd,
+				[]string{"acceptance"},
+				"acceptance-file",
+				stdinUsed,
+			)
+			if err != nil {
+				output.Error("%v", err)
+				return err
+			}
+			if acceptanceProvided {
 				if appendMode && issue.Acceptance != "" {
 					issue.Acceptance = issue.Acceptance + "\n\n" + acceptance
 				} else {
@@ -239,7 +256,9 @@ func init() {
 	updateCmd.Flags().StringP("description", "d", "", "New description")
 	updateCmd.Flags().String("desc", "", "Alias for --description")
 	updateCmd.Flags().String("body", "", "Alias for --description")
+	updateCmd.Flags().String("description-file", "", "Read description from file or - for stdin (preserves formatting)")
 	updateCmd.Flags().String("acceptance", "", "New acceptance criteria")
+	updateCmd.Flags().String("acceptance-file", "", "Read acceptance criteria from file or - for stdin (preserves formatting)")
 	updateCmd.Flags().String("type", "", "New type")
 	updateCmd.Flags().String("priority", "", "New priority")
 	updateCmd.Flags().Int("points", 0, "New story points")
