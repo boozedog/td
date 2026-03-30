@@ -379,13 +379,13 @@ func recentWorkflowTransitionContext(database *db.DB, issueID string) string {
 func summarizeWorkflowTransition(message string) (string, bool) {
 	normalized := strings.ToLower(strings.TrimSpace(message))
 	switch {
-	case normalized == "approved" || strings.HasPrefix(normalized, "approved:"):
+	case normalized == "approved" || strings.HasPrefix(normalized, "approved:") || strings.Contains(normalized, "] approved "):
 		return "approved", true
 	case normalized == "rejected" || strings.HasPrefix(normalized, "rejected:"):
 		return "rejected", true
 	case normalized == "reopened" || strings.HasPrefix(normalized, "reopened:"):
 		return "reopened", true
-	case normalized == "closed" || strings.HasPrefix(normalized, "closed:"):
+	case normalized == "closed" || strings.HasPrefix(normalized, "closed:") || strings.Contains(normalized, "] closed "):
 		return "closed", true
 	case normalized == "submitted for review" || strings.HasPrefix(normalized, "submitted for review:") || strings.HasPrefix(normalized, "cascaded review from "):
 		return "submitted for review", true
@@ -668,7 +668,7 @@ Supports bulk operations:
 			logMsg := "Approved"
 			logType := models.LogTypeProgress
 			if reason != "" {
-				logMsg = reason
+				logMsg = "Approved: " + reason
 			}
 			if eligibility.CreatorException {
 				agentInfo := sess.AgentType

@@ -240,3 +240,83 @@ func TestApproveClosedIssueIsIdempotent(t *testing.T) {
 		t.Fatalf("reviewer session = %q, want %q", updated.ReviewerSession, "ses_original_reviewer")
 	}
 }
+
+func TestApproveClosedIssueUsesLatestApprovalReasonContext(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	t.Setenv("TD_SESSION_ID", "ses_cmd_test")
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:              "Recently approved issue",
+		Status:             models.StatusInReview,
+		ImplementerSession: "ses_impl",
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: "ses_impl",
+		Message:   "Submitted for review",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+
+	if err := approveCmd.Flags().Set("reason", "ship it"); err != nil {
+		t.Fatalf("set reason: %v", err)
+	}
+
+	var first bytes.Buffer
+	oldStdout := os.Stdout
+	r1, w1, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w1
+	runErr := approveCmd.RunE(approveCmd, []string{issue.ID})
+	_ = w1.Close()
+	os.Stdout = oldStdout
+	_, _ = io.Copy(&first, r1)
+	if runErr != nil {
+		t.Fatalf("first approveCmd.RunE returned error: %v", runErr)
+	}
+
+	if err := approveCmd.Flags().Set("reason", ""); err != nil {
+		t.Fatalf("clear reason: %v", err)
+	}
+
+	var second bytes.Buffer
+	r2, w2, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w2
+	runErr = approveCmd.RunE(approveCmd, []string{issue.ID})
+	_ = w2.Close()
+	os.Stdout = oldStdout
+	_, _ = io.Copy(&second, r2)
+	if runErr != nil {
+		t.Fatalf("second approveCmd.RunE returned error: %v", runErr)
+	}
+
+	got := second.String()
+	if !strings.Contains(got, "Recent transition: approved") {
+		t.Fatalf("expected latest approval transition in %s", got)
+	}
+	if strings.Contains(got, "Recent transition: submitted for review") {
+		t.Fatalf("expected stale submitted-for-review context to be skipped in %s", got)
+	}
+}
