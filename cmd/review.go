@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/marcus/td/internal/config"
@@ -25,6 +26,19 @@ func clearFocusIfNeeded(baseDir, issueID string) {
 type SubmitReviewResult struct {
 	Success bool
 	Message string
+}
+
+const autoReviewHandoffMessage = "Auto-generated for review submission"
+
+func newAutoReviewHandoff(issueID, sessionID string) *models.Handoff {
+	return &models.Handoff{
+		IssueID:   issueID,
+		SessionID: sessionID,
+		Done:      []string{autoReviewHandoffMessage},
+		Remaining: []string{},
+		Decisions: []string{},
+		Uncertain: []string{},
+	}
 }
 
 // submitIssueForReview submits a single issue for review with proper validation,
@@ -92,6 +106,79 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 	return SubmitReviewResult{Success: true}
 }
 
+func shouldWarnAboutAutoHandoff(database *db.DB, issueID, sessionID string) bool {
+	logs, err := database.GetLogs(issueID, 10)
+	if err != nil {
+		return true
+	}
+
+	const substantiveContextChars = 16
+	totalChars := 0
+	for _, log := range logs {
+		if log.SessionID != sessionID {
+			continue
+		}
+
+		if !isSubstantiveReviewContextLog(log) {
+			continue
+		}
+
+		totalChars += len([]rune(strings.TrimSpace(log.Message)))
+		if log.Type != models.LogTypeProgress {
+			return false
+		}
+		if totalChars >= substantiveContextChars {
+			return false
+		}
+	}
+
+	return true
+}
+
+func isSubstantiveReviewContextLog(log models.Log) bool {
+	message := strings.TrimSpace(log.Message)
+	if message == "" {
+		return false
+	}
+
+	switch log.Type {
+	case models.LogTypeDecision, models.LogTypeHypothesis, models.LogTypeTried, models.LogTypeResult, models.LogTypeBlocker, models.LogTypeSecurity:
+		return true
+	case models.LogTypeProgress, models.LogTypeOrchestration:
+		return !isRoutineWorkflowLogMessage(message)
+	default:
+		return true
+	}
+}
+
+func isRoutineWorkflowLogMessage(message string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	if normalized == "" {
+		return true
+	}
+
+	switch normalized {
+	case "started work", "submitted for review", "approved", "rejected", "closed":
+		return true
+	}
+
+	prefixes := []string{
+		"submitted for review via ",
+		"approved: ",
+		"rejected: ",
+		"closed: ",
+		"cascaded review from ",
+		"auto-unblocked (",
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
 var reviewCmd = &cobra.Command{
 	Use:     "review [issue-id...]",
 	Aliases: []string{"submit", "finish"},
@@ -149,14 +236,7 @@ Supports bulk operations:
 			handoff, err := database.GetLatestHandoff(issueID)
 			if err != nil || handoff == nil {
 				// Auto-create minimal handoff
-				autoHandoff := &models.Handoff{
-					IssueID:   issueID,
-					SessionID: sess.ID,
-					Done:      []string{"Auto-generated for review submission"},
-					Remaining: []string{},
-					Decisions: []string{},
-					Uncertain: []string{},
-				}
+				autoHandoff := newAutoReviewHandoff(issueID, sess.ID)
 				if err := database.AddHandoff(autoHandoff); err != nil {
 					if jsonOutput {
 						output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("failed to create handoff: %v", err))
@@ -166,7 +246,9 @@ Supports bulk operations:
 					skipped++
 					continue
 				}
-				output.Warning("auto-created minimal handoff for %s - consider using 'td handoff' for better documentation", issueID)
+				if shouldWarnAboutAutoHandoff(database, issueID, sess.ID) {
+					output.Warning("auto-created minimal handoff for %s - consider using 'td handoff' for better documentation", issueID)
+				}
 			}
 
 			// Handle --minor flag

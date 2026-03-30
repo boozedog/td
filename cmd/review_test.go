@@ -1,11 +1,16 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/models"
+	"github.com/marcus/td/internal/session"
 )
 
 func TestClearFocusIfNeeded(t *testing.T) {
@@ -84,6 +89,55 @@ func TestClearFocusIfNeededNoFocus(t *testing.T) {
 	if focused != "" {
 		t.Errorf("Unexpected focus found: %q", focused)
 	}
+}
+
+func runReviewCommand(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	saveAndRestoreGlobals(t)
+	t.Setenv("TD_SESSION_ID", "ses_review_cmd")
+
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	_ = reviewCmd.Flags().Set("json", "false")
+	_ = reviewCmd.Flags().Set("minor", "false")
+	_ = reviewCmd.Flags().Set("reason", "")
+	_ = reviewCmd.Flags().Set("message", "")
+	_ = reviewCmd.Flags().Set("comment", "")
+	_ = reviewCmd.Flags().Set("note", "")
+	_ = reviewCmd.Flags().Set("notes", "")
+
+	var output bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w
+
+	runErr := reviewCmd.RunE(reviewCmd, args)
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_, _ = io.Copy(&output, r)
+
+	if runErr != nil {
+		t.Fatalf("reviewCmd.RunE returned error: %v", runErr)
+	}
+
+	return output.String()
+}
+
+func reviewCommandSessionID(t *testing.T, database *db.DB) string {
+	t.Helper()
+
+	t.Setenv("TD_SESSION_ID", "ses_review_cmd")
+	sess, err := session.GetOrCreate(database)
+	if err != nil {
+		t.Fatalf("GetOrCreate failed: %v", err)
+	}
+	return sess.ID
 }
 
 func TestReviewRequiresHandoff(t *testing.T) {
@@ -652,7 +706,7 @@ func TestCascadeUpToReviewAllChildrenReview(t *testing.T) {
 	database.UpdateIssue(child2)
 
 	// Cascade up should now update epic
-	cascaded, _ := database.CascadeUpParentStatus( child2.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child2.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 1 {
 		t.Errorf("Expected 1 cascaded, got %d", cascaded)
@@ -704,7 +758,7 @@ func TestCascadeUpToClosedAllChildrenClosed(t *testing.T) {
 	sessionID := "ses_test"
 
 	// All children closed, cascade up should update epic
-	cascaded, _ := database.CascadeUpParentStatus( child2.ID, models.StatusClosed, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child2.ID, models.StatusClosed, sessionID)
 
 	if cascaded != 1 {
 		t.Errorf("Expected 1 cascaded, got %d", cascaded)
@@ -761,7 +815,7 @@ func TestCascadeUpRecursive(t *testing.T) {
 
 	// Child is only child of parent, parent is only child of grandparent
 	// Cascade up from child should update both parent and grandparent
-	cascaded, _ := database.CascadeUpParentStatus( child.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 2 {
 		t.Errorf("Expected 2 cascaded (parent + grandparent), got %d", cascaded)
@@ -809,7 +863,7 @@ func TestCascadeUpNoActionNonEpicParent(t *testing.T) {
 	sessionID := "ses_test"
 
 	// Should NOT cascade up to non-epic parent
-	cascaded, _ := database.CascadeUpParentStatus( child.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 0 {
 		t.Errorf("Expected 0 cascaded (parent not epic), got %d", cascaded)
@@ -861,7 +915,7 @@ func TestCascadeUpNoActionNotAllChildrenReady(t *testing.T) {
 	sessionID := "ses_test"
 
 	// Should NOT cascade up because child2 is still open
-	cascaded, _ := database.CascadeUpParentStatus( child1.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child1.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 0 {
 		t.Errorf("Expected 0 cascaded (not all children ready), got %d", cascaded)
@@ -913,7 +967,7 @@ func TestCascadeUpReviewAllowsClosedSiblings(t *testing.T) {
 	sessionID := "ses_test"
 
 	// For in_review target, closed siblings should count as "ready"
-	cascaded, _ := database.CascadeUpParentStatus( child1.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(child1.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 1 {
 		t.Errorf("Expected 1 cascaded, got %d", cascaded)
@@ -1181,7 +1235,7 @@ func TestCascadeUpNoActionNoParent(t *testing.T) {
 	sessionID := "ses_test"
 
 	// Should return 0 since no parent
-	cascaded, _ := database.CascadeUpParentStatus( task.ID, models.StatusInReview, sessionID)
+	cascaded, _ := database.CascadeUpParentStatus(task.ID, models.StatusInReview, sessionID)
 
 	if cascaded != 0 {
 		t.Errorf("Expected 0 cascaded (no parent), got %d", cascaded)
@@ -1259,6 +1313,168 @@ func TestReviewAutoCreatesHandoffWhenMissing(t *testing.T) {
 	}
 	if created.SessionID != sessionID {
 		t.Errorf("Handoff SessionID wrong: got %q, want %q", created.SessionID, sessionID)
+	}
+}
+
+func TestReviewWarnsWhenAutoCreatingHandoffWithoutContext(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Needs review handoff",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	output := runReviewCommand(t, dir, issue.ID)
+
+	if !strings.Contains(output, "Warning: auto-created minimal handoff for "+issue.ID) {
+		t.Fatalf("expected auto-handoff warning, got %q", output)
+	}
+	if !strings.Contains(output, "REVIEW REQUESTED "+issue.ID) {
+		t.Fatalf("expected review output for %q, got %q", issue.ID, output)
+	}
+
+	handoff, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if handoff == nil {
+		t.Fatal("expected auto-created handoff")
+	}
+}
+
+func TestReviewWarnsWhenOnlyRoutineWorkflowLogsExist(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Routine logs only",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := reviewCommandSessionID(t, database)
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: sessionID,
+		Message:   "Started work",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+
+	output := runReviewCommand(t, dir, issue.ID)
+
+	if !strings.Contains(output, "Warning: auto-created minimal handoff for "+issue.ID) {
+		t.Fatalf("expected warning to remain for routine logs, got %q", output)
+	}
+}
+
+func TestReviewWarnsWhenSubstantiveLogsBelongToDifferentSession(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Different session context",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: "ses_other_context",
+		Message:   "Implemented retry handling and added regression coverage",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+
+	output := runReviewCommand(t, dir, issue.ID)
+
+	if !strings.Contains(output, "Warning: auto-created minimal handoff for "+issue.ID) {
+		t.Fatalf("expected warning when substantive logs are from another session, got %q", output)
+	}
+	if !strings.Contains(output, "REVIEW REQUESTED "+issue.ID) {
+		t.Fatalf("expected review output for %q, got %q", issue.ID, output)
+	}
+}
+
+func TestReviewSuppressesAutoHandoffWarningWhenWorkSessionContextExists(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Work session context exists",
+		Status: models.StatusInProgress,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	sessionID := reviewCommandSessionID(t, database)
+	ws := &models.WorkSession{
+		ID:        "ws-review-proof",
+		Name:      "Review proof session",
+		SessionID: sessionID,
+	}
+	if err := database.CreateWorkSession(ws); err != nil {
+		t.Fatalf("CreateWorkSession failed: %v", err)
+	}
+	if err := database.TagIssueToWorkSession(ws.ID, issue.ID, "review-proof"); err != nil {
+		t.Fatalf("TagIssueToWorkSession failed: %v", err)
+	}
+	if err := database.AddLog(&models.Log{
+		IssueID:       "",
+		SessionID:     sessionID,
+		WorkSessionID: ws.ID,
+		Message:       "Validated review flow and captured remaining edge cases",
+		Type:          models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+
+	output := runReviewCommand(t, dir, issue.ID)
+
+	if strings.Contains(output, "Warning: auto-created minimal handoff for "+issue.ID) {
+		t.Fatalf("expected warning suppression when substantive work-session context exists, got %q", output)
+	}
+	if !strings.Contains(output, "REVIEW REQUESTED "+issue.ID) {
+		t.Fatalf("expected review output for %q, got %q", issue.ID, output)
+	}
+
+	handoff, err := database.GetLatestHandoff(issue.ID)
+	if err != nil {
+		t.Fatalf("GetLatestHandoff failed: %v", err)
+	}
+	if handoff == nil {
+		t.Fatal("expected auto-created handoff")
 	}
 }
 
