@@ -3,6 +3,7 @@ package cmd
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marcus/td/internal/config"
 	"github.com/marcus/td/internal/db"
@@ -498,5 +499,59 @@ func TestDescribeStaleTransitionUpdateIncludesRecentContext(t *testing.T) {
 	}
 	if !strings.Contains(msg, "Already reopened: td show "+issue.ID) {
 		t.Fatalf("expected reopened guidance in %q", msg)
+	}
+}
+
+func TestDescribeStaleTransitionUpdatePrefersNewestWorkflowContext(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Newest transition wins",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: "ses_impl",
+		Message:   "Submitted for review",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog submitted failed: %v", err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: "ses_reviewer",
+		Message:   "Rejected",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog rejected failed: %v", err)
+	}
+
+	msg := describeStaleTransitionUpdate(
+		database,
+		"reject",
+		issue.ID,
+		&db.StaleIssueStatusError{
+			IssueID:  issue.ID,
+			Expected: models.StatusInReview,
+			Actual:   models.StatusOpen,
+		},
+		rejectFollowupGuidance,
+	)
+
+	if !strings.Contains(msg, "Recent transition: rejected by ses_reviewer") {
+		t.Fatalf("expected newest transition context in %q", msg)
+	}
+	if strings.Contains(msg, "Recent transition: submitted for review by ses_impl") {
+		t.Fatalf("expected stale transition context to be ignored in %q", msg)
 	}
 }

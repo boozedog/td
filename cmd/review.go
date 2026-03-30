@@ -366,7 +366,8 @@ func recentWorkflowTransitionContext(database *db.DB, issueID string) string {
 		return ""
 	}
 
-	for _, log := range logs {
+	for i := len(logs) - 1; i >= 0; i-- {
+		log := logs[i]
 		if summary, ok := summarizeWorkflowTransition(log.Message); ok {
 			return fmt.Sprintf("  Recent transition: %s by %s at %s", summary, log.SessionID, log.Timestamp.Format("2006-01-02 15:04"))
 		}
