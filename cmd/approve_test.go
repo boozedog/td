@@ -178,3 +178,65 @@ func TestApproveNoArgsUsesSingleReviewableIssue(t *testing.T) {
 		t.Fatalf("reviewer session = %q, want %q", updated.ReviewerSession, sess.ID)
 	}
 }
+
+func TestApproveClosedIssueIsIdempotent(t *testing.T) {
+	saveAndRestoreGlobals(t)
+	t.Setenv("TD_SESSION_ID", "ses_cmd_test")
+
+	dir := t.TempDir()
+	baseDir := dir
+	baseDirOverride = &baseDir
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:              "Already closed review target",
+		Status:             models.StatusClosed,
+		ReviewerSession:    "ses_original_reviewer",
+		ImplementerSession: "ses_impl",
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+	if err := database.UpdateIssue(issue); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+
+	var output bytes.Buffer
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe failed: %v", err)
+	}
+	os.Stdout = w
+
+	runErr := approveCmd.RunE(approveCmd, []string{issue.ID})
+
+	_ = w.Close()
+	os.Stdout = oldStdout
+	_, _ = io.Copy(&output, r)
+
+	if runErr != nil {
+		t.Fatalf("approveCmd.RunE returned error: %v", runErr)
+	}
+
+	got := output.String()
+	if !strings.Contains(got, "already approved/closed") {
+		t.Fatalf("expected idempotent approval output, got %s", got)
+	}
+
+	updated, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue failed: %v", err)
+	}
+	if updated.Status != models.StatusClosed {
+		t.Fatalf("status = %s, want %s", updated.Status, models.StatusClosed)
+	}
+	if updated.ReviewerSession != "ses_original_reviewer" {
+		t.Fatalf("reviewer session = %q, want %q", updated.ReviewerSession, "ses_original_reviewer")
+	}
+}

@@ -345,14 +345,82 @@ func describeStaleTransitionUpdate(database *db.DB, action, issueID string, err 
 		}
 	}
 
-	return fmt.Sprintf(
-		"cannot %s %s: status changed from %s to %s in another session\n%s",
-		action,
-		issueID,
-		staleErr.Expected,
-		current.Status,
-		guidance(current),
-	)
+	lines := []string{
+		fmt.Sprintf("cannot %s %s: status changed from %s to %s in another session", action, issueID, staleErr.Expected, current.Status),
+		fmt.Sprintf("  Current status: %s", current.Status),
+	}
+	if recent := recentWorkflowTransitionContext(database, issueID); recent != "" {
+		lines = append(lines, recent)
+	}
+	lines = append(lines, guidance(current))
+	return strings.Join(lines, "\n")
+}
+
+func recentWorkflowTransitionContext(database *db.DB, issueID string) string {
+	if database == nil {
+		return ""
+	}
+
+	logs, err := database.GetLogs(issueID, 5)
+	if err != nil {
+		return ""
+	}
+
+	for _, log := range logs {
+		if summary, ok := summarizeWorkflowTransition(log.Message); ok {
+			return fmt.Sprintf("  Recent transition: %s by %s at %s", summary, log.SessionID, log.Timestamp.Format("2006-01-02 15:04"))
+		}
+	}
+
+	return ""
+}
+
+func summarizeWorkflowTransition(message string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(message))
+	switch {
+	case normalized == "approved" || strings.HasPrefix(normalized, "approved:"):
+		return "approved", true
+	case normalized == "rejected" || strings.HasPrefix(normalized, "rejected:"):
+		return "rejected", true
+	case normalized == "reopened" || strings.HasPrefix(normalized, "reopened:"):
+		return "reopened", true
+	case normalized == "closed" || strings.HasPrefix(normalized, "closed:"):
+		return "closed", true
+	case normalized == "submitted for review" || strings.HasPrefix(normalized, "submitted for review:") || strings.HasPrefix(normalized, "cascaded review from "):
+		return "submitted for review", true
+	default:
+		return "", false
+	}
+}
+
+func describeReviewerNoop(database *db.DB, action string, issue *models.Issue) string {
+	if issue == nil {
+		return ""
+	}
+
+	header := ""
+	switch action {
+	case "approve":
+		header = fmt.Sprintf("already approved/closed %s", issue.ID)
+	case "reject":
+		header = fmt.Sprintf("already reopened %s", issue.ID)
+	default:
+		header = fmt.Sprintf("already handled %s", issue.ID)
+	}
+
+	lines := []string{
+		header,
+		fmt.Sprintf("  Current status: %s", issue.Status),
+	}
+	if recent := recentWorkflowTransitionContext(database, issue.ID); recent != "" {
+		lines = append(lines, recent)
+	}
+	if action == "approve" {
+		lines = append(lines, approveFollowupGuidance(issue))
+	} else {
+		lines = append(lines, rejectFollowupGuidance(issue))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func closeFollowupGuidance(issue *models.Issue) string {
@@ -392,6 +460,21 @@ func approveFollowupGuidance(issue *models.Issue) string {
 	switch issue.Status {
 	case models.StatusInReview:
 		return fmt.Sprintf("  Approve it: td approve %s", issue.ID)
+	case models.StatusClosed:
+		return fmt.Sprintf("  Already approved/closed: td show %s", issue.ID)
+	}
+	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
+}
+
+func rejectFollowupGuidance(issue *models.Issue) string {
+	if issue == nil {
+		return "  Already reopened: td show "
+	}
+	switch issue.Status {
+	case models.StatusOpen:
+		return fmt.Sprintf("  Already reopened: td show %s", issue.ID)
+	case models.StatusInReview:
+		return fmt.Sprintf("  Reject it: td reject %s", issue.ID)
 	case models.StatusClosed:
 		return fmt.Sprintf("  Already closed: td show %s", issue.ID)
 	}
@@ -487,6 +570,23 @@ Supports bulk operations:
 
 			// Validate transition with state machine
 			sm := workflow.DefaultMachine()
+			if issue.Status == models.StatusClosed {
+				message := describeReviewerNoop(database, "approve", issue)
+				if jsonOutput {
+					if err := output.JSON(map[string]interface{}{
+						"id":      issueID,
+						"status":  string(issue.Status),
+						"action":  "already approved/closed",
+						"message": message,
+					}); err != nil {
+						output.JSONError(output.ErrCodeDatabaseError, err.Error())
+					}
+				} else if !all {
+					output.Warning("%s", message)
+				}
+				skipped++
+				continue
+			}
 			if !sm.IsValidTransition(issue.Status, models.StatusClosed) {
 				if !all {
 					if jsonOutput {
@@ -676,6 +776,23 @@ Supports bulk operations:
 			}
 
 			// Reject is only valid from in_review (matches HTTP API behavior)
+			if issue.Status == models.StatusOpen {
+				message := describeReviewerNoop(database, "reject", issue)
+				if jsonOutput {
+					if err := output.JSON(map[string]interface{}{
+						"id":      issueID,
+						"status":  string(issue.Status),
+						"action":  "already reopened",
+						"message": message,
+					}); err != nil {
+						output.JSONError(output.ErrCodeDatabaseError, err.Error())
+					}
+				} else {
+					output.Warning("%s", message)
+				}
+				skipped++
+				continue
+			}
 			if issue.Status != models.StatusInReview {
 				if jsonOutput {
 					output.JSONError(output.ErrCodeDatabaseError, fmt.Sprintf("cannot reject %s: must be in_review (currently %s)", issueID, issue.Status))
@@ -694,7 +811,7 @@ Supports bulk operations:
 				if jsonOutput {
 					output.JSONError(output.ErrCodeDatabaseError, err.Error())
 				} else {
-					output.Warning("%s", describeStaleTransitionUpdate(database, "reject", issueID, err, reviewFollowupGuidance))
+					output.Warning("%s", describeStaleTransitionUpdate(database, "reject", issueID, err, rejectFollowupGuidance))
 				}
 				skipped++
 				continue

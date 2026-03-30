@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/marcus/td/internal/config"
@@ -359,7 +360,7 @@ func TestApproveFollowupGuidance(t *testing.T) {
 		{
 			name:  "closed issue points to show",
 			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
-			want:  "  Already closed: td show td-closed",
+			want:  "  Already approved/closed: td show td-closed",
 		},
 		{
 			name:  "nil issue falls back to review wording",
@@ -373,6 +374,44 @@ func TestApproveFollowupGuidance(t *testing.T) {
 			got := approveFollowupGuidance(tt.issue)
 			if got != tt.want {
 				t.Fatalf("approveFollowupGuidance() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRejectFollowupGuidance(t *testing.T) {
+	tests := []struct {
+		name  string
+		issue *models.Issue
+		want  string
+	}{
+		{
+			name:  "open issue points to show as reopened",
+			issue: &models.Issue{ID: "td-open", Status: models.StatusOpen},
+			want:  "  Already reopened: td show td-open",
+		},
+		{
+			name:  "in review issue points to reject",
+			issue: &models.Issue{ID: "td-review", Status: models.StatusInReview},
+			want:  "  Reject it: td reject td-review",
+		},
+		{
+			name:  "closed issue points to show",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Already closed: td show td-closed",
+		},
+		{
+			name:  "nil issue falls back to reopened wording",
+			issue: nil,
+			want:  "  Already reopened: td show ",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rejectFollowupGuidance(tt.issue)
+			if got != tt.want {
+				t.Fatalf("rejectFollowupGuidance() = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -407,8 +446,57 @@ func TestDescribeStaleTransitionUpdate(t *testing.T) {
 	)
 	t.Log(msg)
 
-	want := "cannot approve " + issue.ID + ": status changed from in_review to closed in another session\n  Already closed: td show " + issue.ID
+	want := "cannot approve " + issue.ID + ": status changed from in_review to closed in another session\n  Current status: closed\n  Already approved/closed: td show " + issue.ID
 	if msg != want {
 		t.Fatalf("describeStaleTransitionUpdate() = %q, want %q", msg, want)
+	}
+}
+
+func TestDescribeStaleTransitionUpdateIncludesRecentContext(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Reopened elsewhere",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	if err := database.AddLog(&models.Log{
+		IssueID:   issue.ID,
+		SessionID: "ses_reviewer",
+		Message:   "Reopened",
+		Type:      models.LogTypeProgress,
+	}); err != nil {
+		t.Fatalf("AddLog failed: %v", err)
+	}
+
+	msg := describeStaleTransitionUpdate(
+		database,
+		"reject",
+		issue.ID,
+		&db.StaleIssueStatusError{
+			IssueID:  issue.ID,
+			Expected: models.StatusInReview,
+			Actual:   models.StatusOpen,
+		},
+		rejectFollowupGuidance,
+	)
+	t.Log(msg)
+
+	if !strings.Contains(msg, "Current status: open") {
+		t.Fatalf("expected current status context in %q", msg)
+	}
+	if !strings.Contains(msg, "Recent transition: reopened by ses_reviewer") {
+		t.Fatalf("expected recent transition context in %q", msg)
+	}
+	if !strings.Contains(msg, "Already reopened: td show "+issue.ID) {
+		t.Fatalf("expected reopened guidance in %q", msg)
 	}
 }

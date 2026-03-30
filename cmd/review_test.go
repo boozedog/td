@@ -210,7 +210,7 @@ func TestSubmitIssueForReviewDetectsStaleTransition(t *testing.T) {
 		t.Fatal("expected stale transition to fail")
 	}
 
-	want := "cannot review " + issue.ID + ": status changed from open to closed in another session\n  Already closed: td show " + issue.ID
+	want := "cannot review " + issue.ID + ": status changed from open to closed in another session\n  Current status: closed\n  Already closed: td show " + issue.ID
 	if result.Message != want {
 		t.Fatalf("message = %q, want %q", result.Message, want)
 	}
