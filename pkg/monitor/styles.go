@@ -252,6 +252,34 @@ func formatStatus(s models.Status) string {
 	return style.Render(string(s))
 }
 
+// issueDetailStatusStyle renders the top-of-modal status using the same color
+// tokens as the modal action/status buttons. in_progress keeps warning/orange
+// as the closest existing in-flight fallback beyond the requested mappings.
+func issueDetailStatusStyle(s models.Status) (lipgloss.Style, bool) {
+	switch s {
+	case models.StatusOpen:
+		return lipgloss.NewStyle().Foreground(cyanColor).Bold(true), true
+	case models.StatusInProgress:
+		return lipgloss.NewStyle().Foreground(warningColor).Bold(true), true
+	case models.StatusBlocked:
+		return lipgloss.NewStyle().Foreground(errorColor).Bold(true), true
+	case models.StatusInReview:
+		return lipgloss.NewStyle().Foreground(secondaryColor).Bold(true), true
+	case models.StatusClosed:
+		return lipgloss.NewStyle().Foreground(successColor).Bold(true), true
+	default:
+		return lipgloss.Style{}, false
+	}
+}
+
+func formatIssueDetailStatus(s models.Status) string {
+	style, ok := issueDetailStatusStyle(s)
+	if !ok {
+		return formatStatus(s)
+	}
+	return style.Render(string(s))
+}
+
 // formatPriority renders a priority with color
 func formatPriority(p models.Priority) string {
 	style, ok := priorityStyles[p]

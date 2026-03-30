@@ -1061,9 +1061,25 @@ func (m Model) renderModal() string {
 	// Build all content lines for scrolling
 	var lines []string
 
-	// Header: ID and Title
+	// Status first for quicker scanning in the issue detail modal.
+	lines = append(lines, formatIssueDetailStatus(issue.Status))
 	lines = append(lines, titleStyle.Render(issue.ID)+" "+issue.Title)
 	lines = append(lines, "")
+
+	// Metadata line: type, priority, points, timestamps
+	metadataLine := fmt.Sprintf("%s  %s",
+		formatTypeIcon(issue.Type),
+		formatPriority(issue.Priority))
+	if issue.Points > 0 {
+		metadataLine += fmt.Sprintf("  %dpts", issue.Points)
+	}
+	// Add created timestamp in subtle style
+	metadataLine += subtleStyle.Render(fmt.Sprintf("  created %s", issue.CreatedAt.Format("2006-01-02 15:04")))
+	// Add closed timestamp if closed
+	if issue.ClosedAt != nil {
+		metadataLine += subtleStyle.Render(fmt.Sprintf("  closed %s", issue.ClosedAt.Format("2006-01-02 15:04")))
+	}
+	lines = append(lines, metadataLine)
 
 	// Parent epic (if exists) - selectable row
 	if modal.ParentEpic != nil {
@@ -1074,24 +1090,7 @@ func (m Model) renderModal() string {
 		} else {
 			lines = append(lines, parentEpicStyle.Render("  "+epicText))
 		}
-		lines = append(lines, "")
 	}
-
-	// Status line: status, type, priority, points, created date
-	statusLine := fmt.Sprintf("%s  %s  %s",
-		formatStatus(issue.Status),
-		formatTypeIcon(issue.Type),
-		formatPriority(issue.Priority))
-	if issue.Points > 0 {
-		statusLine += fmt.Sprintf("  %dpts", issue.Points)
-	}
-	// Add created timestamp in subtle style
-	statusLine += subtleStyle.Render(fmt.Sprintf("  created %s", issue.CreatedAt.Format("2006-01-02 15:04")))
-	// Add closed timestamp if closed
-	if issue.ClosedAt != nil {
-		statusLine += subtleStyle.Render(fmt.Sprintf("  closed %s", issue.ClosedAt.Format("2006-01-02 15:04")))
-	}
-	lines = append(lines, statusLine)
 
 	// Labels
 	if len(issue.Labels) > 0 {

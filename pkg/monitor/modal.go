@@ -194,15 +194,13 @@ func (m Model) estimateModalContentLines(modal *ModalEntry) int {
 	lines := 0
 	issue := modal.Issue
 
-	// Header + status section
-	lines += 5 // ID, title, blank, status, blank
-
-	// Parent epic
-	if modal.ParentEpic != nil {
-		lines += 2
-	}
+	// Header + metadata section
+	lines += 5 // status, title, blank, metadata, blank
 
 	// Labels, implementer, reviewer
+	if modal.ParentEpic != nil {
+		lines++
+	}
 	if len(issue.Labels) > 0 {
 		lines++
 	}
@@ -808,8 +806,8 @@ func (m *Model) createCloseConfirmModal() *modal.Modal {
 
 	md := modal.New(title,
 		modal.WithWidth(width),
-		modal.WithVariant(modal.VariantDanger),  // Red border for destructive action
-		modal.WithHints(false),                  // We use custom hint text
+		modal.WithVariant(modal.VariantDanger), // Red border for destructive action
+		modal.WithHints(false),                 // We use custom hint text
 		modal.WithPrimaryAction("confirm"),     // Enter on input submits confirm
 	)
 
@@ -905,18 +903,13 @@ func computeModalSectionLines(modal *ModalEntry) {
 	issue := modal.Issue
 	lineCount := 0
 
-	// Header: ID + Title, blank line
-	lineCount += 2
-
-	// Parent epic (if exists): text + blank
-	if modal.ParentEpic != nil {
-		lineCount += 2
-	}
-
-	// Status line
-	lineCount++
+	// Header: status, title, blank line, metadata
+	lineCount += 4
 
 	// Labels
+	if modal.ParentEpic != nil {
+		lineCount++
+	}
 	if len(issue.Labels) > 0 {
 		lineCount++
 	}
