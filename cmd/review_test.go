@@ -171,6 +171,53 @@ func TestReviewRequiresHandoff(t *testing.T) {
 	// This test verifies the handoff check logic by checking database state
 }
 
+func TestSubmitIssueForReviewDetectsStaleTransition(t *testing.T) {
+	dir := t.TempDir()
+
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Concurrent stale review issue",
+		Status: models.StatusOpen,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	staleIssue, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue stale snapshot failed: %v", err)
+	}
+
+	current, err := database.GetIssue(issue.ID)
+	if err != nil {
+		t.Fatalf("GetIssue current failed: %v", err)
+	}
+	current.Status = models.StatusClosed
+	if err := database.UpdateIssue(current); err != nil {
+		t.Fatalf("UpdateIssue failed: %v", err)
+	}
+
+	sessionID := reviewCommandSessionID(t, database)
+	sess := &session.Session{ID: sessionID}
+
+	result := submitIssueForReview(database, staleIssue, sess, dir, "")
+	if result.Success {
+		t.Fatal("expected stale transition to fail")
+	}
+
+	want := "cannot review " + issue.ID + ": status changed from open to closed in another session\n  Already closed: td show " + issue.ID
+	if result.Message != want {
+		t.Fatalf("message = %q, want %q", result.Message, want)
+	}
+
+	t.Log(result.Message)
+}
+
 func TestApproveRequiresDifferentSession(t *testing.T) {
 	dir := t.TempDir()
 

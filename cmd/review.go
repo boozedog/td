@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -45,6 +46,8 @@ func newAutoReviewHandoff(issueID, sessionID string) *models.Handoff {
 // logging, and undo support. This is the shared logic for both reviewCmd and
 // ws handoff --review.
 func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Session, baseDir string, logMsg string) SubmitReviewResult {
+	fromStatus := issue.Status
+
 	// Validate transition with state machine
 	sm := workflow.DefaultMachine()
 	ctx := &workflow.TransitionContext{
@@ -80,10 +83,10 @@ func submitIssueForReview(database *db.DB, issue *models.Issue, sess *session.Se
 		issue.ImplementerSession = sess.ID
 	}
 
-	if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReview); err != nil {
+	if err := database.UpdateIssueLoggedIfStatus(issue, fromStatus, sess.ID, models.ActionReview); err != nil {
 		return SubmitReviewResult{
 			Success: false,
-			Message: fmt.Sprintf("failed to update %s: %v", issue.ID, err),
+			Message: describeStaleTransitionUpdate(database, "review", issue.ID, err, reviewFollowupGuidance),
 		}
 	}
 
@@ -329,12 +332,38 @@ func approvalReason(cmd *cobra.Command) string {
 	return ""
 }
 
+func describeStaleTransitionUpdate(database *db.DB, action, issueID string, err error, guidance func(*models.Issue) string) string {
+	var staleErr *db.StaleIssueStatusError
+	if !errors.As(err, &staleErr) {
+		return fmt.Sprintf("failed to update %s: %v", issueID, err)
+	}
+
+	current := &models.Issue{ID: issueID, Status: staleErr.Actual}
+	if database != nil {
+		if refreshed, refreshErr := database.GetIssue(issueID); refreshErr == nil {
+			current = refreshed
+		}
+	}
+
+	return fmt.Sprintf(
+		"cannot %s %s: status changed from %s to %s in another session\n%s",
+		action,
+		issueID,
+		staleErr.Expected,
+		current.Status,
+		guidance(current),
+	)
+}
+
 func closeFollowupGuidance(issue *models.Issue) string {
 	if issue == nil {
 		return "  Submit for review: td review "
 	}
-	if issue != nil && issue.Status == models.StatusInReview {
+	switch issue.Status {
+	case models.StatusInReview:
 		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
+	case models.StatusClosed:
+		return fmt.Sprintf("  Already closed: td show %s", issue.ID)
 	}
 	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
 }
@@ -345,8 +374,11 @@ func reviewFollowupGuidance(issue *models.Issue) string {
 	if issue == nil {
 		return "  Submit for review: td review "
 	}
-	if issue.Status == models.StatusInReview {
+	switch issue.Status {
+	case models.StatusInReview:
 		return fmt.Sprintf("  Already in review: td approve %s", issue.ID)
+	case models.StatusClosed:
+		return fmt.Sprintf("  Already closed: td show %s", issue.ID)
 	}
 	return fmt.Sprintf("  Submit for review: td review %s", issue.ID)
 }
@@ -357,8 +389,11 @@ func approveFollowupGuidance(issue *models.Issue) string {
 	if issue == nil {
 		return "  Submit for review first: td review "
 	}
-	if issue.Status == models.StatusInReview {
+	switch issue.Status {
+	case models.StatusInReview:
 		return fmt.Sprintf("  Approve it: td approve %s", issue.ID)
+	case models.StatusClosed:
+		return fmt.Sprintf("  Already closed: td show %s", issue.ID)
 	}
 	return fmt.Sprintf("  Submit for review first: td review %s", issue.ID)
 }
@@ -517,8 +552,8 @@ Supports bulk operations:
 			now := time.Now()
 			issue.ClosedAt = &now
 
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionApprove); err != nil {
-				output.Warning("failed to update %s: %v", issueID, err)
+			if err := database.UpdateIssueLoggedIfStatus(issue, models.StatusInReview, sess.ID, models.ActionApprove); err != nil {
+				output.Warning("%s", describeStaleTransitionUpdate(database, "approve", issueID, err, approveFollowupGuidance))
 				skipped++
 				continue
 			}
@@ -655,11 +690,11 @@ Supports bulk operations:
 			issue.Status = models.StatusOpen
 			issue.ImplementerSession = ""
 
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionReject); err != nil {
+			if err := database.UpdateIssueLoggedIfStatus(issue, models.StatusInReview, sess.ID, models.ActionReject); err != nil {
 				if jsonOutput {
 					output.JSONError(output.ErrCodeDatabaseError, err.Error())
 				} else {
-					output.Warning("failed to update %s: %v", issueID, err)
+					output.Warning("%s", describeStaleTransitionUpdate(database, "reject", issueID, err, reviewFollowupGuidance))
 				}
 				skipped++
 				continue
@@ -801,12 +836,13 @@ Examples:
 			}
 
 			// Update issue (atomic update + action log)
+			fromStatus := issue.Status
 			issue.Status = models.StatusClosed
 			now := time.Now()
 			issue.ClosedAt = &now
 
-			if err := database.UpdateIssueLogged(issue, sess.ID, models.ActionClose); err != nil {
-				output.Warning("failed to update %s: %v", issueID, err)
+			if err := database.UpdateIssueLoggedIfStatus(issue, fromStatus, sess.ID, models.ActionClose); err != nil {
+				output.Warning("%s", describeStaleTransitionUpdate(database, "close", issueID, err, closeFollowupGuidance))
 				skipped++
 				continue
 			}

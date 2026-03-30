@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/marcus/td/internal/config"
+	"github.com/marcus/td/internal/db"
 	"github.com/marcus/td/internal/features"
 	"github.com/marcus/td/internal/models"
 )
@@ -275,6 +276,11 @@ func TestCloseFollowupGuidance(t *testing.T) {
 			want:  "  Already in review: td approve td-review",
 		},
 		{
+			name:  "closed issue points to show",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Already closed: td show td-closed",
+		},
+		{
 			name:  "nil issue falls back to review wording",
 			issue: nil,
 			want:  "  Submit for review: td review ",
@@ -313,6 +319,11 @@ func TestReviewFollowupGuidance(t *testing.T) {
 			want:  "  Already in review: td approve td-review",
 		},
 		{
+			name:  "closed issue points to show",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Already closed: td show td-closed",
+		},
+		{
 			name:  "nil issue falls back to review wording",
 			issue: nil,
 			want:  "  Submit for review: td review ",
@@ -346,6 +357,11 @@ func TestApproveFollowupGuidance(t *testing.T) {
 			want:  "  Submit for review first: td review td-open",
 		},
 		{
+			name:  "closed issue points to show",
+			issue: &models.Issue{ID: "td-closed", Status: models.StatusClosed},
+			want:  "  Already closed: td show td-closed",
+		},
+		{
 			name:  "nil issue falls back to review wording",
 			issue: nil,
 			want:  "  Submit for review first: td review ",
@@ -359,5 +375,40 @@ func TestApproveFollowupGuidance(t *testing.T) {
 				t.Fatalf("approveFollowupGuidance() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestDescribeStaleTransitionUpdate(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.Initialize(dir)
+	if err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+	defer database.Close()
+
+	issue := &models.Issue{
+		Title:  "Closed elsewhere",
+		Status: models.StatusClosed,
+	}
+	if err := database.CreateIssue(issue); err != nil {
+		t.Fatalf("CreateIssue failed: %v", err)
+	}
+
+	msg := describeStaleTransitionUpdate(
+		database,
+		"approve",
+		issue.ID,
+		&db.StaleIssueStatusError{
+			IssueID:  issue.ID,
+			Expected: models.StatusInReview,
+			Actual:   models.StatusClosed,
+		},
+		approveFollowupGuidance,
+	)
+	t.Log(msg)
+
+	want := "cannot approve " + issue.ID + ": status changed from in_review to closed in another session\n  Already closed: td show " + issue.ID
+	if msg != want {
+		t.Fatalf("describeStaleTransitionUpdate() = %q, want %q", msg, want)
 	}
 }
